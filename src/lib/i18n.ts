@@ -259,6 +259,9 @@ export const DEFAULT_TRANSLATIONS: T = {
   'admin.reset_to_default': 'ნაგულისხმევზე გადაბრუნება',
   'admin.delete_confirm': 'ინტეგრაცია წაიშლება. დარწმუნებული ხართ?',
   'admin.strings_count': 'სტრიქონი',
+  'admin.search_localizations': 'ძიება გასაღებებში ან ტექსტში...',
+  'admin.no_results': 'ლოკალიზაციები ვერ მოიძებნა',
+  'admin.no_strings': 'ლოკალიზაციები ჯერ არ არის',
 };
 
 export const getTranslations = unstable_cache(

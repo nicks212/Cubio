@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useActionState } from 'react';
-import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight, RotateCcw } from 'lucide-react';
+import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight, RotateCcw, Search } from 'lucide-react';
 import {
   toggleUserAdmin, upsertLocalization, deleteLocalization,
   createIntegration, updateIntegration, deleteIntegration, toggleIntegration,
@@ -28,6 +28,7 @@ export default function AdminClient({ users, integrations, localizations, compan
   const [editingInt, setEditingInt] = useState<Props['integrations'][0] | null>(null);
   const [locModal, setLocModal] = useState(false);
   const [editingLoc, setEditingLoc] = useState<Props['localizations'][0] | null>(null);
+  const [locSearch, setLocSearch] = useState('');
 
   const [intCreateState, intCreateAction, intCreatePending] = useActionState(createIntegration, null);
   const [intUpdateState, intUpdateAction, intUpdatePending] = useActionState(updateIntegration, null);
@@ -38,6 +39,18 @@ export default function AdminClient({ users, integrations, localizations, compan
 
   const openEditInt = (i: Props['integrations'][0]) => { setEditingInt(i); setIntModal(true); };
   const openLocEdit = (l: Props['localizations'][0]) => { setEditingLoc(l); setLocModal(true); };
+
+  const filterLocalizations = (query: string) => {
+    if (!query.trim()) return localizations;
+    const q = query.toLowerCase();
+    return localizations.filter(loc => {
+      const keyword = loc.keyword.toLowerCase();
+      const text = loc.localization_text.toLowerCase();
+      return keyword.startsWith(q) || text.startsWith(q) || keyword.includes(q) || text.includes(q);
+    });
+  };
+
+  const filteredLocalizations = filterLocalizations(locSearch);
 
   const tabs = [
     { id: 'users' as Tab, label: t['admin.tab_users'] ?? 'Users', icon: Users },
@@ -101,11 +114,23 @@ export default function AdminClient({ users, integrations, localizations, compan
       {/* Localizations Tab */}
       {tab === 'localizations' && (
         <>
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-muted-foreground">{localizations.length} {t['admin.strings_count']}</p>
-            <button onClick={() => { setEditingLoc(null); setLocModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm">
-              <Plus className="w-4 h-4" />{t['admin.add_string']}
-            </button>
+          <div className="mb-4 space-y-4">
+            <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-lg border border-slate-200">
+              <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              <input
+                type="text"
+                value={locSearch}
+                onChange={(e) => setLocSearch(e.target.value)}
+                placeholder={t['admin.search_localizations'] ?? 'Search keywords or text...'}
+                className="flex-1 bg-transparent text-sm focus:outline-none"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">{filteredLocalizations.length} {t['admin.strings_count']} {locSearch && `(${localizations.length} total)`}</p>
+              <button onClick={() => { setEditingLoc(null); setLocModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm">
+                <Plus className="w-4 h-4" />{t['admin.add_string']}
+              </button>
+            </div>
           </div>
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className="overflow-x-auto">
@@ -118,7 +143,13 @@ export default function AdminClient({ users, integrations, localizations, compan
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {localizations.map(loc => (
+                  {filteredLocalizations.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="py-8 px-4 text-center text-muted-foreground">
+                        {locSearch ? (t['admin.no_results'] ?? 'No localizations found') : (t['admin.no_strings'] ?? 'No localizations yet')}
+                      </td>
+                    </tr>
+                  ) : filteredLocalizations.map(loc => (
                     <tr key={loc.keyword} className="hover:bg-slate-50">
                       <td className="py-3 px-4 text-xs font-mono text-muted-foreground align-top pt-4">{loc.keyword}</td>
                       <td className="py-3 px-4 text-sm">{loc.localization_text}</td>
