@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 import Link from 'next/link';
-import { Box, Mail, Lock, User, Building2, ArrowLeft } from 'lucide-react';
+import { Box, Mail, Lock, User, ArrowLeft } from 'lucide-react';
 import { register } from '../actions';
 
 export default function RegisterPage() {
@@ -42,16 +42,6 @@ export default function RegisterPage() {
                 <input id="fullName" name="fullName" type="text"
                   className="w-full pl-11 pr-4 py-3 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                   placeholder="John Smith" required />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="companyName" className="block text-sm mb-2 text-foreground font-medium">Company Name</label>
-              <div className="relative">
-                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                <input id="companyName" name="companyName" type="text"
-                  className="w-full pl-11 pr-4 py-3 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="My Company Ltd" required />
               </div>
             </div>
 

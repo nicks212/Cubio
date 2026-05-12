@@ -226,6 +226,8 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER;
 -- Companies: users see their own company; admins see all
 DROP POLICY IF EXISTS "company_select" ON companies;
 CREATE POLICY "company_select" ON companies FOR SELECT USING (id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "company_insert" ON companies;
+CREATE POLICY "company_insert" ON companies FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "company_update" ON companies;
 CREATE POLICY "company_update" ON companies FOR UPDATE USING (id = my_company_id() OR is_admin());
 
@@ -340,7 +342,10 @@ CREATE POLICY "prod_images_storage_delete" ON storage.objects FOR DELETE USING (
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO profiles (id, email) VALUES (NEW.id, NEW.email) ON CONFLICT (id) DO NOTHING;
+  INSERT INTO profiles (id, email, full_name)
+  VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'full_name')
+  ON CONFLICT (id) DO UPDATE SET
+    full_name = COALESCE(EXCLUDED.full_name, profiles.full_name);
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
