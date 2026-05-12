@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
 const setupSchema = z.object({
@@ -40,8 +40,10 @@ export async function setupCompany(_prev: unknown, formData: FormData) {
     redirect('/dashboard');
   }
 
-  // Create company — user is authenticated, company_insert RLS policy allows this
-  const { data: company, error: companyError } = await supabase
+  // Create company via admin client to bypass RLS (new user has no company_id yet,
+  // so my_company_id() returns null and the anon INSERT policy may be blocked)
+  const adminSupabase = createAdminClient();
+  const { data: company, error: companyError } = await adminSupabase
     .from('companies')
     .insert({
       company_name: parsed.data.companyName,

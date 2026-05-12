@@ -1,8 +1,9 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { Box, Building2, Gem, CheckCircle2 } from 'lucide-react';
+import { Box, Building2, Gem, CheckCircle2, LogOut } from 'lucide-react';
 import { setupCompany } from './actions';
+import { logout } from '@/app/auth/actions';
 
 const businessProfiles = [
   {
@@ -39,6 +40,18 @@ export default function OnboardingPage() {
           </div>
           <h1 className="text-3xl font-bold text-foreground mb-2">Set up your company</h1>
           <p className="text-muted-foreground">Tell us about your business to get started</p>
+        </div>
+
+        <div className="flex justify-end mb-6">
+          <form action={logout}>
+            <button
+              type="submit"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign out
+            </button>
+          </form>
         </div>
 
         {state?.error && (
