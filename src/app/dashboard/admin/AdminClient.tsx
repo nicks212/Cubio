@@ -137,6 +137,13 @@ export default function AdminClient({ users, integrations, localizations, compan
       {/* Integrations Tab */}
       {tab === 'integrations' && (
         <>
+          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-5">
+            <h2 className="font-semibold text-blue-900 mb-1">Webhook URL</h2>
+            <p className="text-sm text-blue-700 mb-3">Configure this URL in your messaging platform settings:</p>
+            <code className="block bg-white border border-blue-200 rounded-lg px-4 py-3 text-sm font-mono text-blue-900 break-all">
+              {process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cubio.ge'}/api/webhook/meta
+            </code>
+          </div>
           <div className="flex justify-end mb-4">
             <button onClick={() => { setEditingInt(null); setIntModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm">
               <Plus className="w-4 h-4" />Add Integration

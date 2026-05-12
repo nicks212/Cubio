@@ -1,20 +1,12 @@
 import { createClient } from '@/lib/supabase/server';
 
-const providerLabels: Record<string, string> = {
-  facebook: 'Facebook Messenger',
-  instagram: 'Instagram DM',
-  telegram: 'Telegram',
-  whatsapp: 'WhatsApp',
-  viber: 'Viber',
-};
-
-const providerIcons: Record<string, string> = {
-  facebook: '📘',
-  instagram: '📸',
-  telegram: '✈️',
-  whatsapp: '💬',
-  viber: '📱',
-};
+const ALL_PROVIDERS = [
+  { id: 'facebook',  label: 'Facebook Messenger', icon: '📘' },
+  { id: 'instagram', label: 'Instagram DM',        icon: '📸' },
+  { id: 'telegram',  label: 'Telegram',            icon: '✈️' },
+  { id: 'whatsapp',  label: 'WhatsApp',            icon: '💬' },
+  { id: 'viber',     label: 'Viber',               icon: '📱' },
+] as const;
 
 export default async function IntegrationsPage() {
   const supabase = await createClient();
@@ -24,9 +16,11 @@ export default async function IntegrationsPage() {
   const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', user.id).single();
   const { data: integrations } = await supabase
     .from('integrations')
-    .select('*')
-    .eq('company_id', profile?.company_id ?? '')
-    .order('created_at', { ascending: false });
+    .select('provider, account_name, is_active')
+    .eq('company_id', profile?.company_id ?? '');
+
+  // Build a map: provider → integration row (if it exists)
+  const byProvider = new Map((integrations ?? []).map(i => [i.provider, i]));
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
@@ -35,44 +29,44 @@ export default async function IntegrationsPage() {
         <p className="text-muted-foreground">Messaging channels connected to your AI assistant</p>
       </div>
 
-      {(!integrations || integrations.length === 0) ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-          <p className="text-4xl mb-4">🔌</p>
-          <p className="font-semibold mb-2">No integrations configured</p>
-          <p className="text-muted-foreground text-sm">Contact your administrator to set up messaging integrations.</p>
-        </div>
-      ) : (
-        <div className="grid sm:grid-cols-2 gap-4">
-          {integrations.map(integration => (
-            <div key={integration.id} className="bg-white rounded-xl border border-slate-200 p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-2xl">
-                  {providerIcons[integration.provider] ?? '💬'}
-                </div>
-                <div>
-                  <h3 className="font-semibold">{providerLabels[integration.provider] ?? integration.provider}</h3>
-                  <p className="text-sm text-muted-foreground">{integration.account_name}</p>
-                </div>
-                <div className="ml-auto">
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${integration.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
-                    {integration.is_active ? 'Active' : 'Inactive'}
-                  </span>
-                </div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {ALL_PROVIDERS.map(provider => {
+          const row = byProvider.get(provider.id);
+          const connected = !!row && row.is_active;
+          const inactive  = !!row && !row.is_active;
+
+          return (
+            <div key={provider.id} className="bg-white rounded-xl border border-slate-200 p-5 flex items-center gap-4">
+              <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
+                {provider.icon}
               </div>
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-xs text-muted-foreground">Account ID: {integration.provider_account_id}</p>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm text-foreground">{provider.label}</p>
+                {connected && (
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">{row.account_name}</p>
+                )}
+              </div>
+              <div className="flex-shrink-0">
+                {connected ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-green-100 text-green-700">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                    Connected
+                  </span>
+                ) : inactive ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-amber-100 text-amber-700">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                    Inactive
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium bg-slate-100 text-slate-500">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
+                    Not connected
+                  </span>
+                )}
               </div>
             </div>
-          ))}
-        </div>
-      )}
-
-      <div className="mt-8 bg-blue-50 border border-blue-200 rounded-xl p-6">
-        <h2 className="font-semibold text-blue-900 mb-2">Webhook URL</h2>
-        <p className="text-sm text-blue-700 mb-3">Use this URL when configuring webhooks in your messaging platform:</p>
-        <code className="block bg-white border border-blue-200 rounded-lg px-4 py-3 text-sm font-mono text-blue-900 break-all">
-          {process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cubio.ge'}/api/webhook/meta
-        </code>
+          );
+        })}
       </div>
     </div>
   );
