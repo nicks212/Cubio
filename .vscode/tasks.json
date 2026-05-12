@@ -45,6 +45,15 @@
       "type": "shell",
       "command": "git push origin $(git rev-parse --abbrev-ref HEAD)",
       "problemMatcher": []
+    },
+    {
+      "label": "🔗 Merge: TEST → MAIN (for production)",
+      "type": "shell",
+      "command": "git checkout main && git pull origin main && git merge test --no-edit && git push origin main && echo '✓ TEST merged into MAIN and pushed to GitHub'",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always"
+      }
     }
   ]
 }
