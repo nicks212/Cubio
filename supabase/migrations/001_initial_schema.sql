@@ -180,10 +180,19 @@ RETURNS TRIGGER AS $$
 BEGIN NEW.updated_at = now(); RETURN NEW; END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_projects_updated_at ON projects;
 CREATE TRIGGER trg_projects_updated_at BEFORE UPDATE ON projects FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS trg_apartments_updated_at ON apartments;
 CREATE TRIGGER trg_apartments_updated_at BEFORE UPDATE ON apartments FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS trg_products_updated_at ON products;
 CREATE TRIGGER trg_products_updated_at BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS trg_conversations_updated_at ON conversations;
 CREATE TRIGGER trg_conversations_updated_at BEFORE UPDATE ON conversations FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS trg_localizations_updated_at ON localizations;
 CREATE TRIGGER trg_localizations_updated_at BEFORE UPDATE ON localizations FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================
@@ -215,58 +224,91 @@ RETURNS BOOLEAN AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
 
 -- Companies: users see their own company; admins see all
+DROP POLICY IF EXISTS "company_select" ON companies;
 CREATE POLICY "company_select" ON companies FOR SELECT USING (id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "company_update" ON companies;
 CREATE POLICY "company_update" ON companies FOR UPDATE USING (id = my_company_id() OR is_admin());
 
 -- Profiles: users see own; admins see all
+DROP POLICY IF EXISTS "profile_select" ON profiles;
 CREATE POLICY "profile_select" ON profiles FOR SELECT USING (id = auth.uid() OR is_admin());
+DROP POLICY IF EXISTS "profile_insert" ON profiles;
 CREATE POLICY "profile_insert" ON profiles FOR INSERT WITH CHECK (id = auth.uid());
+DROP POLICY IF EXISTS "profile_update" ON profiles;
 CREATE POLICY "profile_update" ON profiles FOR UPDATE USING (id = auth.uid() OR is_admin());
 
 -- Projects
+DROP POLICY IF EXISTS "projects_select" ON projects;
 CREATE POLICY "projects_select" ON projects FOR SELECT USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "projects_insert" ON projects;
 CREATE POLICY "projects_insert" ON projects FOR INSERT WITH CHECK (company_id = my_company_id());
+DROP POLICY IF EXISTS "projects_update" ON projects;
 CREATE POLICY "projects_update" ON projects FOR UPDATE USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "projects_delete" ON projects;
 CREATE POLICY "projects_delete" ON projects FOR DELETE USING (company_id = my_company_id() OR is_admin());
 
 -- Apartments
+DROP POLICY IF EXISTS "apartments_select" ON apartments;
 CREATE POLICY "apartments_select" ON apartments FOR SELECT USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "apartments_insert" ON apartments;
 CREATE POLICY "apartments_insert" ON apartments FOR INSERT WITH CHECK (company_id = my_company_id());
+DROP POLICY IF EXISTS "apartments_update" ON apartments;
 CREATE POLICY "apartments_update" ON apartments FOR UPDATE USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "apartments_delete" ON apartments;
 CREATE POLICY "apartments_delete" ON apartments FOR DELETE USING (company_id = my_company_id() OR is_admin());
 
 -- Apartment templates
+DROP POLICY IF EXISTS "apt_tpl_select" ON apartment_templates;
 CREATE POLICY "apt_tpl_select" ON apartment_templates FOR SELECT USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "apt_tpl_insert" ON apartment_templates;
 CREATE POLICY "apt_tpl_insert" ON apartment_templates FOR INSERT WITH CHECK (company_id = my_company_id());
+DROP POLICY IF EXISTS "apt_tpl_update" ON apartment_templates;
 CREATE POLICY "apt_tpl_update" ON apartment_templates FOR UPDATE USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "apt_tpl_delete" ON apartment_templates;
 CREATE POLICY "apt_tpl_delete" ON apartment_templates FOR DELETE USING (company_id = my_company_id() OR is_admin());
 
 -- Products
+DROP POLICY IF EXISTS "products_select" ON products;
 CREATE POLICY "products_select" ON products FOR SELECT USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "products_insert" ON products;
 CREATE POLICY "products_insert" ON products FOR INSERT WITH CHECK (company_id = my_company_id());
+DROP POLICY IF EXISTS "products_update" ON products;
 CREATE POLICY "products_update" ON products FOR UPDATE USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "products_delete" ON products;
 CREATE POLICY "products_delete" ON products FOR DELETE USING (company_id = my_company_id() OR is_admin());
 
 -- Integrations: admins manage; users read own
+DROP POLICY IF EXISTS "integrations_select" ON integrations;
 CREATE POLICY "integrations_select" ON integrations FOR SELECT USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "integrations_all_admin" ON integrations;
 CREATE POLICY "integrations_all_admin" ON integrations FOR ALL USING (is_admin());
 
 -- Conversations
+DROP POLICY IF EXISTS "conv_select" ON conversations;
 CREATE POLICY "conv_select" ON conversations FOR SELECT USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "conv_insert" ON conversations;
 CREATE POLICY "conv_insert" ON conversations FOR INSERT WITH CHECK (company_id = my_company_id());
+DROP POLICY IF EXISTS "conv_update" ON conversations;
 CREATE POLICY "conv_update" ON conversations FOR UPDATE USING (company_id = my_company_id() OR is_admin());
 
 -- Messages
+DROP POLICY IF EXISTS "msg_select" ON messages;
 CREATE POLICY "msg_select" ON messages FOR SELECT USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "msg_insert" ON messages;
 CREATE POLICY "msg_insert" ON messages FOR INSERT WITH CHECK (company_id = my_company_id());
 
 -- Localizations: everyone reads; only admins write
+DROP POLICY IF EXISTS "loc_select" ON localizations;
 CREATE POLICY "loc_select" ON localizations FOR SELECT USING (true);
+DROP POLICY IF EXISTS "loc_all_admin" ON localizations;
 CREATE POLICY "loc_all_admin" ON localizations FOR ALL USING (is_admin());
 
 -- Leads
+DROP POLICY IF EXISTS "leads_select" ON leads;
 CREATE POLICY "leads_select" ON leads FOR SELECT USING (company_id = my_company_id() OR is_admin());
+DROP POLICY IF EXISTS "leads_insert" ON leads;
 CREATE POLICY "leads_insert" ON leads FOR INSERT WITH CHECK (company_id = my_company_id());
+DROP POLICY IF EXISTS "leads_update" ON leads;
 CREATE POLICY "leads_update" ON leads FOR UPDATE USING (company_id = my_company_id() OR is_admin());
 
 -- ============================================================
@@ -277,12 +319,18 @@ INSERT INTO storage.buckets (id, name, public) VALUES ('apartment-images', 'apar
 INSERT INTO storage.buckets (id, name, public) VALUES ('product-images', 'product-images', true) ON CONFLICT DO NOTHING;
 
 -- Storage policies
+DROP POLICY IF EXISTS "apt_images_storage_select" ON storage.objects;
 CREATE POLICY "apt_images_storage_select" ON storage.objects FOR SELECT USING (bucket_id = 'apartment-images');
+DROP POLICY IF EXISTS "apt_images_storage_insert" ON storage.objects;
 CREATE POLICY "apt_images_storage_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'apartment-images' AND auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "apt_images_storage_delete" ON storage.objects;
 CREATE POLICY "apt_images_storage_delete" ON storage.objects FOR DELETE USING (bucket_id = 'apartment-images' AND auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "prod_images_storage_select" ON storage.objects;
 CREATE POLICY "prod_images_storage_select" ON storage.objects FOR SELECT USING (bucket_id = 'product-images');
+DROP POLICY IF EXISTS "prod_images_storage_insert" ON storage.objects;
 CREATE POLICY "prod_images_storage_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'product-images' AND auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "prod_images_storage_delete" ON storage.objects;
 CREATE POLICY "prod_images_storage_delete" ON storage.objects FOR DELETE USING (bucket_id = 'product-images' AND auth.role() = 'authenticated');
 
 -- ============================================================
@@ -297,6 +345,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE OR REPLACE TRIGGER on_auth_user_created
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION handle_new_user();
