@@ -1,12 +1,21 @@
 'use client';
 
 import { useActionState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Box, Mail, Lock, ArrowLeft } from 'lucide-react';
 import { login } from '../actions';
 
+const URL_ERRORS: Record<string, string> = {
+  email_link_expired: 'This confirmation link has expired. Please register again to get a new link.',
+  email_confirmation_failed: 'Email confirmation failed. Please try again or contact support.',
+};
+
 export default function LoginPage() {
   const [state, action, pending] = useActionState(login, null);
+  const searchParams = useSearchParams();
+  const urlError = searchParams.get('error');
+  const urlErrorMessage = urlError ? (URL_ERRORS[urlError] ?? 'Something went wrong. Please try again.') : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
@@ -28,9 +37,9 @@ export default function LoginPage() {
             <p className="text-muted-foreground mt-2">Sign in to your account</p>
           </div>
 
-          {state?.error && (
+          {(urlErrorMessage || state?.error) && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-              {state.error}
+              {urlErrorMessage ?? state?.error}
             </div>
           )}
 

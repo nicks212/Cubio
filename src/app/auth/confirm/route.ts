@@ -13,9 +13,11 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const { error } = await supabase.auth.verifyOtp({ type, token_hash });
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+      // For email confirmations redirect to success page; other types go to next
+      const destination = type === 'email' ? '/auth/email-confirmed' : next;
+      return NextResponse.redirect(`${origin}${destination}`);
     }
   }
 
-  return NextResponse.redirect(`${origin}/auth/login?error=email_confirmation_failed`);
+  return NextResponse.redirect(`${origin}/auth/login?error=email_link_expired`);
 }
