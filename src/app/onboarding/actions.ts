@@ -52,12 +52,17 @@ export async function setupCompany(_prev: unknown, formData: FormData) {
 
   if (companyError) return { error: companyError.message };
 
-  // Link profile to company; also save full_name from auth metadata if not set by trigger
+  // Link profile to company; upsert in case the auth trigger didn't create the row
   const fullName = profile?.full_name || (user.user_metadata?.full_name as string | undefined) || null;
   const { error: profileError } = await supabase
     .from('profiles')
-    .update({ company_id: company.id, full_name: fullName })
-    .eq('id', user.id);
+    .upsert({
+      id: user.id,
+      email: user.email ?? '',
+      full_name: fullName,
+      company_id: company.id,
+      is_admin: false,
+    });
 
   if (profileError) return { error: profileError.message };
 
