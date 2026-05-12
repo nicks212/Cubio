@@ -26,7 +26,11 @@ export async function middleware(request: NextRequest) {
   const url = request.nextUrl.clone();
   const isDashboard = url.pathname.startsWith('/dashboard');
   const isOnboarding = url.pathname.startsWith('/onboarding');
-  const isAuth = url.pathname.startsWith('/auth');
+  // These auth routes must remain accessible even when logged in
+  const isAuthBypass = ['/auth/callback', '/auth/confirm', '/auth/reset-password'].some(p =>
+    url.pathname.startsWith(p)
+  );
+  const isAuth = url.pathname.startsWith('/auth') && !isAuthBypass;
   const isPublic = url.pathname === '/' || url.pathname.startsWith('/api');
 
   // Not logged in → redirect to login

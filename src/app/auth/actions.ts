@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
 const loginSchema = z.object({
@@ -48,10 +48,10 @@ export async function register(_prev: unknown, formData: FormData) {
     return { error: parsed.error.issues[0]?.message ?? 'Validation error' };
   }
 
-  const supabase = await createClient();
+  const adminClient = await createAdminClient();
 
-  // Create company first
-  const { data: company, error: companyError } = await supabase
+  // Create company via admin client (user has no session yet — bypasses RLS)
+  const { data: company, error: companyError } = await adminClient
     .from('companies')
     .insert({ company_name: parsed.data.companyName })
     .select()
@@ -60,25 +60,24 @@ export async function register(_prev: unknown, formData: FormData) {
   if (companyError) return { error: 'Could not create company' };
 
   // Sign up user
+  const supabase = await createClient();
   const { data: authData, error: authError } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
-    options: {
-      data: {
-        full_name: parsed.data.fullName,
-        company_id: company.id,
-      },
-    },
   });
 
   if (authError) {
-    if (authError.message.includes('already registered')) return { error: 'Email already registered' };
+    // Roll back company creation
+    await adminClient.from('companies').delete().eq('id', company.id);
+    if (authError.message.toLowerCase().includes('already registered')) {
+      return { error: 'Email already registered' };
+    }
     return { error: 'Could not create account' };
   }
 
-  // Create profile record
+  // Upsert profile via admin client (auth trigger may have already created a bare row)
   if (authData.user) {
-    await supabase.from('profiles').upsert({
+    await adminClient.from('profiles').upsert({
       id: authData.user.id,
       email: parsed.data.email,
       full_name: parsed.data.fullName,
@@ -88,7 +87,14 @@ export async function register(_prev: unknown, formData: FormData) {
   }
 
   revalidatePath('/', 'layout');
-  redirect('/onboarding');
+
+  // If email confirmation is disabled, session exists immediately → go to onboarding
+  // If email confirmation is enabled, session is null → tell user to check email
+  if (authData.session) {
+    redirect('/onboarding');
+  } else {
+    redirect('/auth/verify-email');
+  }
 }
 
 export async function logout() {
@@ -104,9 +110,24 @@ export async function resetPassword(_prev: unknown, formData: FormData) {
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/reset-password`,
+    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/auth/reset-password`,
   });
 
   if (error) return { error: 'Could not send reset email' };
   return { success: true };
+}
+
+export async function updatePassword(_prev: unknown, formData: FormData) {
+  const password = formData.get('password') as string;
+  const confirm = formData.get('confirmPassword') as string;
+
+  if (!password || password.length < 8) return { error: 'Password must be at least 8 characters' };
+  if (password !== confirm) return { error: 'Passwords do not match' };
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { error: 'Could not update password' };
+
+  revalidatePath('/', 'layout');
+  redirect('/dashboard');
 }
