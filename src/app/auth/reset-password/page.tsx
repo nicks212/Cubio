@@ -4,8 +4,10 @@ import { useActionState } from 'react';
 import Link from 'next/link';
 import { Box, Lock, CheckCircle2 } from 'lucide-react';
 import { updatePassword } from '../actions';
+import { useT } from '@/components/TranslationsProvider';
 
 export default function ResetPasswordPage() {
+  const t = useT();
   const [state, action, pending] = useActionState(updatePassword, null);
 
   return (
@@ -16,8 +18,8 @@ export default function ResetPasswordPage() {
             <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4">
               <Box className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-foreground">Set new password</h1>
-            <p className="text-muted-foreground mt-2 text-sm">Choose a strong password for your account</p>
+            <h1 className="text-2xl font-bold text-foreground">{t['auth.reset_title']}</h1>
+            <p className="text-muted-foreground mt-2 text-sm">{t['auth.reset_subtitle']}</p>
           </div>
 
           {state?.success ? (
@@ -26,16 +28,14 @@ export default function ResetPasswordPage() {
                 <CheckCircle2 className="w-8 h-8 text-green-600" />
               </div>
               <div className="text-center">
-                <p className="font-semibold text-foreground text-lg">Password updated!</p>
-                <p className="text-muted-foreground text-sm mt-1">
-                  Your password has been changed successfully.
-                </p>
+                <p className="font-semibold text-foreground text-lg">{t['auth.password_updated_title']}</p>
+                <p className="text-muted-foreground text-sm mt-1">{t['auth.password_updated_msg']}</p>
               </div>
               <Link
                 href="/auth/login"
                 className="mt-2 w-full py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium text-center text-sm"
               >
-                Sign in with new password
+                {t['auth.sign_in_new_password']}
               </Link>
             </div>
           ) : (
@@ -49,7 +49,7 @@ export default function ResetPasswordPage() {
               <form action={action} className="space-y-4">
                 <div>
                   <label htmlFor="password" className="block text-sm mb-2 text-foreground font-medium">
-                    New Password
+                    {t['auth.new_password']}
                   </label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -63,12 +63,12 @@ export default function ResetPasswordPage() {
                       required
                     />
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">Minimum 8 characters</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t['auth.min_8']}</p>
                 </div>
 
                 <div>
                   <label htmlFor="confirmPassword" className="block text-sm mb-2 text-foreground font-medium">
-                    Confirm New Password
+                    {t['auth.confirm_new_password']}
                   </label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -89,13 +89,13 @@ export default function ResetPasswordPage() {
                   disabled={pending}
                   className="w-full py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {pending ? 'Updating...' : 'Update Password'}
+                  {pending ? t['auth.updating'] : t['auth.update_password_btn']}
                 </button>
               </form>
 
               <div className="mt-4 text-center">
                 <Link href="/auth/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  Back to login
+                  {t['auth.back_login']}
                 </Link>
               </div>
             </>

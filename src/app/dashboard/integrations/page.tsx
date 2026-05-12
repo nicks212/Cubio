@@ -1,16 +1,17 @@
 import { createClient } from '@/lib/supabase/server';
 import { Facebook, Mail, Send, MessageCircle, Phone } from 'lucide-react';
+import { getTranslations } from '@/lib/i18n';
 
-const ALL_PROVIDERS = [
-  { id: 'facebook',  label: 'Facebook Messenger', icon: Facebook, color: 'text-blue-600' },
-  { id: 'instagram', label: 'Instagram DM',        icon: Mail, color: 'text-pink-600' },
-  { id: 'telegram',  label: 'Telegram',            icon: Send, color: 'text-sky-500' },
-  { id: 'whatsapp',  label: 'WhatsApp',            icon: MessageCircle, color: 'text-green-600' },
-  { id: 'viber',     label: 'Viber',               icon: Phone, color: 'text-purple-600' },
+const PROVIDER_IDS = [
+  { id: 'facebook',  labelKey: 'integrations.facebook', icon: Facebook, color: 'text-blue-600' },
+  { id: 'instagram', labelKey: 'integrations.instagram', icon: Mail, color: 'text-pink-600' },
+  { id: 'telegram',  labelKey: 'integrations.telegram', icon: Send, color: 'text-sky-500' },
+  { id: 'whatsapp',  labelKey: 'integrations.whatsapp', icon: MessageCircle, color: 'text-green-600' },
+  { id: 'viber',     labelKey: 'integrations.viber', icon: Phone, color: 'text-purple-600' },
 ] as const;
 
 export default async function IntegrationsPage() {
-  const supabase = await createClient();
+  const [t, supabase] = await Promise.all([getTranslations(), createClient()]);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
@@ -26,12 +27,12 @@ export default async function IntegrationsPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Integrations</h1>
-        <p className="text-muted-foreground">Messaging channels connected to your AI assistant</p>
+        <h1 className="text-3xl font-bold text-foreground mb-2">{t['integrations.title']}</h1>
+        <p className="text-muted-foreground">{t['integrations.subtitle']}</p>
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {ALL_PROVIDERS.map(provider => {
+        {PROVIDER_IDS.map(provider => {
           const row = byProvider.get(provider.id);
           const connected = !!row && row.is_active;
           const inactive  = !!row && !row.is_active;
@@ -43,7 +44,7 @@ export default async function IntegrationsPage() {
                 <Icon className="w-8 h-8" />
               </div>
               <div className="flex-1 flex flex-col items-center justify-center">
-                <p className="font-semibold text-base text-foreground">{provider.label}</p>
+                <p className="font-semibold text-base text-foreground">{t[provider.labelKey]}</p>
                 {connected && (
                   <p className="text-xs text-muted-foreground mt-2">{row.account_name}</p>
                 )}
@@ -51,17 +52,17 @@ export default async function IntegrationsPage() {
               {connected ? (
                 <span className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-full font-medium bg-green-100 text-green-700">
                   <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-                  Connected
+                  {t['integrations.connected']}
                 </span>
               ) : inactive ? (
                 <span className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-full font-medium bg-amber-100 text-amber-700">
                   <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
-                  Inactive
+                  {t['integrations.inactive']}
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-full font-medium bg-slate-100 text-slate-500">
                   <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
-                  Not connected
+                  {t['integrations.not_connected']}
                 </span>
               )}
             </div>

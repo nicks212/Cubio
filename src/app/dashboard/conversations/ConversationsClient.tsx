@@ -5,6 +5,7 @@ import { MessageSquare, Search, Send, User, Clock, ChevronRight } from 'lucide-r
 import { createClient } from '@/lib/supabase/client';
 import type { Conversation, Message } from '@/types/database';
 import { formatDateTime } from '@/lib/utils';
+import { useT } from '@/components/TranslationsProvider';
 
 const statusColors = {
   open: 'bg-green-100 text-green-700',
@@ -26,6 +27,7 @@ interface Props {
 }
 
 export default function ConversationsClient({ conversations: initial, companyId }: Props) {
+  const t = useT();
   const [conversations, setConversations] = useState(initial);
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -85,29 +87,32 @@ export default function ConversationsClient({ conversations: initial, companyId 
       {/* Sidebar */}
       <div className={`${selected ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 border-r border-slate-200 bg-white`}>
         <div className="p-4 border-b border-slate-200">
-          <h1 className="text-xl font-bold mb-3">Conversations</h1>
+          <h1 className="text-xl font-bold mb-3">{t['conversations.title']}</h1>
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search..."
+              placeholder={t['conversations.search']}
               className="w-full pl-9 pr-4 py-2 bg-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
           </div>
           <div className="flex gap-1">
-            {['all', 'open', 'pending', 'closed'].map(s => (
-              <button key={s} onClick={() => setStatusFilter(s)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${statusFilter === s ? 'bg-primary text-white' : 'bg-slate-100 text-muted-foreground hover:bg-slate-200'}`}>
-                {s}
-              </button>
-            ))}
+            {(['all', 'open', 'pending', 'closed'] as const).map(s => {
+              const labels: Record<string, string> = { all: t['conversations.all'], open: t['conversations.open'], pending: t['conversations.pending'], closed: t['conversations.closed'] };
+              return (
+                <button key={s} onClick={() => setStatusFilter(s)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${statusFilter === s ? 'bg-primary text-white' : 'bg-slate-100 text-muted-foreground hover:bg-slate-200'}`}>
+                  {labels[s] ?? s}
+                </button>
+              );
+            })}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
           {filtered.length === 0 ? (
             <div className="p-8 text-center">
               <MessageSquare className="w-8 h-8 text-muted-foreground/50 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">No conversations</p>
+              <p className="text-sm text-muted-foreground">{t['conversations.no_conversations']}</p>
             </div>
           ) : filtered.map(conv => (
             <button
@@ -145,7 +150,7 @@ export default function ConversationsClient({ conversations: initial, companyId 
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <MessageSquare className="w-12 h-12 text-muted-foreground/50 mx-auto mb-3" />
-              <p className="text-muted-foreground">Select a conversation</p>
+              <p className="text-muted-foreground">{t['conversations.select_hint']}</p>
             </div>
           </div>
         ) : (
@@ -169,7 +174,7 @@ export default function ConversationsClient({ conversations: initial, companyId 
               {messages.map(msg => (
                 <div key={msg.id} className={`flex ${msg.role === 'agent' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${msg.role === 'agent' ? 'bg-primary text-white rounded-br-sm' : msg.role === 'ai' ? 'bg-blue-100 text-blue-900 rounded-bl-sm' : 'bg-white border border-slate-200 rounded-bl-sm'}`}>
-                    {msg.role === 'ai' && <p className="text-xs font-medium mb-1 opacity-70">AI Assistant</p>}
+                    {msg.role === 'ai' && <p className="text-xs font-medium mb-1 opacity-70">{t['conversations.ai_assistant']}</p>}
                     {msg.content}
                     <p className={`text-xs mt-1 ${msg.role === 'agent' ? 'text-white/70' : 'text-muted-foreground'}`}>{formatDateTime(msg.created_at)}</p>
                   </div>
@@ -184,7 +189,7 @@ export default function ConversationsClient({ conversations: initial, companyId 
                   value={newMessage}
                   onChange={e => setNewMessage(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  placeholder="Type a message..."
+                  placeholder={t['conversations.type_message']}
                   className="flex-1 px-4 py-2.5 bg-slate-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                 />
                 <button onClick={handleSend} disabled={!newMessage.trim()} className="p-2.5 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50">

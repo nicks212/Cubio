@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useActionState } from 'react';
-import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight, RotateCcw } from 'lucide-react';
 import {
   toggleUserAdmin, upsertLocalization, deleteLocalization,
   createIntegration, updateIntegration, deleteIntegration, toggleIntegration,
 } from './actions';
 import { formatDate } from '@/lib/utils';
+import { useT } from '@/components/TranslationsProvider';
 
 type Tab = 'users' | 'localizations' | 'integrations';
 
@@ -16,11 +17,12 @@ const providerIcons: Record<string, string> = { facebook: 'ðŸ“˜', instagram: 'ðŸ
 interface Props {
   users: Array<{ id: string; full_name: string | null; email: string | null; is_admin: boolean; created_at: string; company?: { company_name: string; business_type: string } | null }>;
   integrations: Array<{ id: string; company_id: string; provider: string; provider_account_id: string; account_name: string; access_token: string; refresh_token?: string | null; is_active: boolean; created_at: string; company?: { company_name: string } | null }>;
-  localizations: Array<{ id: string; keyword: string; localization_text: string }>;
+  localizations: Array<{ id: string | null; keyword: string; localization_text: string }>;
   companies: Array<{ id: string; company_name: string }>;
 }
 
 export default function AdminClient({ users, integrations, localizations, companies }: Props) {
+  const t = useT();
   const [tab, setTab] = useState<Tab>('users');
   const [intModal, setIntModal] = useState(false);
   const [editingInt, setEditingInt] = useState<Props['integrations'][0] | null>(null);
@@ -38,16 +40,16 @@ export default function AdminClient({ users, integrations, localizations, compan
   const openLocEdit = (l: Props['localizations'][0]) => { setEditingLoc(l); setLocModal(true); };
 
   const tabs = [
-    { id: 'users' as Tab, label: 'Users', icon: Users },
-    { id: 'localizations' as Tab, label: 'Localizations', icon: Languages },
-    { id: 'integrations' as Tab, label: 'Integrations', icon: Plug },
+    { id: 'users' as Tab, label: t['admin.tab_users'] ?? 'Users', icon: Users },
+    { id: 'localizations' as Tab, label: t['admin.tab_localizations'] ?? 'Localizations', icon: Languages },
+    { id: 'integrations' as Tab, label: t['admin.tab_integrations'] ?? 'Integrations', icon: Plug },
   ];
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Admin Panel</h1>
-        <p className="text-muted-foreground">Manage users, content, and integrations</p>
+        <h1 className="text-3xl font-bold text-foreground mb-2">{t['admin.title']}</h1>
+        <p className="text-muted-foreground">{t['admin.subtitle']}</p>
       </div>
 
       {/* Tabs */}
@@ -66,7 +68,7 @@ export default function AdminClient({ users, integrations, localizations, compan
             <table className="w-full">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
-                  {['Name', 'Email', 'Company', 'Business', 'Admin', 'Joined'].map(h => (
+                  {[t['admin.col_name'], t['admin.col_email'], t['admin.col_company'], t['admin.col_business'], t['admin.col_admin'], t['admin.col_joined']].map(h => (
                     <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground">{h}</th>
                   ))}
                 </tr>
@@ -84,7 +86,7 @@ export default function AdminClient({ users, integrations, localizations, compan
                         className={`flex items-center gap-1 text-sm font-medium transition-colors ${u.is_admin ? 'text-primary' : 'text-muted-foreground'}`}
                       >
                         {u.is_admin ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
-                        {u.is_admin ? 'Admin' : 'User'}
+                        {u.is_admin ? t['admin.is_admin'] : t['admin.is_user']}
                       </button>
                     </td>
                     <td className="py-3 px-4 text-sm text-muted-foreground">{formatDate(u.created_at)}</td>
@@ -99,9 +101,10 @@ export default function AdminClient({ users, integrations, localizations, compan
       {/* Localizations Tab */}
       {tab === 'localizations' && (
         <>
-          <div className="flex justify-end mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-muted-foreground">{localizations.length} {t['admin.strings_count']}</p>
             <button onClick={() => { setEditingLoc(null); setLocModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm">
-              <Plus className="w-4 h-4" />Add String
+              <Plus className="w-4 h-4" />{t['admin.add_string']}
             </button>
           </div>
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -109,20 +112,22 @@ export default function AdminClient({ users, integrations, localizations, compan
               <table className="w-full">
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
-                    {['Key', 'Text', ''].map(h => (
-                      <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground">{h}</th>
-                    ))}
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground w-64">{t['admin.col_key']}</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground">{t['admin.col_text']}</th>
+                    <th className="w-20"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {localizations.map(loc => (
-                    <tr key={loc.id} className="hover:bg-slate-50">
-                      <td className="py-3 px-4 text-sm font-mono text-muted-foreground">{loc.keyword}</td>
+                    <tr key={loc.keyword} className="hover:bg-slate-50">
+                      <td className="py-3 px-4 text-xs font-mono text-muted-foreground align-top pt-4">{loc.keyword}</td>
                       <td className="py-3 px-4 text-sm">{loc.localization_text}</td>
                       <td className="py-3 px-4">
                         <div className="flex gap-1 justify-end">
-                          <button onClick={() => openLocEdit(loc)} className="p-1.5 hover:bg-slate-100 rounded text-muted-foreground"><Edit className="w-4 h-4" /></button>
-                          <button onClick={() => deleteLocalization(loc.id)} className="p-1.5 hover:bg-red-50 rounded text-red-500"><Trash2 className="w-4 h-4" /></button>
+                          <button onClick={() => openLocEdit(loc)} className="p-1.5 hover:bg-slate-100 rounded text-muted-foreground" title={t['admin.edit_string']}><Edit className="w-4 h-4" /></button>
+                          {loc.id && (
+                            <button onClick={() => deleteLocalization(loc.id!)} className="p-1.5 hover:bg-amber-50 rounded text-amber-500" title={t['admin.reset_to_default']}><RotateCcw className="w-4 h-4" /></button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -138,15 +143,15 @@ export default function AdminClient({ users, integrations, localizations, compan
       {tab === 'integrations' && (
         <>
           <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-5">
-            <h2 className="font-semibold text-blue-900 mb-1">Webhook URL</h2>
-            <p className="text-sm text-blue-700 mb-3">Configure this URL in your messaging platform settings:</p>
+            <h2 className="font-semibold text-blue-900 mb-1">{t['admin.webhook_title']}</h2>
+            <p className="text-sm text-blue-700 mb-3">{t['admin.webhook_desc']}</p>
             <code className="block bg-white border border-blue-200 rounded-lg px-4 py-3 text-sm font-mono text-blue-900 break-all">
               {process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cubio.ge'}/api/webhook/meta
             </code>
           </div>
           <div className="flex justify-end mb-4">
             <button onClick={() => { setEditingInt(null); setIntModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm">
-              <Plus className="w-4 h-4" />Add Integration
+              <Plus className="w-4 h-4" />{t['admin.add_integration']}
             </button>
           </div>
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -154,7 +159,7 @@ export default function AdminClient({ users, integrations, localizations, compan
               <table className="w-full">
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
-                    {['Provider', 'Company', 'Account', 'ID', 'Status', ''].map(h => (
+                    {[t['admin.col_provider'], t['admin.col_company'], t['admin.col_account'], t['admin.col_id'], t['admin.col_status'], ''].map(h => (
                       <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground">{h}</th>
                     ))}
                   </tr>
@@ -173,13 +178,13 @@ export default function AdminClient({ users, integrations, localizations, compan
                       <td className="py-3 px-4">
                         <button onClick={() => toggleIntegration(int.id, !int.is_active)} className={`flex items-center gap-1 text-sm font-medium transition-colors ${int.is_active ? 'text-green-600' : 'text-muted-foreground'}`}>
                           {int.is_active ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
-                          {int.is_active ? 'Active' : 'Off'}
+                          {int.is_active ? (t['admin.active'] ?? 'Active') : (t['admin.off'] ?? 'Off')}
                         </button>
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex gap-1 justify-end">
                           <button onClick={() => openEditInt(int)} className="p-1.5 hover:bg-slate-100 rounded text-muted-foreground"><Edit className="w-4 h-4" /></button>
-                          <button onClick={() => { if (confirm('Delete integration?')) deleteIntegration(int.id); }} className="p-1.5 hover:bg-red-50 rounded text-red-500"><Trash2 className="w-4 h-4" /></button>
+                          <button onClick={() => { if (confirm(t['admin.delete_confirm'] ?? 'Delete integration?')) deleteIntegration(int.id); }} className="p-1.5 hover:bg-red-50 rounded text-red-500"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       </td>
                     </tr>
@@ -196,7 +201,7 @@ export default function AdminClient({ users, integrations, localizations, compan
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
-              <h2 className="text-xl font-semibold">{editingInt ? 'Edit Integration' : 'Add Integration'}</h2>
+              <h2 className="text-xl font-semibold">{editingInt ? (t['admin.edit_integration'] ?? 'Edit Integration') : (t['admin.add_integration'] ?? 'Add Integration')}</h2>
               <button onClick={() => { setIntModal(false); setEditingInt(null); }} className="p-2 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5" /></button>
             </div>
             <form action={editingInt ? intUpdateAction : intCreateAction} className="p-6 space-y-4">
@@ -205,21 +210,21 @@ export default function AdminClient({ users, integrations, localizations, compan
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{(editingInt ? intUpdateState : intCreateState)?.error}</div>
               )}
               <div>
-                <label className="block text-sm font-medium mb-2">Company *</label>
+                <label className="block text-sm font-medium mb-2">{t['admin.col_company'] ?? 'Company'} *</label>
                 <select name="company_id" defaultValue={editingInt?.company_id ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
-                  <option value="">Select company...</option>
+                  <option value="">{t['admin.company_select'] ?? 'Select company...'}</option>
                   {companies.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Provider *</label>
+                <label className="block text-sm font-medium mb-2">{t['admin.col_provider'] ?? 'Provider'} *</label>
                 <select name="provider" defaultValue={editingInt?.provider ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
-                  <option value="">Select provider...</option>
+                  <option value="">{t['admin.provider_select'] ?? 'Select provider...'}</option>
                   {PROVIDERS.map(p => <option key={p} value={p}>{providerIcons[p]} {p}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Account Name *</label>
+                <label className="block text-sm font-medium mb-2">{t['admin.account_name'] ?? 'Account Name'} *</label>
                 <input name="account_name" required defaultValue={editingInt?.account_name ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
               </div>
               <div>
@@ -236,12 +241,12 @@ export default function AdminClient({ users, integrations, localizations, compan
               </div>
               <div className="flex items-center gap-3">
                 <input type="checkbox" name="is_active" id="modal_is_active" value="true" defaultChecked={editingInt?.is_active ?? true} className="w-4 h-4 accent-primary" />
-                <label htmlFor="modal_is_active" className="text-sm font-medium">Active</label>
+                <label htmlFor="modal_is_active" className="text-sm font-medium">{t['admin.is_active_label'] ?? 'Active'}</label>
               </div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => { setIntModal(false); setEditingInt(null); }} className="flex-1 py-3 bg-slate-100 rounded-lg hover:bg-slate-200 font-medium">Cancel</button>
+                <button type="button" onClick={() => { setIntModal(false); setEditingInt(null); }} className="flex-1 py-3 bg-slate-100 rounded-lg hover:bg-slate-200 font-medium">{t['admin.cancel'] ?? 'Cancel'}</button>
                 <button type="submit" disabled={editingInt ? intUpdatePending : intCreatePending} className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium disabled:opacity-50">
-                  {(editingInt ? intUpdatePending : intCreatePending) ? 'Saving...' : 'Save'}
+                  {(editingInt ? intUpdatePending : intCreatePending) ? (t['admin.saving'] ?? 'Saving...') : (t['admin.save'] ?? 'Save')}
                 </button>
               </div>
             </form>
@@ -254,24 +259,30 @@ export default function AdminClient({ users, integrations, localizations, compan
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
-              <h2 className="text-xl font-semibold">{editingLoc ? 'Edit String' : 'Add String'}</h2>
+              <h2 className="text-xl font-semibold">{editingLoc ? (t['admin.edit_string'] ?? 'Edit String') : (t['admin.add_string'] ?? 'Add String')}</h2>
               <button onClick={() => { setLocModal(false); setEditingLoc(null); }} className="p-2 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5" /></button>
             </div>
             <form action={locAction} className="p-6 space-y-4">
-              {editingLoc && <input type="hidden" name="id" value={editingLoc.id} />}
               {locState?.error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{locState.error}</div>}
               <div>
-                <label className="block text-sm font-medium mb-2">Key *</label>
-                <input name="keyword" required defaultValue={editingLoc?.keyword ?? ''} className="w-full px-4 py-2.5 font-mono bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                <label className="block text-sm font-medium mb-2">{t['admin.key_label'] ?? 'Key'} *</label>
+                {editingLoc ? (
+                  <>
+                    <input type="hidden" name="keyword" value={editingLoc.keyword} />
+                    <div className="w-full px-4 py-2.5 font-mono text-sm bg-slate-100 border border-border rounded-lg text-muted-foreground">{editingLoc.keyword}</div>
+                  </>
+                ) : (
+                  <input name="keyword" required defaultValue="" className="w-full px-4 py-2.5 font-mono bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                )}
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Text *</label>
+                <label className="block text-sm font-medium mb-2">{t['admin.text_label'] ?? 'Text'} *</label>
                 <textarea name="localization_text" required rows={3} defaultValue={editingLoc?.localization_text ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none" />
               </div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => { setLocModal(false); setEditingLoc(null); }} className="flex-1 py-3 bg-slate-100 rounded-lg hover:bg-slate-200 font-medium">Cancel</button>
+                <button type="button" onClick={() => { setLocModal(false); setEditingLoc(null); }} className="flex-1 py-3 bg-slate-100 rounded-lg hover:bg-slate-200 font-medium">{t['admin.cancel'] ?? 'Cancel'}</button>
                 <button type="submit" disabled={locPending} className="flex-1 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium disabled:opacity-50">
-                  {locPending ? 'Saving...' : 'Save'}
+                  {locPending ? (t['admin.saving'] ?? 'Saving...') : (t['admin.save'] ?? 'Save')}
                 </button>
               </div>
             </form>

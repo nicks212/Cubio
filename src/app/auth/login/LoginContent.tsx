@@ -5,18 +5,20 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Box, Mail, Lock, ArrowLeft } from 'lucide-react';
 import { login, resendConfirmationEmail } from '../actions';
+import { useT } from '@/components/TranslationsProvider';
 
 const URL_ERRORS: Record<string, string> = {
-  email_link_expired: 'This confirmation link has expired. Please register again to get a new link.',
-  email_confirmation_failed: 'Email confirmation failed. Please try again or contact support.',
+  email_link_expired: 'email_link_expired',
+  email_confirmation_failed: 'email_confirmation_failed',
 };
 
 function LoginForm() {
+  const t = useT();
   const [state, action, pending] = useActionState(login, null);
   const [resendState, resendAction, resendPending] = useActionState(resendConfirmationEmail, null);
   const searchParams = useSearchParams();
   const urlError = searchParams.get('error');
-  const urlErrorMessage = urlError ? (URL_ERRORS[urlError] ?? 'Something went wrong. Please try again.') : null;
+  const urlErrorMessage = urlError ? (t[`url_error.${urlError}`] ?? t['url_error.default'] ?? 'Something went wrong. Please try again.') : null;
 
   const isUnconfirmed = state?.code === 'email_not_confirmed';
 
@@ -28,7 +30,7 @@ function LoginForm() {
           className="mb-6 text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-2"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to home
+          {t['auth.back_home']}
         </Link>
 
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
@@ -36,16 +38,16 @@ function LoginForm() {
             <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4">
               <Box className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-foreground">Welcome to Cubio</h1>
-            <p className="text-muted-foreground mt-2">Sign in to your account</p>
+            <h1 className="text-2xl font-bold text-foreground">{t['auth.sign_in_title']}</h1>
+            <p className="text-muted-foreground mt-2">{t['auth.sign_in_subtitle']}</p>
           </div>
 
           {isUnconfirmed ? (
             <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
-              <p className="font-medium mb-1">Email not confirmed</p>
-              <p className="mb-3">Please check your inbox and click the confirmation link before logging in.</p>
+              <p className="font-medium mb-1">{t['auth.unconfirmed_title']}</p>
+              <p className="mb-3">{t['auth.unconfirmed_msg']}</p>
               {resendState?.success ? (
-                <p className="text-green-700 font-medium">Confirmation email sent! Check your inbox.</p>
+                <p className="text-green-700 font-medium">{t['auth.resent_ok']}</p>
               ) : (
                 <form action={resendAction}>
                   <input type="hidden" name="email" value={state.email ?? ''} />
@@ -54,7 +56,7 @@ function LoginForm() {
                     disabled={resendPending}
                     className="text-primary underline hover:no-underline disabled:opacity-50 font-medium"
                   >
-                    {resendPending ? 'Sending...' : "Didn't receive it? Resend confirmation email"}
+                    {resendPending ? t['auth.resending'] : t['auth.resend_link']}
                   </button>
                 </form>
               )}
@@ -71,7 +73,7 @@ function LoginForm() {
           <form action={action} className="space-y-5">
             <div>
               <label htmlFor="email" className="block text-sm mb-2 text-foreground font-medium">
-                Email Address
+                {t['auth.email']}
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -80,7 +82,7 @@ function LoginForm() {
                   name="email"
                   type="email"
                   className="w-full pl-11 pr-4 py-3 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="you@company.com"
+                  placeholder={t['auth.email_placeholder']}
                   required
                 />
               </div>
@@ -88,7 +90,7 @@ function LoginForm() {
 
             <div>
               <label htmlFor="password" className="block text-sm mb-2 text-foreground font-medium">
-                Password
+                {t['auth.password']}
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -106,10 +108,10 @@ function LoginForm() {
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" className="w-4 h-4 rounded border-border text-primary focus:ring-primary" />
-                <span className="text-sm text-muted-foreground">Remember me</span>
+                <span className="text-sm text-muted-foreground">{t['auth.remember_me']}</span>
               </label>
               <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
-                Forgot password?
+                {t['auth.forgot_password']}
               </Link>
             </div>
 
@@ -118,14 +120,14 @@ function LoginForm() {
               disabled={pending}
               className="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
             >
-              {pending ? 'Signing in...' : 'Sign In'}
+              {pending ? t['auth.signing_in'] : t['auth.sign_in_btn']}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            Don&apos;t have an account?{' '}
+            {t['auth.no_account']}{' '}
             <Link href="/auth/register" className="text-primary hover:underline font-medium">
-              Create one
+              {t['auth.create_one']}
             </Link>
           </p>
         </div>

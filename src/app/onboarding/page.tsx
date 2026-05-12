@@ -4,29 +4,31 @@ import { useActionState, useState } from 'react';
 import { Box, Building2, Gem, CheckCircle2, LogOut } from 'lucide-react';
 import { setupCompany } from './actions';
 import { logout } from '@/app/auth/actions';
-
-const businessProfiles = [
-  {
-    id: 'real_estate',
-    title: 'Real Estate Development',
-    description: 'Manage projects, apartments, leads, and AI-powered sales automation',
-    icon: Building2,
-    color: 'bg-blue-500',
-    features: ['Projects Management', 'Apartments Catalog', 'Lead Tracking', 'AI Sales Agent'],
-  },
-  {
-    id: 'craft_shop',
-    title: 'Birthstone Crafts Shop',
-    description: 'Manage product catalog, birthstone jewelry, and zodiac compatibility',
-    icon: Gem,
-    color: 'bg-purple-500',
-    features: ['Product Catalog', 'Birthstone Management', 'Zodiac Compatibility', 'Inventory Tracking'],
-  },
-];
+import { useT } from '@/components/TranslationsProvider';
 
 export default function OnboardingPage() {
+  const t = useT();
   const [state, action, pending] = useActionState(setupCompany, null);
   const [selected, setSelected] = useState<string | null>(null);
+
+  const businessProfiles = [
+    {
+      id: 'real_estate',
+      title: t['onboarding.re_title'],
+      description: t['onboarding.re_desc'],
+      icon: Building2,
+      color: 'bg-blue-500',
+      features: [t['onboarding.feat_projects'], t['onboarding.feat_apartments'], t['onboarding.feat_leads'], t['onboarding.feat_ai_sales']],
+    },
+    {
+      id: 'craft_shop',
+      title: t['onboarding.craft_title'],
+      description: t['onboarding.craft_desc'],
+      icon: Gem,
+      color: 'bg-purple-500',
+      features: [t['onboarding.feat_products'], t['onboarding.feat_birthstone'], t['onboarding.feat_zodiac'], t['onboarding.feat_inventory']],
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
@@ -38,8 +40,8 @@ export default function OnboardingPage() {
             </div>
             <span className="text-2xl font-bold">Cubio</span>
           </div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">Set up your company</h1>
-          <p className="text-muted-foreground">Tell us about your business to get started</p>
+          <h1 className="text-3xl font-bold text-foreground mb-2">{t['onboarding.title']}</h1>
+          <p className="text-muted-foreground">{t['onboarding.subtitle']}</p>
         </div>
 
         <div className="flex justify-end mb-6">
@@ -49,7 +51,7 @@ export default function OnboardingPage() {
               className="inline-flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
             >
               <LogOut className="w-4 h-4" />
-              Sign out
+              {t['onboarding.sign_out']}
             </button>
           </form>
         </div>
@@ -64,21 +66,21 @@ export default function OnboardingPage() {
           {/* Company name */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             <label htmlFor="companyName" className="block text-sm font-medium text-foreground mb-2">
-              Company Name
+              {t['onboarding.company_name']}
             </label>
             <input
               id="companyName"
               name="companyName"
               type="text"
               className="w-full px-4 py-3 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
-              placeholder="My Company Ltd"
+              placeholder={t['onboarding.company_placeholder']}
               required
             />
           </div>
 
           {/* Business type */}
           <div className="space-y-3">
-            <p className="text-sm font-medium text-foreground px-1">Select your business type</p>
+            <p className="text-sm font-medium text-foreground px-1">{t['onboarding.select_type']}</p>
             <input type="hidden" name="businessType" value={selected ?? ''} />
             <div className="grid md:grid-cols-2 gap-4">
               {businessProfiles.map((profile) => {
@@ -119,7 +121,7 @@ export default function OnboardingPage() {
             disabled={pending || !selected}
             className="w-full py-4 bg-primary text-white rounded-xl font-semibold text-lg hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {pending ? 'Setting up...' : 'Get Started'}
+            {pending ? t['onboarding.setting_up'] : t['onboarding.get_started']}
           </button>
         </form>
       </div>

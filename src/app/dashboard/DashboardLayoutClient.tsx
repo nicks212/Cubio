@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { logout } from '@/app/auth/actions';
 import type { Profile } from '@/types/database';
+import { useT } from '@/components/TranslationsProvider';
 
 interface Props {
   profile: Profile & { company?: { business_type: string | null; company_name: string } | null };
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export default function DashboardLayoutClient({ profile, children }: Props) {
+  const t = useT();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -23,18 +25,18 @@ export default function DashboardLayoutClient({ profile, children }: Props) {
   const isCraftShop = profile.company?.business_type === 'craft_shop';
 
   const navItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-    { path: '/dashboard/conversations', label: 'Conversations', icon: MessageSquare },
+    { path: '/dashboard', label: t['nav.dashboard'], icon: LayoutDashboard, exact: true },
+    { path: '/dashboard/conversations', label: t['nav.conversations'], icon: MessageSquare },
     ...(isRealEstate ? [
-      { path: '/dashboard/projects', label: 'Projects', icon: Building2 },
-      { path: '/dashboard/apartments', label: 'Apartments', icon: Home },
+      { path: '/dashboard/projects', label: t['nav.projects'], icon: Building2 },
+      { path: '/dashboard/apartments', label: t['nav.apartments'], icon: Home },
     ] : []),
     ...(isCraftShop ? [
-      { path: '/dashboard/products', label: 'Products', icon: Gem },
+      { path: '/dashboard/products', label: t['nav.products'], icon: Gem },
     ] : []),
-    { path: '/dashboard/integrations', label: 'Integrations', icon: Plug },
-    { path: '/dashboard/settings', label: 'Settings', icon: Settings },
-    ...(profile.is_admin ? [{ path: '/dashboard/admin', label: 'Admin', icon: Shield }] : []),
+    { path: '/dashboard/integrations', label: t['nav.integrations'], icon: Plug },
+    { path: '/dashboard/settings', label: t['nav.settings'], icon: Settings },
+    ...(profile.is_admin ? [{ path: '/dashboard/admin', label: t['nav.admin'], icon: Shield }] : []),
   ];
 
   const isActive = (path: string, exact?: boolean) =>
@@ -91,7 +93,7 @@ export default function DashboardLayoutClient({ profile, children }: Props) {
               className="w-full flex items-center gap-3 px-4 py-2 text-muted-foreground hover:text-foreground hover:bg-slate-100 rounded-lg transition-colors"
             >
               <LogOut className="w-4 h-4" />
-              <span className="text-sm">Sign Out</span>
+              <span className="text-sm">{t['nav.sign_out']}</span>
             </button>
           </form>
         </div>
@@ -138,7 +140,7 @@ export default function DashboardLayoutClient({ profile, children }: Props) {
                   className="w-full flex items-center gap-3 px-4 py-2 text-muted-foreground hover:text-foreground hover:bg-slate-100 rounded-lg transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span className="text-sm">Sign Out</span>
+                  <span className="text-sm">{t['nav.sign_out']}</span>
                 </button>
               </form>
             </div>

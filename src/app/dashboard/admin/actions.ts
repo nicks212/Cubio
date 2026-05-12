@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/server';
 import { createClient } from '@/lib/supabase/server';
 
@@ -26,16 +26,15 @@ export async function upsertLocalization(_prev: unknown, formData: FormData) {
   const supabase = createAdminClient();
   const keyword = formData.get('keyword') as string;
   const localization_text = formData.get('localization_text') as string;
-  const id = formData.get('id') as string | null;
+  if (!keyword || !localization_text) return { error: 'Key and text are required' };
 
-  if (id) {
-    const { error } = await supabase.from('localizations').update({ keyword, localization_text }).eq('id', id);
-    if (error) return { error: error.message };
-  } else {
-    const { error } = await supabase.from('localizations').insert({ keyword, localization_text });
-    if (error) return { error: error.message };
-  }
+  // Always upsert by keyword — works for both new strings and edits to default keys
+  const { error } = await supabase
+    .from('localizations')
+    .upsert({ keyword, localization_text }, { onConflict: 'keyword' });
+  if (error) return { error: error.message };
   revalidatePath('/dashboard/admin');
+  (revalidateTag as (tag: string) => void)('translations');
   return { success: true };
 }
 
@@ -44,6 +43,7 @@ export async function deleteLocalization(id: string) {
   const supabase = createAdminClient();
   await supabase.from('localizations').delete().eq('id', id);
   revalidatePath('/dashboard/admin');
+  (revalidateTag as (tag: string) => void)('translations');
   return { success: true };
 }
 

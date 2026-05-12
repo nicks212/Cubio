@@ -1,9 +1,11 @@
 import { createClient } from '@/lib/supabase/server';
 import { Users, Home, Clock, CheckCircle2, MessageSquare, TrendingUp, Gem } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
+import { getTranslations } from '@/lib/i18n';
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
+  const [t, supabaseClient] = await Promise.all([getTranslations(), createClient()]);
+  const supabase = supabaseClient;
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
@@ -34,17 +36,17 @@ export default async function DashboardPage() {
   const convCount = (conversationsRes as { count: number | null }).count ?? 0;
 
   const realEstateStats = [
-    { label: 'Total Leads', value: totalLeads.toString(), icon: Users, color: 'bg-blue-500' },
-    { label: 'Vacant Units', value: vacant.toString(), icon: Home, color: 'bg-green-500' },
-    { label: 'Reserved', value: reserved.toString(), icon: Clock, color: 'bg-amber-500' },
-    { label: 'Sold', value: sold.toString(), icon: CheckCircle2, color: 'bg-purple-500' },
+    { label: t['dashboard.total_leads'], value: totalLeads.toString(), icon: Users, color: 'bg-blue-500' },
+    { label: t['dashboard.vacant_units'], value: vacant.toString(), icon: Home, color: 'bg-green-500' },
+    { label: t['dashboard.reserved'], value: reserved.toString(), icon: Clock, color: 'bg-amber-500' },
+    { label: t['dashboard.sold'], value: sold.toString(), icon: CheckCircle2, color: 'bg-purple-500' },
   ];
 
   const craftStats = [
-    { label: 'Total Products', value: products.length.toString(), icon: Gem, color: 'bg-purple-500' },
-    { label: 'Total Leads', value: totalLeads.toString(), icon: Users, color: 'bg-blue-500' },
-    { label: 'AI Conversations', value: convCount.toString(), icon: MessageSquare, color: 'bg-green-500' },
-    { label: 'Conversion Rate', value: '—', icon: TrendingUp, color: 'bg-amber-500' },
+    { label: t['dashboard.total_products'], value: products.length.toString(), icon: Gem, color: 'bg-purple-500' },
+    { label: t['dashboard.total_leads'], value: totalLeads.toString(), icon: Users, color: 'bg-blue-500' },
+    { label: t['dashboard.ai_conversations'], value: convCount.toString(), icon: MessageSquare, color: 'bg-green-500' },
+    { label: t['dashboard.conversion_rate'], value: '—', icon: TrendingUp, color: 'bg-amber-500' },
   ];
 
   const stats = isRealEstate ? realEstateStats : craftStats;
@@ -52,8 +54,8 @@ export default async function DashboardPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Dashboard Overview</h1>
-        <p className="text-muted-foreground">Monitor your business performance and AI agent activity</p>
+        <h1 className="text-3xl font-bold text-foreground mb-2">{t['dashboard.title']}</h1>
+        <p className="text-muted-foreground">{t['dashboard.subtitle']}</p>
       </div>
 
       {/* Stats */}
@@ -76,11 +78,11 @@ export default async function DashboardPage() {
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-primary" />
-            Recent Lead Activity
+            {t['dashboard.recent_leads']}
           </h2>
         </div>
         {leads.length === 0 ? (
-          <p className="text-muted-foreground text-sm text-center py-8">No leads yet. Leads will appear here when AI conversations start.</p>
+          <p className="text-muted-foreground text-sm text-center py-8">{t['dashboard.no_leads']}</p>
         ) : (
           <div className="space-y-3">
             {leads.map((lead) => (
