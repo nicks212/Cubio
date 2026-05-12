@@ -29,10 +29,25 @@ export async function login(_prev: unknown, formData: FormData) {
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
-  if (error) return { error: 'Invalid email or password' };
+  if (error) {
+    if (error.message === 'Email not confirmed') {
+      return { error: 'Please confirm your email before logging in.', code: 'email_not_confirmed', email: parsed.data.email };
+    }
+    return { error: 'Invalid email or password' };
+  }
 
   revalidatePath('/', 'layout');
   redirect('/dashboard');
+}
+
+export async function resendConfirmationEmail(_prev: unknown, formData: FormData) {
+  const email = formData.get('email') as string;
+  if (!email) return { error: 'Email is required' };
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.resend({ type: 'signup', email });
+  if (error) return { error: 'Could not resend email. Please try again.' };
+  return { success: true };
 }
 
 export async function register(_prev: unknown, formData: FormData) {

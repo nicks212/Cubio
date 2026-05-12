@@ -1,21 +1,24 @@
 'use client';
 
-import { useActionState } from 'react';
+import { Suspense, useActionState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Box, Mail, Lock, ArrowLeft } from 'lucide-react';
-import { login } from '../actions';
+import { login, resendConfirmationEmail } from '../actions';
 
 const URL_ERRORS: Record<string, string> = {
   email_link_expired: 'This confirmation link has expired. Please register again to get a new link.',
   email_confirmation_failed: 'Email confirmation failed. Please try again or contact support.',
 };
 
-export default function LoginPage() {
+function LoginContent() {
   const [state, action, pending] = useActionState(login, null);
+  const [resendState, resendAction, resendPending] = useActionState(resendConfirmationEmail, null);
   const searchParams = useSearchParams();
   const urlError = searchParams.get('error');
   const urlErrorMessage = urlError ? (URL_ERRORS[urlError] ?? 'Something went wrong. Please try again.') : null;
+
+  const isUnconfirmed = state?.code === 'email_not_confirmed';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
@@ -37,11 +40,33 @@ export default function LoginPage() {
             <p className="text-muted-foreground mt-2">Sign in to your account</p>
           </div>
 
-          {(urlErrorMessage || state?.error) && (
+          {isUnconfirmed ? (
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+              <p className="font-medium mb-1">Email not confirmed</p>
+              <p className="mb-3">Please check your inbox and click the confirmation link before logging in.</p>
+              {resendState?.success ? (
+                <p className="text-green-700 font-medium">Confirmation email sent! Check your inbox.</p>
+              ) : (
+                <form action={resendAction}>
+                  <input type="hidden" name="email" value={state.email ?? ''} />
+                  <button
+                    type="submit"
+                    disabled={resendPending}
+                    className="text-primary underline hover:no-underline disabled:opacity-50 font-medium"
+                  >
+                    {resendPending ? 'Sending...' : "Didn't receive it? Resend confirmation email"}
+                  </button>
+                </form>
+              )}
+              {resendState?.error && (
+                <p className="mt-2 text-red-600">{resendState.error}</p>
+              )}
+            </div>
+          ) : (urlErrorMessage || state?.error) ? (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
               {urlErrorMessage ?? state?.error}
             </div>
-          )}
+          ) : null}
 
           <form action={action} className="space-y-5">
             <div>
@@ -112,5 +137,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
   );
 }
