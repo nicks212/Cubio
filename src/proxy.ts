@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -31,7 +31,6 @@ export async function middleware(request: NextRequest) {
     url.pathname.startsWith(p)
   );
   const isAuth = url.pathname.startsWith('/auth') && !isAuthBypass;
-  const isPublic = url.pathname === '/' || url.pathname.startsWith('/api');
 
   // Not logged in → redirect to login
   if (!user && (isDashboard || isOnboarding)) {
