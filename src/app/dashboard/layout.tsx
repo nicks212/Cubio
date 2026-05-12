@@ -13,7 +13,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .eq('id', user.id)
     .single();
 
-  if (!profile) redirect('/auth/login');
+  if (!profile) redirect('/onboarding');
 
   // Force onboarding if business type not set
   if (!profile.company?.business_type) redirect('/onboarding');
