@@ -16,15 +16,15 @@ export default function EmailConfirmedPage() {
             <h1 className="text-2xl font-bold text-foreground">Email confirmed!</h1>
             <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
               Your email address has been verified successfully.<br />
-              You can now log in to your account.
+              Let&apos;s finish setting up your account.
             </p>
           </div>
 
           <Link
-            href="/auth/login"
+            href="/onboarding"
             className="block w-full py-3 px-4 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors text-center"
           >
-            Go to login
+            Continue to setup
           </Link>
         </div>
       </div>

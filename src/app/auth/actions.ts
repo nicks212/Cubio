@@ -118,8 +118,7 @@ export async function updatePassword(_prev: unknown, formData: FormData) {
 
   const supabase = await createClient();
   const { error } = await supabase.auth.updateUser({ password });
-  if (error) return { error: 'Could not update password' };
+  if (error) return { error: 'Could not update password. Your reset link may have expired.' };
 
-  revalidatePath('/', 'layout');
-  redirect('/dashboard');
+  return { success: true };
 }

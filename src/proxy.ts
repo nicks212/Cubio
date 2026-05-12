@@ -26,21 +26,10 @@ export async function proxy(request: NextRequest) {
   const url = request.nextUrl.clone();
   const isDashboard = url.pathname.startsWith('/dashboard');
   const isOnboarding = url.pathname.startsWith('/onboarding');
-  // These auth routes must remain accessible even when logged in
-  const isAuthBypass = ['/auth/callback', '/auth/confirm', '/auth/reset-password'].some(p =>
-    url.pathname.startsWith(p)
-  );
-  const isAuth = url.pathname.startsWith('/auth') && !isAuthBypass;
 
   // Not logged in → redirect to login
   if (!user && (isDashboard || isOnboarding)) {
     url.pathname = '/auth/login';
-    return NextResponse.redirect(url);
-  }
-
-  // Logged in → redirect away from auth pages
-  if (user && isAuth) {
-    url.pathname = '/dashboard';
     return NextResponse.redirect(url);
   }
 
