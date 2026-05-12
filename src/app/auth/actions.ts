@@ -56,11 +56,14 @@ export async function register(_prev: unknown, formData: FormData) {
   });
 
   if (authError) {
+    console.error('[register] signUp error:', JSON.stringify(authError, null, 2));
     if (authError.message.toLowerCase().includes('already registered')) {
       return { error: 'Email already registered' };
     }
     return { error: authError.message };
   }
+
+  console.log('[register] signUp success, user:', authData.user?.id, 'session:', !!authData.session);
 
   revalidatePath('/', 'layout');
 
