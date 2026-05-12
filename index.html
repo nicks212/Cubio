@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cubio — Welcome</title>
+  <style>
+    :root { --bg:#0b1220; --card:#071020; --text:#e6eef8; --muted:#8fa9c7; }
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;}
+    .wrap{display:flex;align-items:center;justify-content:center;height:100%}
+    .card{max-width:760px;padding:28px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));box-shadow:0 8px 30px rgba(2,6,23,0.6);text-align:center}
+    h1{margin:0 0 8px;font-size:28px}
+    p{margin:0 0 8px;color:var(--muted)}
+    code{background:rgba(255,255,255,0.03);padding:.2rem .4rem;border-radius:6px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Welcome to Cubio</h1>
+      <p>This is a simple deployment test page.</p>
+      <p>Use <code>?env=test</code> or <code>?env=prod</code> to label the environment in the UI.</p>
+      <p id="env" style="font-weight:600;color:#cfe8ff">env: local</p>
+    </div>
+  </div>
+  <script>
+    (function(){
+      var env = new URLSearchParams(location.search).get('env') || 'local';
+      document.getElementById('env').textContent = 'env: ' + env;
+    })();
+  </script>
+</body>
+</html>

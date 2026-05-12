@@ -1,0 +1,50 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "🔀 Switch to: TEST",
+      "type": "shell",
+      "command": "git checkout test && cp .env.test .env.local && echo '✓ Switched to TEST environment'",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent"
+      }
+    },
+    {
+      "label": "🔀 Switch to: MAIN (Production)",
+      "type": "shell",
+      "command": "git checkout main && cp .env.production .env.local && echo '✓ Switched to MAIN (Production) environment'",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent"
+      }
+    },
+    {
+      "label": "📤 Deploy: Preview (TEST)",
+      "type": "shell",
+      "command": "git checkout test && vercel --confirm",
+      "problemMatcher": []
+    },
+    {
+      "label": "📤 Deploy: Production (MAIN)",
+      "type": "shell",
+      "command": "git checkout main && vercel --prod --confirm",
+      "problemMatcher": []
+    },
+    {
+      "label": "📝 Create: TEST branch",
+      "type": "shell",
+      "command": "git checkout -b test 2>/dev/null || git checkout test && echo '✓ TEST branch ready'",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent"
+      }
+    },
+    {
+      "label": "🚀 Push: Current branch",
+      "type": "shell",
+      "command": "git push origin $(git rev-parse --abbrev-ref HEAD)",
+      "problemMatcher": []
+    }
+  ]
+}
