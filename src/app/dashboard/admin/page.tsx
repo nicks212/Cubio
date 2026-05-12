@@ -10,7 +10,7 @@ export default async function AdminPage() {
   const { data: selfProfile } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single();
   if (!selfProfile?.is_admin) redirect('/dashboard');
 
-  const adminClient = await createAdminClient();
+  const adminClient = createAdminClient();
 
   const [{ data: users }, { data: integrations }, { data: localizations }, { data: companies }] = await Promise.all([
     adminClient.from('profiles').select('*, company:companies(company_name, business_type)').order('created_at', { ascending: false }),

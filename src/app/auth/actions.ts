@@ -48,7 +48,7 @@ export async function register(_prev: unknown, formData: FormData) {
     return { error: parsed.error.issues[0]?.message ?? 'Validation error' };
   }
 
-  const adminClient = await createAdminClient();
+  const adminClient = createAdminClient();
 
   // Create company via admin client (user has no session yet — bypasses RLS)
   const { data: company, error: companyError } = await adminClient

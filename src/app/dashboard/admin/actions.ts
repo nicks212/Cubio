@@ -14,7 +14,7 @@ async function isAdmin() {
 
 export async function toggleUserAdmin(userId: string, is_admin: boolean) {
   if (!await isAdmin()) return { error: 'Unauthorized' };
-  const supabase = await createAdminClient();
+  const supabase = createAdminClient();
   const { error } = await supabase.from('profiles').update({ is_admin }).eq('id', userId);
   if (error) return { error: error.message };
   revalidatePath('/dashboard/admin');
@@ -23,7 +23,7 @@ export async function toggleUserAdmin(userId: string, is_admin: boolean) {
 
 export async function upsertLocalization(_prev: unknown, formData: FormData) {
   if (!await isAdmin()) return { error: 'Unauthorized' };
-  const supabase = await createAdminClient();
+  const supabase = createAdminClient();
   const keyword = formData.get('keyword') as string;
   const localization_text = formData.get('localization_text') as string;
   const id = formData.get('id') as string | null;
@@ -41,7 +41,7 @@ export async function upsertLocalization(_prev: unknown, formData: FormData) {
 
 export async function deleteLocalization(id: string) {
   if (!await isAdmin()) return { error: 'Unauthorized' };
-  const supabase = await createAdminClient();
+  const supabase = createAdminClient();
   await supabase.from('localizations').delete().eq('id', id);
   revalidatePath('/dashboard/admin');
   return { success: true };
@@ -49,7 +49,7 @@ export async function deleteLocalization(id: string) {
 
 export async function createIntegration(_prev: unknown, formData: FormData) {
   if (!await isAdmin()) return { error: 'Unauthorized' };
-  const supabase = await createAdminClient();
+  const supabase = createAdminClient();
 
   const { error } = await supabase.from('integrations').insert({
     company_id: formData.get('company_id') as string,
@@ -67,7 +67,7 @@ export async function createIntegration(_prev: unknown, formData: FormData) {
 
 export async function updateIntegration(_prev: unknown, formData: FormData) {
   if (!await isAdmin()) return { error: 'Unauthorized' };
-  const supabase = await createAdminClient();
+  const supabase = createAdminClient();
   const id = formData.get('id') as string;
 
   const { error } = await supabase.from('integrations').update({
@@ -86,7 +86,7 @@ export async function updateIntegration(_prev: unknown, formData: FormData) {
 
 export async function deleteIntegration(id: string) {
   if (!await isAdmin()) return { error: 'Unauthorized' };
-  const supabase = await createAdminClient();
+  const supabase = createAdminClient();
   await supabase.from('integrations').delete().eq('id', id);
   revalidatePath('/dashboard/admin');
   return { success: true };
@@ -94,7 +94,7 @@ export async function deleteIntegration(id: string) {
 
 export async function toggleIntegration(id: string, is_active: boolean) {
   if (!await isAdmin()) return { error: 'Unauthorized' };
-  const supabase = await createAdminClient();
+  const supabase = createAdminClient();
   const { error } = await supabase.from('integrations').update({ is_active }).eq('id', id);
   if (error) return { error: error.message };
   revalidatePath('/dashboard/admin');
