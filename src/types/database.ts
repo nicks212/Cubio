@@ -60,18 +60,10 @@ export interface Apartment {
   total_price: number;
   status: ApartmentStatus;
   description: string | null;
+  images: string[];
   created_at: string;
   deleted_at: string | null;
   project?: Project;
-  images?: ApartmentImage[];
-}
-
-export interface ApartmentImage {
-  id: string;
-  apartment_id: string;
-  url: string;
-  position: number;
-  created_at: string;
 }
 
 export interface ApartmentTemplate {
@@ -95,17 +87,9 @@ export interface Product {
   category: string | null;
   material: string | null;
   in_stock: boolean;
+  images: string[];
   created_at: string;
   deleted_at: string | null;
-  images?: ProductImage[];
-}
-
-export interface ProductImage {
-  id: string;
-  product_id: string;
-  url: string;
-  position: number;
-  created_at: string;
 }
 
 export interface Integration {

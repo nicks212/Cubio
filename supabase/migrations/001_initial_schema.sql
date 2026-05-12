@@ -55,18 +55,10 @@ CREATE TABLE IF NOT EXISTS apartments (
   total_price NUMERIC(14,2) NOT NULL,
   status TEXT NOT NULL DEFAULT 'vacant' CHECK (status IN ('vacant', 'reserved', 'sold')),
   description TEXT,
+  images TEXT[] NOT NULL DEFAULT '{}',
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Apartment images
-CREATE TABLE IF NOT EXISTS apartment_images (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  apartment_id UUID NOT NULL REFERENCES apartments(id) ON DELETE CASCADE,
-  storage_path TEXT NOT NULL,
-  display_order INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Apartment templates
@@ -91,19 +83,11 @@ CREATE TABLE IF NOT EXISTS products (
   material TEXT,
   birthstones TEXT,
   zodiac_compatibility TEXT[] DEFAULT '{}',
+  images TEXT[] NOT NULL DEFAULT '{}',
   in_stock BOOLEAN NOT NULL DEFAULT true,
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Product images
-CREATE TABLE IF NOT EXISTS product_images (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  storage_path TEXT NOT NULL,
-  display_order INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Integrations
@@ -179,6 +163,8 @@ CREATE INDEX IF NOT EXISTS idx_apartments_company ON apartments(company_id);
 CREATE INDEX IF NOT EXISTS idx_apartments_project ON apartments(project_id);
 CREATE INDEX IF NOT EXISTS idx_apartments_status ON apartments(status);
 CREATE INDEX IF NOT EXISTS idx_products_company ON products(company_id);
+CREATE INDEX IF NOT EXISTS idx_apartments_deleted ON apartments(deleted_at) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_products_deleted ON products(deleted_at) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_integrations_provider_account ON integrations(provider_account_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_company ON conversations(company_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_provider ON conversations(provider, provider_conversation_id);
@@ -208,10 +194,8 @@ ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE apartments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE apartment_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE apartment_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE product_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
@@ -251,17 +235,6 @@ CREATE POLICY "apartments_insert" ON apartments FOR INSERT WITH CHECK (company_i
 CREATE POLICY "apartments_update" ON apartments FOR UPDATE USING (company_id = my_company_id() OR is_admin());
 CREATE POLICY "apartments_delete" ON apartments FOR DELETE USING (company_id = my_company_id() OR is_admin());
 
--- Apartment images (via apartment's company)
-CREATE POLICY "apt_images_select" ON apartment_images FOR SELECT USING (
-  EXISTS (SELECT 1 FROM apartments a WHERE a.id = apartment_id AND (a.company_id = my_company_id() OR is_admin()))
-);
-CREATE POLICY "apt_images_insert" ON apartment_images FOR INSERT WITH CHECK (
-  EXISTS (SELECT 1 FROM apartments a WHERE a.id = apartment_id AND a.company_id = my_company_id())
-);
-CREATE POLICY "apt_images_delete" ON apartment_images FOR DELETE USING (
-  EXISTS (SELECT 1 FROM apartments a WHERE a.id = apartment_id AND (a.company_id = my_company_id() OR is_admin()))
-);
-
 -- Apartment templates
 CREATE POLICY "apt_tpl_select" ON apartment_templates FOR SELECT USING (company_id = my_company_id() OR is_admin());
 CREATE POLICY "apt_tpl_insert" ON apartment_templates FOR INSERT WITH CHECK (company_id = my_company_id());
@@ -273,17 +246,6 @@ CREATE POLICY "products_select" ON products FOR SELECT USING (company_id = my_co
 CREATE POLICY "products_insert" ON products FOR INSERT WITH CHECK (company_id = my_company_id());
 CREATE POLICY "products_update" ON products FOR UPDATE USING (company_id = my_company_id() OR is_admin());
 CREATE POLICY "products_delete" ON products FOR DELETE USING (company_id = my_company_id() OR is_admin());
-
--- Product images
-CREATE POLICY "prod_images_select" ON product_images FOR SELECT USING (
-  EXISTS (SELECT 1 FROM products p WHERE p.id = product_id AND (p.company_id = my_company_id() OR is_admin()))
-);
-CREATE POLICY "prod_images_insert" ON product_images FOR INSERT WITH CHECK (
-  EXISTS (SELECT 1 FROM products p WHERE p.id = product_id AND p.company_id = my_company_id())
-);
-CREATE POLICY "prod_images_delete" ON product_images FOR DELETE USING (
-  EXISTS (SELECT 1 FROM products p WHERE p.id = product_id AND (p.company_id = my_company_id() OR is_admin()))
-);
 
 -- Integrations: admins manage; users read own
 CREATE POLICY "integrations_select" ON integrations FOR SELECT USING (company_id = my_company_id() OR is_admin());
