@@ -1,15 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adaptMetaPayload, verifyMetaWebhook, type MetaWebhookPayload } from '@/lib/webhooks/providerAdapters/metaAdapter';
+import { adaptWhatsAppPayload, verifyWhatsAppWebhook, type WhatsAppWebhookPayload } from '@/lib/webhooks/providerAdapters/whatsappAdapter';
 import { processIncomingMessage } from '@/lib/webhooks/processIncomingMessage';
 import { verifyMetaSignature } from '@/lib/webhooks/security';
 
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN ?? 'cubio_webhook_token';
 const META_APP_SECRET = process.env.META_APP_SECRET;
 
-// GET: Webhook verification (Facebook / Instagram)
+/**
+ * WhatsApp Business API Webhook
+ *
+ * Setup:
+ * 1. Go to Meta for Developers → Your App → WhatsApp → Configuration
+ * 2. Set Callback URL to: {SITE_URL}/api/webhook/whatsapp
+ * 3. Set Verify Token to your WEBHOOK_VERIFY_TOKEN env value
+ * 4. Subscribe to: messages
+ *
+ * The phone_number_id in the webhook metadata is used to identify
+ * which integration (company) the message belongs to.
+ */
+
+// GET: Webhook verification
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
-  const challenge = verifyMetaWebhook(
+  const challenge = verifyWhatsAppWebhook(
     searchParams.get('hub.mode'),
     searchParams.get('hub.verify_token'),
     searchParams.get('hub.challenge'),
@@ -27,36 +40,32 @@ export async function POST(request: NextRequest) {
   const rawBody = await request.text();
 
   // Verify X-Hub-Signature-256 when META_APP_SECRET is configured.
-  // Required in production to ensure requests genuinely come from Meta.
+  // WhatsApp Business API uses the same Meta signature scheme as Messenger/Instagram.
   if (META_APP_SECRET) {
     const sig = request.headers.get('x-hub-signature-256');
     if (!verifyMetaSignature(rawBody, sig, META_APP_SECRET)) {
-      console.warn('[webhook/meta] Invalid or missing X-Hub-Signature-256 — rejecting request');
+      console.warn('[webhook/whatsapp] Invalid or missing X-Hub-Signature-256 — rejecting request');
       return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
     }
   } else {
-    console.warn('[webhook/meta] META_APP_SECRET not set — skipping signature validation');
+    console.warn('[webhook/whatsapp] META_APP_SECRET not set — skipping signature validation');
   }
 
-  let body: MetaWebhookPayload;
+  let body: WhatsAppWebhookPayload;
   try {
-    body = JSON.parse(rawBody) as MetaWebhookPayload;
+    body = JSON.parse(rawBody) as WhatsAppWebhookPayload;
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  // Only handle page / instagram objects
-  if (body.object !== 'page' && body.object !== 'instagram') {
+  if (body.object !== 'whatsapp_business_account') {
     return NextResponse.json({ status: 'ignored' });
   }
 
-  const messages = adaptMetaPayload(body);
-  console.info(`[webhook/meta] Received ${messages.length} message(s) from ${body.object}`);
+  const messages = adaptWhatsAppPayload(body);
+  console.info(`[webhook/whatsapp] Received ${messages.length} message(s)`);
 
-  // Process concurrently — each message is independent
   await Promise.allSettled(messages.map(msg => processIncomingMessage(msg)));
 
-  // Meta requires a 200 OK response within 20s
   return NextResponse.json({ status: 'ok' });
 }
-

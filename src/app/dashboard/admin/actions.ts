@@ -3,6 +3,7 @@
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/server';
 import { createClient } from '@/lib/supabase/server';
+import { registerTelegramWebhook } from '@/lib/webhooks/providerAdapters/telegramAdapter';
 
 async function isAdmin() {
   const supabase = await createClient();
@@ -61,6 +62,19 @@ export async function createIntegration(_prev: unknown, formData: FormData) {
     is_active: formData.get('is_active') === 'true',
   });
   if (error) return { error: error.message };
+
+  // Auto-register Telegram webhook when a Telegram integration is created
+  const provider = formData.get('provider') as string;
+  const accessToken = formData.get('access_token') as string;
+  if (provider === 'telegram' && accessToken) {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    if (siteUrl) {
+      await registerTelegramWebhook(accessToken, `${siteUrl}/api/webhook/telegram`);
+    } else {
+      console.warn('[createIntegration] NEXT_PUBLIC_SITE_URL not set — Telegram webhook not auto-registered');
+    }
+  }
+
   revalidatePath('/dashboard/admin');
   return { success: true };
 }
@@ -80,6 +94,17 @@ export async function updateIntegration(_prev: unknown, formData: FormData) {
     is_active: formData.get('is_active') === 'true',
   }).eq('id', id);
   if (error) return { error: error.message };
+
+  // Re-register Telegram webhook if the token or active status changed
+  const provider = formData.get('provider') as string;
+  const accessToken = formData.get('access_token') as string;
+  if (provider === 'telegram' && accessToken) {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    if (siteUrl) {
+      await registerTelegramWebhook(accessToken, `${siteUrl}/api/webhook/telegram`);
+    }
+  }
+
   revalidatePath('/dashboard/admin');
   return { success: true };
 }

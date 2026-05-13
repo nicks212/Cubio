@@ -173,12 +173,34 @@ export default function AdminClient({ users, integrations, localizations, compan
       {/* Integrations Tab */}
       {tab === 'integrations' && (
         <>
+          {/* Webhook URLs */}
           <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-5">
             <h2 className="font-semibold text-blue-900 mb-1">{t['admin.webhook_title']}</h2>
-            <p className="text-sm text-blue-700 mb-3">{t['admin.webhook_desc']}</p>
-            <code className="block bg-white border border-blue-200 rounded-lg px-4 py-3 text-sm font-mono text-blue-900 break-all">
-              {process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cubio.ge'}/api/webhook/meta
-            </code>
+            <p className="text-sm text-blue-700 mb-4">{t['admin.webhook_desc']}</p>
+            <div className="space-y-2">
+              {[
+                { label: 'Meta (Facebook + Instagram)', path: '/api/webhook/meta', icon: '📘' },
+                { label: 'Telegram', path: '/api/webhook/telegram', icon: '✈️' },
+                { label: 'WhatsApp', path: '/api/webhook/whatsapp', icon: '💬' },
+                { label: 'Viber', path: '/api/webhook/viber', icon: '📱' },
+              ].map(({ label, path, icon }) => {
+                const url = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cubio.ge'}${path}`;
+                return (
+                  <div key={path} className="flex items-center gap-3 bg-white border border-blue-200 rounded-lg px-4 py-2.5">
+                    <span className="text-base flex-shrink-0">{icon}</span>
+                    <span className="text-xs font-medium text-blue-800 w-44 flex-shrink-0">{label}</span>
+                    <code className="flex-1 text-xs font-mono text-blue-900 break-all">{url}</code>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(url)}
+                      className="flex-shrink-0 text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                      title="Copy"
+                    >
+                      {t['admin.copy'] ?? 'Copy'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
           <div className="flex justify-end mb-4">
             <button onClick={() => { setEditingInt(null); setIntModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm">
