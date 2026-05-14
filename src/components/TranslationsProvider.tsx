@@ -19,6 +19,10 @@ export function TranslationsProvider({
   );
 }
 
-export function useT(): T {
-  return useContext(TranslationsContext);
+export type TFunc = ((key: string) => string) & T;
+
+export function useT(): TFunc {
+  const translations = useContext(TranslationsContext);
+  const fn = (key: string) => translations[key] ?? key;
+  return Object.assign(fn, translations) as TFunc;
 }

@@ -31,7 +31,10 @@ export async function createApartment(_prev: unknown, formData: FormData) {
   const parsed = aptSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
 
-  const { error } = await supabase.from('apartments').insert({ ...parsed.data, company_id });
+  const imagesRaw = formData.get('images') as string;
+  const images: string[] = imagesRaw ? (JSON.parse(imagesRaw) as string[]) : [];
+
+  const { error } = await supabase.from('apartments').insert({ ...parsed.data, company_id, images });
   if (error) return { error: error.message };
   revalidatePath('/dashboard/apartments');
   return { success: true };
@@ -47,7 +50,10 @@ export async function updateApartment(_prev: unknown, formData: FormData) {
   const parsed = aptSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
 
-  const { error } = await supabase.from('apartments').update(parsed.data).eq('id', id).eq('company_id', company_id ?? '');
+  const imagesRaw = formData.get('images') as string;
+  const images: string[] = imagesRaw ? (JSON.parse(imagesRaw) as string[]) : [];
+
+  const { error } = await supabase.from('apartments').update({ ...parsed.data, images }).eq('id', id).eq('company_id', company_id ?? '');
   if (error) return { error: error.message };
   revalidatePath('/dashboard/apartments');
   return { success: true };
@@ -130,6 +136,7 @@ export async function createTemplate(_prev: unknown, formData: FormData) {
     size_sq_m: Number(formData.get('size_sq_m')),
     rooms_quantity: Number(formData.get('rooms_quantity')),
     price_per_sq_m: Number(formData.get('price_per_sq_m')),
+    images: (() => { try { return JSON.parse(formData.get('images') as string ?? '[]') as string[]; } catch { return []; } })(),
   });
   if (error) return { error: error.message };
   revalidatePath('/dashboard/apartments');
