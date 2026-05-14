@@ -42,7 +42,7 @@ export interface Project {
   location: string | null;
   completion_date: string | null;
   status: ProjectStatus;
-  cover_image: string | null;
+  images: string[];
   description: string | null;
   total_floors: number | null;
   created_at: string;
@@ -73,6 +73,7 @@ export interface ApartmentTemplate {
   size_sq_m: number;
   rooms_quantity: number;
   price_per_sq_m: number;
+  images: string[];
   created_at: string;
 }
 

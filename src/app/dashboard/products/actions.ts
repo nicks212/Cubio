@@ -32,10 +32,14 @@ export async function createProduct(_prev: unknown, formData: FormData) {
   const parsed = productSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
 
+  const imagesRaw = formData.get('images') as string;
+  const images: string[] = imagesRaw ? (JSON.parse(imagesRaw) as string[]) : [];
+
   const { error } = await supabase.from('products').insert({
     ...parsed.data,
     company_id,
     zodiac_compatibility,
+    images,
   });
   if (error) return { error: error.message };
   revalidatePath('/dashboard/products');
@@ -55,7 +59,10 @@ export async function updateProduct(_prev: unknown, formData: FormData) {
   const parsed = productSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
 
-  const { error } = await supabase.from('products').update({ ...parsed.data, zodiac_compatibility })
+  const imagesRaw = formData.get('images') as string;
+  const images: string[] = imagesRaw ? (JSON.parse(imagesRaw) as string[]) : [];
+
+  const { error } = await supabase.from('products').update({ ...parsed.data, zodiac_compatibility, images })
     .eq('id', id).eq('company_id', company_id ?? '');
   if (error) return { error: error.message };
   revalidatePath('/dashboard/products');
