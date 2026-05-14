@@ -317,7 +317,11 @@ export const DEFAULT_TRANSLATIONS: T = {
   'apartments.status_label': 'სტატუსი',
   'apartments.templates': 'შაბლონები',
   'apartments.bulk_add': 'მასიური დამატება',
-  'apartments.template_title': 'ბინის შაბლონები',
+  'apartments.bulk_no_template': 'ჯერ შექმენით შაბლონი მასიური დამატებისთვის.',
+  'apartments.bulk_template_placeholder': 'შაბლონის არჩევა...',
+  'apartments.bulk_project_placeholder': 'პროექტის არჩევა...',
+
+
   'apartments.template_existing': 'არსებული შაბლონები',
   'apartments.template_create': 'ახალი შაბლონის შექმნა',
   'apartments.template_name_placeholder': 'მაგ. 2-ოთ. სტანდარტი',

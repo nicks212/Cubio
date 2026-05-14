@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, X, Loader2 } from 'lucide-react';
 
 interface ImageUploaderProps {
@@ -8,9 +8,9 @@ interface ImageUploaderProps {
   bucket: string;
   /** Maximum number of images allowed */
   maxImages: number;
-  /** Current array of public image URLs (no holes) */
+  /** Current array of public image URLs (dense — no nulls) */
   value: string[];
-  /** Called with updated URL array after upload or remove */
+  /** Called with updated dense URL array after upload or remove */
   onChange: (urls: string[]) => void;
   /** Optional label shown above the grid */
   label?: string;
@@ -30,7 +30,6 @@ async function compressToWebP(file: File): Promise<Blob> {
     img.onload = () => {
       URL.revokeObjectURL(objectUrl);
 
-      // Scale down if very large — keeps quality decent at small sizes
       const MAX_DIM = 2000;
       let { width, height } = img;
       if (width > MAX_DIM || height > MAX_DIM) {
@@ -50,11 +49,9 @@ async function compressToWebP(file: File): Promise<Blob> {
         new Promise(res => canvas.toBlob(b => res(b!), 'image/webp', q));
 
       void (async () => {
-        // Start at quality 0.9 — usually fine for most photos
         let blob = await toBlob(0.9);
         if (blob.size <= MAX_OUTPUT_BYTES) { resolve(blob); return; }
 
-        // Binary-search quality between 0.1 and 0.85
         let lo = 0.1, hi = 0.85;
         while (hi - lo > 0.05) {
           const mid = (lo + hi) / 2;
@@ -63,7 +60,6 @@ async function compressToWebP(file: File): Promise<Blob> {
         }
         blob = await toBlob(lo);
 
-        // Last resort: scale canvas down 30% then retry at 0.5
         if (blob.size > MAX_OUTPUT_BYTES) {
           const c2 = document.createElement('canvas');
           c2.width = Math.round(width * 0.7);
@@ -87,6 +83,13 @@ function storagePath(publicUrl: string): string {
   return m?.[1] ?? '';
 }
 
+/** Build a sparse slots array from a dense value array. */
+function initSlots(value: string[], maxImages: number): (string | null)[] {
+  const s: (string | null)[] = Array(maxImages).fill(null);
+  value.forEach((url, i) => { if (i < maxImages) s[i] = url; });
+  return s;
+}
+
 export default function ImageUploader({
   bucket,
   maxImages,
@@ -95,23 +98,34 @@ export default function ImageUploader({
   label,
   disabled,
 }: ImageUploaderProps) {
-  const [loading, setLoading] = useState(false);
+  // Internal sparse slots: null = vacant/uploadable, string = filled
+  const [slots, setSlots] = useState<(string | null)[]>(() => initSlots(value, maxImages));
+  const [loadingSlot, setLoadingSlot] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pendingSlot = useRef<number>(0);
 
-  // The next empty slot the user can fill
-  const nextSlot = value.length;
-  const isFull = nextSlot >= maxImages;
+  // Sync when value is reset from outside (e.g., modal close/open)
+  const prevValue = useRef(value);
+  useEffect(() => {
+    if (prevValue.current !== value) {
+      prevValue.current = value;
+      setSlots(initSlots(value, maxImages));
+    }
+  }, [value, maxImages]);
 
-  const triggerPicker = () => {
-    if (disabled || isFull || loading) return;
+  const isLoading = loadingSlot !== null;
+
+  const handleSlotClick = (i: number) => {
+    if (disabled || isLoading || slots[i] !== null) return;
+    pendingSlot.current = i;
     inputRef.current?.click();
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    e.target.value = ''; // reset so same file can be re-selected
+    e.target.value = '';
     setError(null);
 
     if (!ACCEPTED_MIME.has(file.type)) {
@@ -123,7 +137,8 @@ export default function ImageUploader({
       return;
     }
 
-    setLoading(true);
+    const targetSlot = pendingSlot.current;
+    setLoadingSlot(targetSlot);
     try {
       const blob = await compressToWebP(file);
       const webpFile = new File([blob], `img-${Date.now()}.webp`, { type: 'image/webp' });
@@ -140,19 +155,22 @@ export default function ImageUploader({
       }
 
       const { url } = await res.json() as { url: string };
-      onChange([...value, url]);
+      const newSlots = [...slots];
+      newSlots[targetSlot] = url;
+      setSlots(newSlots);
+      onChange(newSlots.filter((s): s is string => s !== null));
     } catch {
       setError('Failed to process image. Please try again.');
     } finally {
-      setLoading(false);
+      setLoadingSlot(null);
     }
   };
 
-  const handleRemove = (index: number) => {
-    const url = value[index];
+  const handleRemove = (i: number) => {
+    const url = slots[i];
     if (!url) return;
 
-    // Fire-and-forget delete from storage (non-blocking)
+    // Fire-and-forget storage delete
     const path = storagePath(url);
     if (path) {
       fetch('/api/upload', {
@@ -162,33 +180,37 @@ export default function ImageUploader({
       }).catch(() => { /* non-critical */ });
     }
 
-    onChange(value.filter((_, i) => i !== index));
+    // Set slot to null — preserves positions of other images
+    const newSlots = [...slots];
+    newSlots[i] = null;
+    setSlots(newSlots);
+    onChange(newSlots.filter((s): s is string => s !== null));
   };
-
-  const slots = Array.from({ length: maxImages }, (_, i) => i);
 
   return (
     <div>
       {label && <p className="text-sm font-medium mb-2">{label}</p>}
 
-      <div className="flex flex-wrap gap-2">
-        {slots.map(i => {
-          const imgUrl = value[i];
-          const isNextEmpty = i === nextSlot; // the one active + button
-          const isFuture = i > nextSlot;      // locked placeholder
+      {/* Hidden file input */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".png,.jpg,.jpeg,.webp"
+        className="sr-only"
+        onChange={handleFileSelect}
+      />
 
-          if (imgUrl) {
+      <div className="flex flex-wrap gap-2">
+        {slots.map((imgUrl, i) => {
+          if (imgUrl !== null) {
+            // Filled slot — show image with hover-remove
             return (
               <div
                 key={i}
                 className="relative w-[72px] h-[72px] rounded-lg overflow-hidden border border-slate-200 bg-slate-100 flex-shrink-0 group"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={imgUrl}
-                  alt={`Photo ${i + 1}`}
-                  className="w-full h-full object-cover"
-                />
+                <img src={imgUrl} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
                 {!disabled && (
                   <button
                     type="button"
@@ -203,50 +225,29 @@ export default function ImageUploader({
             );
           }
 
-          if (isNextEmpty) {
-            return (
-              <button
-                key={i}
-                type="button"
-                onClick={triggerPicker}
-                disabled={disabled || loading}
-                className="w-[72px] h-[72px] rounded-lg border-2 border-dashed border-slate-300 hover:border-primary hover:bg-primary/5 flex flex-col items-center justify-center flex-shrink-0 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {loading ? (
-                  <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                ) : (
-                  <Plus className="w-5 h-5 text-slate-400" />
-                )}
-              </button>
-            );
-          }
-
-          // Future locked slot
+          // Vacant slot — always a clickable upload button
           return (
-            <div
+            <button
               key={i}
-              className="w-[72px] h-[72px] rounded-lg border-2 border-dashed border-slate-100 bg-slate-50/50 flex items-center justify-center flex-shrink-0 opacity-40"
+              type="button"
+              onClick={() => handleSlotClick(i)}
+              disabled={disabled || isLoading}
+              className="w-[72px] h-[72px] rounded-lg border-2 border-dashed border-slate-300 hover:border-primary hover:bg-primary/5 flex flex-col items-center justify-center flex-shrink-0 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Plus className="w-4 h-4 text-slate-300" />
-            </div>
+              {loadingSlot === i ? (
+                <Loader2 className="w-5 h-5 text-primary animate-spin" />
+              ) : (
+                <Plus className="w-5 h-5 text-slate-400" />
+              )}
+            </button>
           );
         })}
       </div>
 
-      {error && (
-        <p className="mt-1.5 text-xs text-red-600">{error}</p>
-      )}
+      {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
       <p className="mt-1.5 text-xs text-muted-foreground">
         PNG, JPG, WEBP · Max 15 MB · Auto-converted to WebP ≤350 KB
       </p>
-
-      <input
-        ref={inputRef}
-        type="file"
-        accept=".png,.jpg,.jpeg,.webp"
-        className="hidden"
-        onChange={handleFileSelect}
-      />
     </div>
   );
 }

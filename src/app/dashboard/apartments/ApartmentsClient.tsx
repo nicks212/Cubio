@@ -132,13 +132,13 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-6">
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
-          <option value="all">All Statuses</option>
-          <option value="vacant">Vacant</option>
-          <option value="reserved">Reserved</option>
-          <option value="sold">Sold</option>
+          <option value="all">{t('apartments.status_all')}</option>
+          <option value="vacant">{t('apartments.status_vacant')}</option>
+          <option value="reserved">{t('apartments.status_reserved')}</option>
+          <option value="sold">{t('apartments.status_sold')}</option>
         </select>
         <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
-          <option value="all">All Projects</option>
+          <option value="all">{t('apartments.project_all')}</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
         <div className="ml-auto flex border border-slate-200 rounded-lg overflow-hidden">
@@ -150,39 +150,52 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
           <Home className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
-          <p className="text-muted-foreground">No apartments found.</p>
+          <p className="text-muted-foreground">{t('apartments.no_apartments')}</p>
         </div>
       ) : view === 'grid' ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map(apt => (
-            <div key={apt.id} className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-lg font-bold">{apt.apartment_number}</span>
-                <select
-                  value={apt.status}
-                  onChange={e => handleStatusChange(apt.id, e.target.value)}
-                  className={`text-xs px-2 py-1 rounded-full border font-medium focus:outline-none cursor-pointer ${statusColors[apt.status]}`}
-                >
-                  <option value="vacant">Vacant</option>
-                  <option value="reserved">Reserved</option>
-                  <option value="sold">Sold</option>
-                </select>
-              </div>
-              <p className="text-sm text-muted-foreground mb-1">{apt.project?.name}</p>
-              <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground mb-3">
-                <span>Floor {apt.floor}</span>
-                <span>{apt.rooms_quantity} rooms</span>
-                <span>{apt.size_sq_m} m²</span>
-                <span>${apt.price_per_sq_m.toLocaleString()}/m²</span>
-              </div>
-              <p className="text-sm font-semibold text-foreground mb-3">${apt.total_price.toLocaleString()}</p>
-              <div className="flex gap-2 pt-3 border-t border-slate-100">
-                <button onClick={() => openEdit(apt)} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-slate-100 rounded-lg transition-colors">
-                  <Edit className="w-3.5 h-3.5" />Edit
-                </button>
-                <button onClick={() => handleDelete(apt.id)} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                  <Trash2 className="w-3.5 h-3.5" />Delete
-                </button>
+            <div key={apt.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+              {/* Cover image */}
+              {apt.images?.[0] ? (
+                <div className="h-32 overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={apt.images[0]} alt={apt.apartment_number} className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className="h-32 bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
+                  <Home className="w-10 h-10 text-slate-300" />
+                </div>
+              )}
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-lg font-bold">{apt.apartment_number}</span>
+                  <select
+                    value={apt.status}
+                    onChange={e => handleStatusChange(apt.id, e.target.value)}
+                    className={`text-xs px-2 py-1 rounded-full border font-medium focus:outline-none cursor-pointer ${statusColors[apt.status]}`}
+                  >
+                    <option value="vacant">{t('apartments.status_vacant')}</option>
+                    <option value="reserved">{t('apartments.status_reserved')}</option>
+                    <option value="sold">{t('apartments.status_sold')}</option>
+                  </select>
+                </div>
+                <p className="text-sm text-muted-foreground mb-1">{apt.project?.name}</p>
+                <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground mb-3">
+                  <span>{t('apartments.floor')} {apt.floor}</span>
+                  <span>{apt.rooms_quantity} {t('apartments.rooms')}</span>
+                  <span>{apt.size_sq_m} m²</span>
+                  <span>${apt.price_per_sq_m.toLocaleString()}/m²</span>
+                </div>
+                <p className="text-sm font-semibold text-foreground mb-3">${apt.total_price.toLocaleString()}</p>
+                <div className="flex gap-2 pt-3 border-t border-slate-100">
+                  <button onClick={() => openEdit(apt)} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-slate-100 rounded-lg transition-colors">
+                    <Edit className="w-3.5 h-3.5" />{t('common.edit')}
+                  </button>
+                  <button onClick={() => handleDelete(apt.id)} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                    <Trash2 className="w-3.5 h-3.5" />{t('common.delete')}
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -193,8 +206,18 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
             <table className="w-full">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
-                  {['#', 'Project', 'Floor', 'Rooms', 'Size', 'Price/m²', 'Total', 'Status', ''].map(h => (
-                    <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground">{h}</th>
+                  {[
+                    '#',
+                    t('apartments.project'),
+                    t('apartments.floor'),
+                    t('apartments.rooms'),
+                    'm²',
+                    t('apartments.price_per_sqm'),
+                    t('apartments.total_price'),
+                    t('apartments.status_label'),
+                    '',
+                  ].map((h, idx) => (
+                    <th key={idx} className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -210,9 +233,9 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
                     <td className="py-3 px-4 text-sm font-semibold">${apt.total_price.toLocaleString()}</td>
                     <td className="py-3 px-4">
                       <select value={apt.status} onChange={e => handleStatusChange(apt.id, e.target.value)} className={`text-xs px-2 py-1 rounded-full border font-medium focus:outline-none cursor-pointer ${statusColors[apt.status]}`}>
-                        <option value="vacant">Vacant</option>
-                        <option value="reserved">Reserved</option>
-                        <option value="sold">Sold</option>
+                        <option value="vacant">{t('apartments.status_vacant')}</option>
+                        <option value="reserved">{t('apartments.status_reserved')}</option>
+                        <option value="sold">{t('apartments.status_sold')}</option>
                       </select>
                     </td>
                     <td className="py-3 px-4">
@@ -322,40 +345,40 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
             <div className="p-6 space-y-4">
               {bulkResult && <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">{bulkResult}</div>}
               {templates.length === 0 && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">Create a template first to use bulk add.</div>
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">{t('apartments.bulk_no_template')}</div>
               )}
               <div>
-                <label className="block text-sm font-medium mb-2">Template *</label>
+                <label className="block text-sm font-medium mb-2">{t('apartments.bulk_template')} *</label>
                 <select value={bulkForm.templateId} onChange={e => setBulkForm(f => ({ ...f, templateId: e.target.value }))} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
-                  <option value="">Select template...</option>
-                  {templates.map(t => <option key={t.id} value={t.id}>{t.name} ({t.rooms_quantity}BR, {t.size_sq_m}m²)</option>)}
+                  <option value="">{t('apartments.bulk_template_placeholder')}</option>
+                  {templates.map(tpl => <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.rooms_quantity}BR, {tpl.size_sq_m}m²)</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Project *</label>
+                <label className="block text-sm font-medium mb-2">{t('apartments.bulk_project')} *</label>
                 <select value={bulkForm.projectId} onChange={e => setBulkForm(f => ({ ...f, projectId: e.target.value }))} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
-                  <option value="">Select project...</option>
+                  <option value="">{t('apartments.bulk_project_placeholder')}</option>
                   {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Start Floor</label>
+                  <label className="block text-sm font-medium mb-2">{t('apartments.bulk_floors_from')}</label>
                   <input type="number" min="1" value={bulkForm.startFloor} onChange={e => setBulkForm(f => ({ ...f, startFloor: +e.target.value }))} className="w-full px-3 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">End Floor</label>
+                  <label className="block text-sm font-medium mb-2">{t('apartments.bulk_floors_to')}</label>
                   <input type="number" min="1" value={bulkForm.endFloor} onChange={e => setBulkForm(f => ({ ...f, endFloor: +e.target.value }))} className="w-full px-3 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Units/Floor</label>
+                  <label className="block text-sm font-medium mb-2">{t('apartments.bulk_units_per_floor')}</label>
                   <input type="number" min="1" value={bulkForm.unitsPerFloor} onChange={e => setBulkForm(f => ({ ...f, unitsPerFloor: +e.target.value }))} className="w-full px-3 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Price Adjustment per Floor (%)</label>
+                <label className="block text-sm font-medium mb-2">{t('apartments.bulk_price_adj')}</label>
                 <input type="number" step="0.1" value={bulkForm.priceAdjustment} onChange={e => setBulkForm(f => ({ ...f, priceAdjustment: +e.target.value }))} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
-                <p className="text-xs text-muted-foreground mt-1">e.g. 1 = 1% more expensive per floor</p>
+                <p className="text-xs text-muted-foreground mt-1">{t('apartments.bulk_price_note')}</p>
               </div>
               <p className="text-sm text-muted-foreground bg-slate-50 rounded-lg px-4 py-3">
                 {t('apartments.bulk_will_create')} <strong>{(bulkForm.endFloor - bulkForm.startFloor + 1) * bulkForm.unitsPerFloor}</strong> {t('apartments.bulk_apartments')}

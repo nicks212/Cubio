@@ -48,8 +48,8 @@ export default function ProjectsClient({ projects }: { projects: Project[] }) {
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">Projects</h1>
-          <p className="text-muted-foreground">Manage your real estate development projects</p>
+          <h1 className="text-3xl font-bold text-foreground mb-2">{t('projects.title')}</h1>
+          <p className="text-muted-foreground">{t('projects.subtitle')}</p>
         </div>
         <button
           onClick={openCreate}
