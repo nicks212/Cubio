@@ -43,6 +43,16 @@ export default function RichTextEditor({ initialValue, onChange, placeholder }: 
     if (editorRef.current) onChange(editorRef.current.innerHTML);
   }, [onChange]);
 
+  // Strip all HTML on paste — insert as plain text, preserving line breaks and numbering
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const plain = e.clipboardData.getData('text/plain');
+    if (!plain) return;
+    // insertText preserves caret position and works with undo stack
+    document.execCommand('insertText', false, plain);
+    if (editorRef.current) onChange(editorRef.current.innerHTML);
+  }, [onChange]);
+
   const ToolBtn = ({
     title,
     cmd,
@@ -101,7 +111,9 @@ export default function RichTextEditor({ initialValue, onChange, placeholder }: 
         contentEditable
         suppressContentEditableWarning
         dir="ltr"
+        style={{ direction: 'ltr', unicodeBidi: 'embed', textAlign: 'left', writingMode: 'horizontal-tb' }}
         onInput={handleInput}
+        onPaste={handlePaste}
         data-placeholder={placeholder ?? 'დაიწყეთ ტექსტის აკრეფა...'}
         className={[
           'min-h-[450px] p-5 focus:outline-none text-foreground leading-relaxed overflow-y-auto',
