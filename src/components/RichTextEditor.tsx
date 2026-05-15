@@ -9,25 +9,48 @@ interface Props {
   placeholder?: string;
 }
 
+/** Force LTR on a DOM element imperatively — beats any CSS/bidi heuristics */
+function forceLtr(el: HTMLElement) {
+  el.setAttribute('dir', 'ltr');
+  el.setAttribute('lang', 'en');
+  el.style.setProperty('direction', 'ltr', 'important');
+  el.style.setProperty('text-align', 'left', 'important');
+  el.style.setProperty('unicode-bidi', 'bidi-override', 'important');
+}
+
 export default function RichTextEditor({ initialValue, onChange, placeholder }: Props) {
   const editorRef = useRef<HTMLDivElement>(null);
   const prevInitial = useRef<string>(initialValue);
 
-  // Seed content on mount (once)
   useEffect(() => {
-    if (editorRef.current) {
-      editorRef.current.innerHTML = initialValue;
-      prevInitial.current = initialValue;
-    }
+    const el = editorRef.current;
+    if (!el) return;
+
+    forceLtr(el);
+    el.innerHTML = initialValue;
+    prevInitial.current = initialValue;
+
+    // Every element the browser creates while editing (p, div, span, h1…)
+    // must also be forced LTR, otherwise they inherit the RTL editing context.
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node instanceof HTMLElement) forceLtr(node);
+        }
+      }
+    });
+    observer.observe(el, { childList: true, subtree: true });
+    return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reset when parent switches language (initialValue reference changes)
+  // Sync when parent switches language
   useEffect(() => {
-    if (prevInitial.current !== initialValue && editorRef.current) {
-      editorRef.current.innerHTML = initialValue;
-      prevInitial.current = initialValue;
-    }
+    const el = editorRef.current;
+    if (!el || prevInitial.current === initialValue) return;
+    forceLtr(el);
+    el.innerHTML = initialValue;
+    prevInitial.current = initialValue;
   }, [initialValue]);
 
   const exec = useCallback(
@@ -43,34 +66,21 @@ export default function RichTextEditor({ initialValue, onChange, placeholder }: 
     if (editorRef.current) onChange(editorRef.current.innerHTML);
   }, [onChange]);
 
-  // Strip all HTML on paste — insert as plain text, preserving line breaks and numbering
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault();
     const plain = e.clipboardData.getData('text/plain');
     if (!plain) return;
-    // insertText preserves caret position and works with undo stack
     document.execCommand('insertText', false, plain);
     if (editorRef.current) onChange(editorRef.current.innerHTML);
   }, [onChange]);
 
   const ToolBtn = ({
-    title,
-    cmd,
-    val,
-    children,
-  }: {
-    title: string;
-    cmd: string;
-    val?: string;
-    children: React.ReactNode;
-  }) => (
+    title, cmd, val, children,
+  }: { title: string; cmd: string; val?: string; children: React.ReactNode }) => (
     <button
       type="button"
       title={title}
-      onMouseDown={(e) => {
-        e.preventDefault();
-        exec(cmd, val);
-      }}
+      onMouseDown={(e) => { e.preventDefault(); exec(cmd, val); }}
       className="px-2.5 py-1.5 rounded hover:bg-slate-200 text-foreground transition-colors leading-none"
     >
       {children}
@@ -94,33 +104,24 @@ export default function RichTextEditor({ initialValue, onChange, placeholder }: 
           <span className="text-sm">¶</span>
         </ToolBtn>
         <div className="w-px h-5 bg-slate-300 mx-1 flex-shrink-0" />
-        <ToolBtn title="Bold" cmd="bold">
-          <Bold className="w-4 h-4" />
-        </ToolBtn>
-        <ToolBtn title="Italic" cmd="italic">
-          <Italic className="w-4 h-4" />
-        </ToolBtn>
-        <ToolBtn title="Underline" cmd="underline">
-          <Underline className="w-4 h-4" />
-        </ToolBtn>
+        <ToolBtn title="Bold" cmd="bold"><Bold className="w-4 h-4" /></ToolBtn>
+        <ToolBtn title="Italic" cmd="italic"><Italic className="w-4 h-4" /></ToolBtn>
+        <ToolBtn title="Underline" cmd="underline"><Underline className="w-4 h-4" /></ToolBtn>
       </div>
 
-      {/* Editable area */}
+      {/* Editable area — no dir/style props here; forceLtr() handles it imperatively */}
       <div
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
-        dir="ltr"
-        style={{ direction: 'ltr', unicodeBidi: 'embed', textAlign: 'left', writingMode: 'horizontal-tb' }}
         onInput={handleInput}
         onPaste={handlePaste}
         data-placeholder={placeholder ?? 'დაიწყეთ ტექსტის აკრეფა...'}
         className={[
           'min-h-[450px] p-5 focus:outline-none text-foreground leading-relaxed overflow-y-auto',
-          // heading styles applied inline via contenteditable
-          '[&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mt-5 [&_h1]:mb-2 [&_h1]:text-foreground',
-          '[&_h2]:text-xl [&_h2]:font-bold [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-foreground',
-          '[&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:text-foreground',
+          '[&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mt-5 [&_h1]:mb-2',
+          '[&_h2]:text-xl [&_h2]:font-bold [&_h2]:mt-4 [&_h2]:mb-2',
+          '[&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1',
           '[&_p]:mb-2 [&_p]:leading-relaxed',
         ].join(' ')}
       />

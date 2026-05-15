@@ -413,5 +413,5 @@ export const getTranslations = unstable_cache(
     }
   },
   ['translations'],
-  { tags: ['translations'] },
+  { tags: ['translations'], revalidate: 0 },
 );

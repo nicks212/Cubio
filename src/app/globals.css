@@ -50,9 +50,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-[contenteditable] {
+/* Force LTR on the editor and every child element it creates (h1, h2, p, div…).
+   unicode-bidi: bidi-override fully disables the Unicode Bidirectional Algorithm
+   so characters are placed in the specified direction regardless of Unicode category. */
+[contenteditable],
+[contenteditable] * {
   direction: ltr !important;
   text-align: left !important;
-  unicode-bidi: isolate !important;
+  unicode-bidi: bidi-override !important;
   writing-mode: horizontal-tb !important;
 }
