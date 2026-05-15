@@ -183,6 +183,12 @@ export default async function LandingPage() {
             </div>
             <span className="font-semibold">Cubio</span>
           </div>
+          <Link
+            href="/terms"
+            className="text-sm text-muted-foreground hover:text-primary transition-colors underline underline-offset-2"
+          >
+            {t['landing.terms_link']}
+          </Link>
           <p className="text-sm text-muted-foreground">© 2026 Cubio.</p>
         </div>
       </footer>

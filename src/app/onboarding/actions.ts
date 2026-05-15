@@ -34,7 +34,11 @@ export async function setupCompany(_prev: unknown, formData: FormData) {
     // Company exists — just update business type and proceed
     await supabase
       .from('companies')
-      .update({ business_type: parsed.data.businessType })
+      .update({
+        business_type: parsed.data.businessType,
+        terms_agreed: true,
+        terms_agreed_on: new Date().toISOString(),
+      })
       .eq('id', profile.company_id);
     revalidatePath('/', 'layout');
     redirect('/dashboard');
@@ -48,6 +52,8 @@ export async function setupCompany(_prev: unknown, formData: FormData) {
     .insert({
       company_name: parsed.data.companyName,
       business_type: parsed.data.businessType,
+      terms_agreed: true,
+      terms_agreed_on: new Date().toISOString(),
     })
     .select()
     .single();
