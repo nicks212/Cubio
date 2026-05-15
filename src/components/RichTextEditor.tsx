@@ -109,11 +109,14 @@ export default function RichTextEditor({ initialValue, onChange, placeholder }: 
         <ToolBtn title="Underline" cmd="underline"><Underline className="w-4 h-4" /></ToolBtn>
       </div>
 
-      {/* Editable area — no dir/style props here; forceLtr() handles it imperatively */}
+      {/* dir + lang + style must be JSX props so the browser wires LTR editing engine on first render */}
       <div
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
+        dir="ltr"
+        lang="en"
+        style={{ direction: 'ltr', unicodeBidi: 'bidi-override', textAlign: 'left', writingMode: 'horizontal-tb' }}
         onInput={handleInput}
         onPaste={handlePaste}
         data-placeholder={placeholder ?? 'დაიწყეთ ტექსტის აკრეფა...'}
