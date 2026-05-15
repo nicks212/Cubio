@@ -21,12 +21,16 @@ export default function RichTextEditor({ initialValue, onChange, placeholder }: 
     }
   }, []);
 
-  // Sync when parent switches language
+  // Sync when parent updates value externally (but NOT when typing)
   useEffect(() => {
     const el = editorRef.current;
-    if (!el || prevInitial.current === initialValue) return;
-    el.innerHTML = initialValue;
-    prevInitial.current = initialValue;
+    if (!el) return;
+    
+    // Only update innerHTML if it's actually different from what's in the DOM.
+    // This prevents resetting the user's cursor to position 0 on every keystroke!
+    if (el.innerHTML !== initialValue) {
+      el.innerHTML = initialValue;
+    }
   }, [initialValue]);
 
   const exec = useCallback(
