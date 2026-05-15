@@ -75,7 +75,7 @@ export async function deleteProduct(id: string) {
   if (!user) return { error: 'Unauthorized' };
   const company_id = await getCompanyId(supabase, user.id);
   const { error } = await supabase.from('products')
-    .update({ deleted_at: new Date().toISOString() })
+    .delete()
     .eq('id', id).eq('company_id', company_id ?? '');
   if (error) return { error: error.message };
   revalidatePath('/dashboard/products');
