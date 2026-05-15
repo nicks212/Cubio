@@ -83,7 +83,7 @@ export default function AdminClient({ users, integrations, localizations, compan
     { id: 'users' as Tab, label: t['admin.tab_users'] ?? 'Users', icon: Users },
     { id: 'localizations' as Tab, label: t['admin.tab_localizations'] ?? 'Localizations', icon: Languages },
     { id: 'integrations' as Tab, label: t['admin.tab_integrations'] ?? 'Integrations', icon: Plug },
-    { id: 'terms' as Tab, label: t['admin.tab_terms'] ?? 'წ. და პ.', icon: FileText },
+    { id: 'terms' as Tab, label: t['admin.tab_terms'] ?? 'წესები', icon: FileText },
   ];
 
   return (

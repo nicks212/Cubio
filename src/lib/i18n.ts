@@ -388,7 +388,7 @@ export const DEFAULT_TRANSLATIONS: T = {
   'onboarding.terms_empty': 'შინაარსი მალე გამოქვეყნდება',
 
   // === ADMIN – TERMS ===
-  'admin.tab_terms': 'წ. და პ.',
+  'admin.tab_terms': 'წესები',
   'admin.terms_title': 'წესები და პირობები',
   'admin.terms_subtitle': 'მართეთ ხელშეკრულების ტექსტი ქართულად და ინგლისურად',
   'admin.terms_lang_ka': 'ქართული',

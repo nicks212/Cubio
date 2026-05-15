@@ -100,6 +100,7 @@ export default function RichTextEditor({ initialValue, onChange, placeholder }: 
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
+        dir="ltr"
         onInput={handleInput}
         data-placeholder={placeholder ?? 'დაიწყეთ ტექსტის აკრეფა...'}
         className={[
