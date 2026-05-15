@@ -64,9 +64,8 @@ export async function deleteApartment(id: string) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: 'Unauthorized' };
   const company_id = await getCompanyId(supabase, user.id);
-  // Soft delete
   const { error } = await supabase.from('apartments')
-    .update({ deleted_at: new Date().toISOString() })
+    .delete()
     .eq('id', id).eq('company_id', company_id ?? '');
   if (error) return { error: error.message };
   revalidatePath('/dashboard/apartments');
