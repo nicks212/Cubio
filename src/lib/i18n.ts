@@ -412,6 +412,6 @@ export const getTranslations = unstable_cache(
       return { ...DEFAULT_TRANSLATIONS };
     }
   },
-  ['translations'],
-  { tags: ['translations'], revalidate: false },
+  ['translations_cache_v2'],
+  { tags: ['translations'], revalidate: 10 },
 );

@@ -9,46 +9,22 @@ interface Props {
   placeholder?: string;
 }
 
-/** Force LTR on a DOM element imperatively — beats any CSS/bidi heuristics */
-function forceLtr(el: HTMLElement) {
-  el.setAttribute('dir', 'ltr');
-  el.setAttribute('lang', 'en');
-  el.style.setProperty('direction', 'ltr', 'important');
-  el.style.setProperty('text-align', 'left', 'important');
-  el.style.setProperty('unicode-bidi', 'bidi-override', 'important');
-}
-
 export default function RichTextEditor({ initialValue, onChange, placeholder }: Props) {
   const editorRef = useRef<HTMLDivElement>(null);
   const prevInitial = useRef<string>(initialValue);
 
+  // Seed content on mount
   useEffect(() => {
-    const el = editorRef.current;
-    if (!el) return;
-
-    forceLtr(el);
-    el.innerHTML = initialValue;
-    prevInitial.current = initialValue;
-
-    // Every element the browser creates while editing (p, div, span, h1…)
-    // must also be forced LTR, otherwise they inherit the RTL editing context.
-    const observer = new MutationObserver((mutations) => {
-      for (const m of mutations) {
-        for (const node of m.addedNodes) {
-          if (node instanceof HTMLElement) forceLtr(node);
-        }
-      }
-    });
-    observer.observe(el, { childList: true, subtree: true });
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (editorRef.current) {
+      editorRef.current.innerHTML = initialValue;
+      prevInitial.current = initialValue;
+    }
   }, []);
 
   // Sync when parent switches language
   useEffect(() => {
     const el = editorRef.current;
     if (!el || prevInitial.current === initialValue) return;
-    forceLtr(el);
     el.innerHTML = initialValue;
     prevInitial.current = initialValue;
   }, [initialValue]);
@@ -109,19 +85,17 @@ export default function RichTextEditor({ initialValue, onChange, placeholder }: 
         <ToolBtn title="Underline" cmd="underline"><Underline className="w-4 h-4" /></ToolBtn>
       </div>
 
-      {/* dir + lang + style must be JSX props so the browser wires LTR editing engine on first render */}
+      {/* Editable area - normal standard contentEditable */}
       <div
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
-        dir="ltr"
-        lang="en"
-        style={{ direction: 'ltr', unicodeBidi: 'bidi-override', textAlign: 'left', writingMode: 'horizontal-tb' }}
         onInput={handleInput}
         onPaste={handlePaste}
         data-placeholder={placeholder ?? 'დაიწყეთ ტექსტის აკრეფა...'}
         className={[
           'min-h-[450px] p-5 focus:outline-none text-foreground leading-relaxed overflow-y-auto',
+          'text-left',
           '[&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mt-5 [&_h1]:mb-2',
           '[&_h2]:text-xl [&_h2]:font-bold [&_h2]:mt-4 [&_h2]:mb-2',
           '[&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1',
