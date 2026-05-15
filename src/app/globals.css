@@ -49,3 +49,10 @@ body {
   font-family: Inter, system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+[contenteditable] {
+  direction: ltr !important;
+  text-align: left !important;
+  unicode-bidi: isolate !important;
+  writing-mode: horizontal-tb !important;
+}
