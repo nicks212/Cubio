@@ -1,15 +1,17 @@
 'use client';
 
-import { useState, useActionState } from 'react';
-import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight, RotateCcw, Search } from 'lucide-react';
+import { useState, useActionState, useCallback } from 'react';
+import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight, RotateCcw, Search, FileText } from 'lucide-react';
 import {
   toggleUserAdmin, upsertLocalization, deleteLocalization,
   createIntegration, updateIntegration, deleteIntegration, toggleIntegration,
+  upsertTermsContent,
 } from './actions';
 import { formatDate } from '@/lib/utils';
 import { useT } from '@/components/TranslationsProvider';
+import RichTextEditor from '@/components/RichTextEditor';
 
-type Tab = 'users' | 'localizations' | 'integrations';
+type Tab = 'users' | 'localizations' | 'integrations' | 'terms';
 
 const PROVIDERS = ['facebook', 'instagram', 'telegram', 'whatsapp', 'viber'] as const;
 const providerIcons: Record<string, string> = { facebook: '📘', instagram: '📸', telegram: '✈️', whatsapp: '💬', viber: '📱' };
@@ -19,9 +21,10 @@ interface Props {
   integrations: Array<{ id: string; company_id: string; provider: string; provider_account_id: string; account_name: string; access_token: string; refresh_token?: string | null; is_active: boolean; created_at: string; company?: { company_name: string } | null }>;
   localizations: Array<{ id: string | null; keyword: string; localization_text: string }>;
   companies: Array<{ id: string; company_name: string }>;
+  termsContent: Array<{ language: string; content: string; updated_at: string }>;
 }
 
-export default function AdminClient({ users, integrations, localizations, companies }: Props) {
+export default function AdminClient({ users, integrations, localizations, companies, termsContent }: Props) {
   const t = useT();
   const [tab, setTab] = useState<Tab>('users');
   const [intModal, setIntModal] = useState(false);
@@ -29,6 +32,30 @@ export default function AdminClient({ users, integrations, localizations, compan
   const [locModal, setLocModal] = useState(false);
   const [editingLoc, setEditingLoc] = useState<Props['localizations'][0] | null>(null);
   const [locSearch, setLocSearch] = useState('');
+
+  // Terms tab state
+  const initKa = termsContent.find(r => r.language === 'ka')?.content ?? '';
+  const initEn = termsContent.find(r => r.language === 'en')?.content ?? '';
+  const [termsLang, setTermsLang] = useState<'ka' | 'en'>('ka');
+  const [termsKa, setTermsKa] = useState(initKa);
+  const [termsEn, setTermsEn] = useState(initEn);
+  const [termsSaving, setTermsSaving] = useState(false);
+  const [termsSaved, setTermsSaved] = useState(false);
+
+  const handleTermsSave = useCallback(async () => {
+    setTermsSaving(true);
+    setTermsSaved(false);
+    const content = termsLang === 'ka' ? termsKa : termsEn;
+    await upsertTermsContent(termsLang, content);
+    setTermsSaving(false);
+    setTermsSaved(true);
+    setTimeout(() => setTermsSaved(false), 2500);
+  }, [termsLang, termsKa, termsEn]);
+
+  const handleTermsChange = useCallback((html: string) => {
+    if (termsLang === 'ka') setTermsKa(html);
+    else setTermsEn(html);
+  }, [termsLang]);
 
   const [intCreateState, intCreateAction, intCreatePending] = useActionState(createIntegration, null);
   const [intUpdateState, intUpdateAction, intUpdatePending] = useActionState(updateIntegration, null);
@@ -56,6 +83,7 @@ export default function AdminClient({ users, integrations, localizations, compan
     { id: 'users' as Tab, label: t['admin.tab_users'] ?? 'Users', icon: Users },
     { id: 'localizations' as Tab, label: t['admin.tab_localizations'] ?? 'Localizations', icon: Languages },
     { id: 'integrations' as Tab, label: t['admin.tab_integrations'] ?? 'Integrations', icon: Plug },
+    { id: 'terms' as Tab, label: t['admin.tab_terms'] ?? 'წ. და პ.', icon: FileText },
   ];
 
   return (
@@ -247,6 +275,50 @@ export default function AdminClient({ users, integrations, localizations, compan
             </div>
           </div>
         </>
+      )}
+
+      {/* Terms Tab */}
+      {tab === 'terms' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">{t['admin.terms_title']}</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">{t['admin.terms_subtitle']}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              {/* Language switcher */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+                <button
+                  onClick={() => setTermsLang('ka')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${termsLang === 'ka' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  {t['admin.terms_lang_ka'] ?? 'ქართული'}
+                </button>
+                <button
+                  onClick={() => setTermsLang('en')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${termsLang === 'en' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  {t['admin.terms_lang_en'] ?? 'English'}
+                </button>
+              </div>
+              {/* Save */}
+              <button
+                onClick={handleTermsSave}
+                disabled={termsSaving}
+                className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm disabled:opacity-60 transition-all min-w-[100px] justify-center"
+              >
+                {termsSaved ? (t['admin.terms_saved'] ?? '✓ Saved') : termsSaving ? (t['admin.terms_saving'] ?? 'Saving...') : (t['admin.terms_save'] ?? 'Save')}
+              </button>
+            </div>
+          </div>
+
+          <RichTextEditor
+            key={termsLang}
+            initialValue={termsLang === 'ka' ? termsKa : termsEn}
+            onChange={handleTermsChange}
+            placeholder={termsLang === 'ka' ? 'ტექსტი ქართულად...' : 'Text in English...'}
+          />
+        </div>
       )}
 
       {/* Integration Modal */}

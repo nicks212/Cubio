@@ -125,3 +125,13 @@ export async function toggleIntegration(id: string, is_active: boolean) {
   revalidatePath('/dashboard/admin');
   return { success: true };
 }
+
+export async function upsertTermsContent(language: string, content: string): Promise<{ success?: boolean; error?: string }> {
+  if (!await isAdmin()) return { error: 'Unauthorized' };
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from('terms_content')
+    .upsert({ language, content, updated_at: new Date().toISOString() }, { onConflict: 'language' });
+  if (error) return { error: error.message };
+  return { success: true };
+}

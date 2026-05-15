@@ -13,11 +13,12 @@ export default async function AdminPage() {
 
   const adminClient = createAdminClient();
 
-  const [{ data: users }, { data: dbLocalizations }, { data: integrations }, { data: companies }] = await Promise.all([
+  const [{ data: users }, { data: dbLocalizations }, { data: integrations }, { data: companies }, { data: termsRows }] = await Promise.all([
     adminClient.from('profiles').select('*, company:companies(company_name, business_type)').order('created_at', { ascending: false }),
     adminClient.from('localizations').select('*').order('keyword'),
     adminClient.from('integrations').select('*, company:companies(company_name)').order('created_at', { ascending: false }),
     adminClient.from('companies').select('id, company_name').order('company_name'),
+    adminClient.from('terms_content').select('language, content, updated_at'),
   ]);
 
   // Merge all default keys with DB overrides so every key is visible and editable
@@ -35,6 +36,7 @@ export default async function AdminPage() {
       localizations={allLocalizations}
       integrations={integrations ?? []}
       companies={companies ?? []}
+      termsContent={termsRows ?? []}
     />
   );
 }

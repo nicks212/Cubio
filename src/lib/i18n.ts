@@ -364,6 +364,38 @@ export const DEFAULT_TRANSLATIONS: T = {
   'products.edit': 'პროდუქტის რედაქტირება',
   'products.delete_confirm': 'წაშალოთ ეს პროდუქტი?',
   'products.images': 'ფოტოები (მაქს. 10)',
+
+  // === TERMS PAGE ===
+  'terms.title': 'წესები და პირობები',
+  'terms.subtitle': 'გთხოვთ გაეცნოთ ჩვენს წესებსა და პირობებს',
+  'terms.lang_ka': 'ქართული',
+  'terms.lang_en': 'English',
+  'terms.last_updated': 'ბოლო განახლება',
+  'terms.empty': 'შინაარსი ჯერ არ არის განთავსებული',
+  'terms.back': 'მთავარ გვერდზე დაბრუნება',
+
+  // === LANDING – TERMS LINK ===
+  'landing.terms_link': 'წესები და პირობები / პერსონალურ მონაცემთა პოლიტიკა',
+
+  // === ONBOARDING – TERMS ===
+  'onboarding.terms_section': 'წესები და პირობები',
+  'onboarding.terms_agree_label': 'ვეთანხმები წესებსა და პირობებს',
+  'onboarding.terms_read_link': 'წაიკითხე',
+  'onboarding.terms_required': 'გთხოვთ დაეთანხმოთ წესებსა და პირობებს',
+  'onboarding.terms_agree_btn': 'ვეთანხმები',
+  'onboarding.terms_close': 'დახურვა',
+  'onboarding.terms_modal_title': 'წესები და პირობები',
+  'onboarding.terms_empty': 'შინაარსი მალე გამოქვეყნდება',
+
+  // === ADMIN – TERMS ===
+  'admin.tab_terms': 'წ. და პ.',
+  'admin.terms_title': 'წესები და პირობები',
+  'admin.terms_subtitle': 'მართეთ ხელშეკრულების ტექსტი ქართულად და ინგლისურად',
+  'admin.terms_lang_ka': 'ქართული',
+  'admin.terms_lang_en': 'English',
+  'admin.terms_save': 'შენახვა',
+  'admin.terms_saving': 'ინახება...',
+  'admin.terms_saved': '✓ შენახულია',
 };
 
 export const getTranslations = unstable_cache(

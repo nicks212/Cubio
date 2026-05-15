@@ -22,7 +22,15 @@ export interface Company {
   company_name: string;
   business_type: BusinessType | null;
   ai_enabled: boolean;
+  terms_agreed: boolean;
+  terms_agreed_on: string | null;
   created_at: string;
+}
+
+export interface TermsContent {
+  language: string;
+  content: string;
+  updated_at: string;
 }
 
 export interface Profile {
