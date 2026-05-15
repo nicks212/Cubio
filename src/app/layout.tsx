@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const translations = await getTranslations();
   return (
-    <html lang="ka">
+    <html lang="ka" dir="ltr">
       <body>
         <TranslationsProvider translations={translations}>
           {children}
