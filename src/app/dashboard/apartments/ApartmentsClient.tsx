@@ -73,6 +73,7 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
       template_size: tpl.size_sq_m,
       template_rooms: tpl.rooms_quantity,
       template_price: tpl.price_per_sq_m,
+      template_images: tpl.images ?? [],
       start_floor: bulkForm.startFloor,
       end_floor: bulkForm.endFloor,
       units_per_floor: bulkForm.unitsPerFloor,

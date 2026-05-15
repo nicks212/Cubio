@@ -90,6 +90,7 @@ export async function bulkCreateApartments(data: {
   template_size: number;
   template_rooms: number;
   template_price: number;
+  template_images: string[];
   start_floor: number;
   end_floor: number;
   units_per_floor: number;
@@ -114,6 +115,7 @@ export async function bulkCreateApartments(data: {
         price_per_sq_m: pricePerSqm,
         total_price: Math.round(data.template_size * pricePerSqm),
         status: 'vacant' as const,
+        images: data.template_images,
       });
     }
   }
