@@ -22,6 +22,7 @@ interface ApartmentContext {
     status: string;
     project?: { name: string } | null;
   }>;
+  businessDescription: string | null;
 }
 
 interface ProductContext {
@@ -34,6 +35,7 @@ interface ProductContext {
     material?: string | null;
     in_stock: boolean;
   }>;
+  businessDescription: string | null;
 }
 
 export type BusinessContext = ApartmentContext | ProductContext;
@@ -79,12 +81,17 @@ export async function generateReply(
         .map(p => `- ${p.name}: $${p.price}, zodiac: ${p.zodiac_compatibility?.join(',') ?? 'all'}, material: ${p.material ?? 'N/A'}`)
         .join('\n')}`;
 
+  const businessDesc = context.businessDescription
+    ? `\nBusiness information:\n${context.businessDescription}`
+    : '';
+
   const historyStr = conversationHistory.slice(-6)
     .map(m => `${m.role}: ${m.content}`)
     .join('\n');
 
   const prompt = `You are a helpful AI sales assistant for a ${businessType === 'real_estate' ? 'real estate company' : 'craft jewelry shop'}.
 Respond in ${lang}. Be concise, friendly, and helpful.
+${businessDesc}
 
 ${contextStr}
 
@@ -101,6 +108,92 @@ Respond naturally. If asked about something not in the context, politely say you
     return isGeorgian
       ? 'გთხოვთ მოთმინება, ცოტა ხანში გიპასუხებთ.'
       : 'Thank you for your message. We will get back to you shortly.';
+  }
+}
+
+// ── Lead / Escalation Detection ───────────────────────────────────────────────
+
+export interface LeadDetection {
+  isLead: boolean;
+  summary: string;
+  meetingDate: string | null;
+  meetingNotes: string | null;
+}
+
+export interface EscalationDetection {
+  isEscalation: boolean;
+  summary: string;
+}
+
+/**
+ * Analyse a conversation (last 10 messages) to decide if a lead should be captured.
+ * A lead is captured when the customer explicitly wants to buy, visit, or schedule a meeting.
+ */
+export async function detectLead(
+  conversationHistory: Array<{ role: string; content: string }>,
+  businessType: 'real_estate' | 'craft_shop',
+): Promise<LeadDetection> {
+  const historyStr = conversationHistory
+    .map(m => `${m.role}: ${m.content}`)
+    .join('\n');
+
+  const prompt = `Analyze this conversation for sales lead signals. Respond with JSON only, no markdown.
+Business type: ${businessType}
+Conversation:
+${historyStr}
+
+A lead exists when the customer clearly expresses intent to:
+- (real_estate) visit an apartment, schedule a showing, or buy a unit
+- (craft_shop) purchase a product, ask for payment/delivery info, or request an order
+
+Return:
+{
+  "isLead": boolean,
+  "summary": "2-3 sentence summary of what the customer wants and their key requirements",
+  "meetingDate": "preferred date/time mentioned by customer, or null",
+  "meetingNotes": "any specific requests about the meeting/visit, or null"
+}`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const raw = result.response.text().trim().replace(/```json\n?|\n?```/g, '');
+    const parsed = JSON.parse(raw) as LeadDetection;
+    return parsed;
+  } catch {
+    return { isLead: false, summary: '', meetingDate: null, meetingNotes: null };
+  }
+}
+
+/**
+ * Analyse a conversation to decide if an escalation is needed.
+ * Escalation triggers: anger, repeated frustration, insults, threats, or repeated unanswered questions.
+ */
+export async function detectEscalation(
+  conversationHistory: Array<{ role: string; content: string }>,
+): Promise<EscalationDetection> {
+  const historyStr = conversationHistory
+    .map(m => `${m.role}: ${m.content}`)
+    .join('\n');
+
+  const prompt = `Analyze this conversation for customer escalation signals. Respond with JSON only, no markdown.
+Conversation:
+${historyStr}
+
+An escalation is needed when the customer is: angry, repeatedly frustrated, using offensive language, threatening to complain, or asking the same question multiple times without resolution.
+
+Return:
+{
+  "isEscalation": boolean,
+  "summary": "2-3 sentence summary of why the customer is upset and what they need"
+}`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const raw = result.response.text().trim().replace(/```json\n?|\n?```/g, '');
+    const parsed = JSON.parse(raw) as EscalationDetection;
+    return parsed;
+  } catch {
+    return { isEscalation: false, summary: '' };
   }
 }
 

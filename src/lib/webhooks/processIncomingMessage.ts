@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server';
-import { generateReply } from '@/lib/ai';
+import { generateReply, detectLead, detectEscalation } from '@/lib/ai';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
 import { sendProviderResponse } from './sendProviderResponse';
@@ -16,6 +16,7 @@ import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './ty
  * 6. Call Gemini AI
  * 7. Save AI reply
  * 8. Send reply back via provider API
+ * 9. Asynchronously check for lead / escalation and persist if detected
  */
 export async function processIncomingMessage(
   msg: NormalizedMessage,
@@ -122,5 +123,81 @@ export async function processIncomingMessage(
     integration.providerAccountId,
   );
 
+  // 9. Detect lead / escalation (fire-and-forget after reply is sent)
+  const fullHistory = [...history, { role: 'ai', content: reply }];
+  void detectAndPersistLeadOrEscalation(
+    supabase,
+    fullHistory,
+    integration.companyId,
+    conversationId,
+    integration.businessType,
+    msg.senderName,
+  );
+
   return { conversationId, reply };
+}
+
+async function detectAndPersistLeadOrEscalation(
+  supabase: ReturnType<typeof createAdminClient>,
+  history: Array<{ role: string; content: string }>,
+  companyId: string,
+  conversationId: string,
+  businessType: 'real_estate' | 'craft_shop',
+  senderName: string | null,
+) {
+  try {
+    // Run both detections in parallel
+    const [leadResult, escalationResult] = await Promise.all([
+      detectLead(history, businessType),
+      detectEscalation(history),
+    ]);
+
+    // Persist lead if detected and not already recorded for this conversation
+    if (leadResult.isLead && leadResult.summary) {
+      const { data: existing } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('conversation_id', conversationId)
+        .maybeSingle();
+
+      if (!existing) {
+        await supabase.from('leads').insert({
+          company_id: companyId,
+          conversation_id: conversationId,
+          name: senderName,
+          provider_nickname: senderName,
+          summary: leadResult.summary,
+          meeting_date: leadResult.meetingDate,
+          meeting_notes: leadResult.meetingNotes,
+          status: 'new',
+          ai_handled: true,
+        });
+        console.info(`[pipeline] Lead created for conversation ${conversationId}`);
+      }
+    }
+
+    // Persist escalation if detected and not already open for this conversation
+    if (escalationResult.isEscalation && escalationResult.summary) {
+      const { data: existing } = await supabase
+        .from('escalations')
+        .select('id')
+        .eq('conversation_id', conversationId)
+        .eq('status', 'open')
+        .maybeSingle();
+
+      if (!existing) {
+        await supabase.from('escalations').insert({
+          company_id: companyId,
+          conversation_id: conversationId,
+          contact_name: senderName,
+          provider_nickname: senderName,
+          summary: escalationResult.summary,
+          status: 'open',
+        });
+        console.info(`[pipeline] Escalation created for conversation ${conversationId}`);
+      }
+    }
+  } catch (err) {
+    console.error('[pipeline] detectAndPersistLeadOrEscalation error:', err);
+  }
 }

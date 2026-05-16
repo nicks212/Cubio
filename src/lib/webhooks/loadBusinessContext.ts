@@ -3,13 +3,23 @@ import type { BusinessContext } from '@/lib/ai';
 
 /**
  * Loads the appropriate business context data for the AI
- * based on the company's business type.
+ * based on the company's business type, including the optional
+ * business_description the company owner wrote during onboarding/settings.
  */
 export async function loadBusinessContext(
   companyId: string,
   businessType: 'real_estate' | 'craft_shop',
 ): Promise<BusinessContext> {
   const supabase = createAdminClient();
+
+  // Fetch business description alongside inventory
+  const { data: company } = await supabase
+    .from('companies')
+    .select('business_description')
+    .eq('id', companyId)
+    .single();
+
+  const businessDescription = (company?.business_description as string | null) ?? null;
 
   if (businessType === 'real_estate') {
     const { data: apartments } = await supabase
@@ -22,7 +32,7 @@ export async function loadBusinessContext(
       .limit(30);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return { apartments: (apartments ?? []) as any };
+    return { apartments: (apartments ?? []) as any, businessDescription };
   }
 
   const { data: products } = await supabase
@@ -33,5 +43,5 @@ export async function loadBusinessContext(
     .is('deleted_at', null)
     .limit(30);
 
-  return { products: products ?? [] };
+  return { products: products ?? [], businessDescription };
 }

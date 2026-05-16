@@ -396,6 +396,52 @@ export const DEFAULT_TRANSLATIONS: T = {
   'admin.terms_save': 'შენახვა',
   'admin.terms_saving': 'ინახება...',
   'admin.terms_saved': '✓ შენახულია',
+
+  // === NAVIGATION – NEW ===
+  'nav.leads': 'ლიდები',
+  'nav.escalations': 'ესკალაციები',
+
+  // === LEADS ===
+  'leads.title': 'ლიდები',
+  'leads.subtitle': 'AI-მ გამოვლენილი გაყიდვის შესაძლებლობები',
+  'leads.no_leads': 'ლიდები ჯერ არ არის. ისინი გამოჩნდება, როდესაც AI საუბარში შეამჩნევს ყიდვის ინტენციას.',
+  'leads.status_new': 'ახალი',
+  'leads.status_contacted': 'დაკავშირდა',
+  'leads.status_scheduled': 'დაგეგმილია',
+  'leads.status_closed': 'დახურული',
+  'leads.col_customer': 'მომხმარებელი',
+  'leads.col_contact': 'კონტაქტი',
+  'leads.col_summary': 'შინაარსი',
+  'leads.col_meeting': 'შეხვედრა',
+  'leads.col_status': 'სტატუსი',
+  'leads.col_date': 'თარიღი',
+  'leads.mark_contacted': 'დაკავშირდა',
+  'leads.mark_scheduled': 'შეხვედრა დაგეგმილია',
+  'leads.mark_closed': 'დახურვა',
+  'leads.provider': 'წყარო',
+
+  // === ESCALATIONS ===
+  'escalations.title': 'ესკალაციები',
+  'escalations.subtitle': 'მომხმარებლები, რომლებიც ადამიანის ჩარევას საჭიროებენ',
+  'escalations.no_escalations': 'ესკალაციები ჯერ არ არის. ისინი გამოჩნდება, როდესაც AI შეამჩნევს უკმაყოფილო მომხმარებელს.',
+  'escalations.status_open': 'ღია',
+  'escalations.status_resolved': 'მოგვარდა',
+  'escalations.status_ignored': 'იგნორი',
+  'escalations.col_customer': 'მომხმარებელი',
+  'escalations.col_contact': 'კონტაქტი',
+  'escalations.col_summary': 'სიტუაციის შინაარსი',
+  'escalations.col_status': 'სტატუსი',
+  'escalations.col_date': 'თარიღი',
+  'escalations.mark_resolved': 'მოგვარდა',
+  'escalations.mark_ignored': 'იგნორი',
+  'escalations.provider': 'წყარო',
+
+  // === BUSINESS DESCRIPTION ===
+  'settings.business_description': 'ბიზნეს აღწერილობა',
+  'settings.business_description_hint': 'AI გამოიყენებს ამ ინფორმაციას მომხმარებლებთან საუბრისას',
+  'settings.business_description_placeholder': 'თქვენი ბიზნესის აღწერილობა, როგორ არის: მისამართი, საკონტაქტო ინფორმაცია, სამუშაო განრიგი და სხვა დეტალები, რაც თქვენს მომხმარებელს შეიძლება გამოადგეს',
+  'onboarding.business_description': 'ბიზნეს აღწერილობა (სურვილისამებრ, მაგრამ გირჩევთ)',
+  'onboarding.business_description_placeholder': 'თქვენი ბიზნესის აღწერილობა, როგორ არის: მისამართი, საკონტაქტო ინფორმაცია, სამუშაო განრიგი და სხვა დეტალები, რაც თქვენს მომხმარებელს შეიძლება გამოადგეს',
 };
 
 export const getTranslations = unstable_cache(

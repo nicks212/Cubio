@@ -22,6 +22,7 @@ export interface Company {
   company_name: string;
   business_type: BusinessType | null;
   ai_enabled: boolean;
+  business_description: string | null;
   terms_agreed: boolean;
   terms_agreed_on: string | null;
   created_at: string;
@@ -153,8 +154,26 @@ export interface Lead {
   name: string | null;
   phone: string | null;
   email: string | null;
+  provider_nickname: string | null;
   interest: string | null;
-  status: 'new' | 'qualified' | 'pending' | 'lost';
+  summary: string | null;
+  meeting_date: string | null;
+  meeting_notes: string | null;
+  status: 'new' | 'contacted' | 'scheduled' | 'closed';
   ai_handled: boolean;
   created_at: string;
+}
+
+export interface Escalation {
+  id: string;
+  company_id: string;
+  conversation_id: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  provider_nickname: string | null;
+  summary: string;
+  status: 'open' | 'resolved' | 'ignored';
+  created_at: string;
+  updated_at: string;
 }

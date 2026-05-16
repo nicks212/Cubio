@@ -86,6 +86,20 @@ export default function SettingsClient({ profile, company, email }: Props) {
               <p className="text-xs text-muted-foreground">{t['settings.ai_enabled_desc']}</p>
             </div>
           </div>
+          <div>
+            <label htmlFor="business_description" className="block text-sm font-medium mb-1">{t['settings.business_description']}</label>
+            <p className="text-xs text-muted-foreground mb-2">{t['settings.business_description_hint']}</p>
+            <textarea
+              id="business_description"
+              name="business_description"
+              maxLength={1000}
+              rows={4}
+              defaultValue={company?.business_description ?? ''}
+              placeholder={t['settings.business_description_placeholder']}
+              className="w-full px-4 py-3 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm resize-none"
+            />
+            <p className="text-xs text-muted-foreground mt-1">მაქს. 1000 სიმბოლო</p>
+          </div>
           <div className="flex items-center justify-between">
             <SuccessMsg state={companyState} savedLabel={t['settings.saved']} />
             <button type="submit" disabled={companyPending} className="ml-auto px-5 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium disabled:opacity-50 text-sm">

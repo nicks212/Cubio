@@ -8,12 +8,15 @@ import { z } from 'zod';
 const setupSchema = z.object({
   companyName: z.string().min(1, 'Company name is required'),
   businessType: z.enum(['real_estate', 'craft_shop'], { message: 'Please select a business type' }),
+  businessDescription: z.string().max(1000).optional().nullable(),
 });
 
 export async function setupCompany(_prev: unknown, formData: FormData) {
+  const rawDesc = (formData.get('businessDescription') as string | null)?.trim() || null;
   const parsed = setupSchema.safeParse({
     companyName: formData.get('companyName'),
     businessType: formData.get('businessType'),
+    businessDescription: rawDesc,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Validation error' };
@@ -36,6 +39,7 @@ export async function setupCompany(_prev: unknown, formData: FormData) {
       .from('companies')
       .update({
         business_type: parsed.data.businessType,
+        business_description: parsed.data.businessDescription ?? null,
         terms_agreed: true,
         terms_agreed_on: new Date().toISOString(),
       })
@@ -52,6 +56,7 @@ export async function setupCompany(_prev: unknown, formData: FormData) {
     .insert({
       company_name: parsed.data.companyName,
       business_type: parsed.data.businessType,
+      business_description: parsed.data.businessDescription ?? null,
       terms_agreed: true,
       terms_agreed_on: new Date().toISOString(),
     })

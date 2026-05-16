@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Box, LayoutDashboard, Building2, Home, Users, BarChart3,
-  Menu, X, LogOut, Gem, Shield, MessageSquare, Plug, Settings,
+  Menu, X, LogOut, Gem, Shield, MessageSquare, Plug, Settings, AlertTriangle,
 } from 'lucide-react';
 import { logout } from '@/app/auth/actions';
 import type { Profile } from '@/types/database';
@@ -27,6 +27,8 @@ export default function DashboardLayoutClient({ profile, children }: Props) {
   const navItems = [
     { path: '/dashboard', label: t['nav.dashboard'], icon: LayoutDashboard, exact: true },
     { path: '/dashboard/conversations', label: t['nav.conversations'], icon: MessageSquare },
+    { path: '/dashboard/leads', label: t['nav.leads'], icon: Users },
+    { path: '/dashboard/escalations', label: t['nav.escalations'], icon: AlertTriangle },
     ...(isRealEstate ? [
       { path: '/dashboard/projects', label: t['nav.projects'], icon: Building2 },
       { path: '/dashboard/apartments', label: t['nav.apartments'], icon: Home },

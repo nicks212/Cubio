@@ -26,9 +26,27 @@ export async function updateCompany(_prev: unknown, formData: FormData) {
 
   const company_name = formData.get('company_name') as string;
   const ai_enabled = formData.get('ai_enabled') === 'true';
+  const business_description = ((formData.get('business_description') as string | null) ?? '').replace(/<[^>]*>/g, '').trim().slice(0, 1000) || null;
 
-  const { error } = await supabase.from('companies').update({ company_name, ai_enabled }).eq('id', profile.company_id);
+  // Save core fields — always safe
+  const { error } = await supabase
+    .from('companies')
+    .update({ company_name, ai_enabled })
+    .eq('id', profile.company_id);
   if (error) return { error: error.message };
+
+  // Save business_description separately — column requires migration 005 to be applied.
+  // If the column doesn't exist yet, skip silently so the rest of the form still saves.
+  if (business_description !== null || formData.has('business_description')) {
+    const { error: descError } = await supabase
+      .from('companies')
+      .update({ business_description } as Record<string, unknown>)
+      .eq('id', profile.company_id);
+    if (descError && !descError.message.includes('schema cache') && !descError.message.includes('column')) {
+      return { error: descError.message };
+    }
+  }
+
   revalidatePath('/dashboard/settings');
   return { success: true };
 }
