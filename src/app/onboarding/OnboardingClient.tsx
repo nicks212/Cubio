@@ -119,26 +119,19 @@ export default function OnboardingClient({ termsKa, termsEn }: Props) {
                     key={profile.id}
                     type="button"
                     onClick={() => setSelected(profile.id)}
-                    className={`rounded-xl border-2 p-5 text-left transition-all ${
+                    className={`rounded-xl border-2 p-4 text-left transition-all ${
                       isSelected
                         ? 'border-primary shadow-md ring-2 ring-primary/20'
                         : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'
                     }`}
                   >
-                    <div className={`w-10 h-10 ${profile.color} rounded-xl flex items-center justify-center mb-3`}>
+                    <div className={`w-9 h-9 ${profile.color} rounded-xl flex items-center justify-center mb-2`}>
                       <Icon className="w-5 h-5 text-white" />
                     </div>
-                    <h3 className="text-base font-bold mb-1">{profile.title}</h3>
-                    <p className="text-muted-foreground text-sm mb-3">{profile.description}</p>
-                    <div className="space-y-1">
-                      {profile.features.map((f) => (
-                        <div key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <CheckCircle2
-                            className={`w-3.5 h-3.5 flex-shrink-0 ${isSelected ? 'text-primary' : 'text-green-500'}`}
-                          />
-                          {f}
-                        </div>
-                      ))}
+                    <h3 className="text-base font-bold mb-1.5">{profile.title}</h3>
+                    <div className="flex items-start gap-1 text-xs text-muted-foreground">
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-px text-green-500" />
+                      <span>{profile.features.join(', ')}</span>
                     </div>
                   </button>
                 );
@@ -146,10 +139,29 @@ export default function OnboardingClient({ termsKa, termsEn }: Props) {
             </div>
           </div>
 
-          {/* Step 3: Terms agreement */}
+          {/* Step 3: Business description */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <span className="w-6 h-6 bg-primary text-white text-xs font-bold rounded-full flex items-center justify-center">3</span>
+              <label htmlFor="businessDescription" className="text-sm font-semibold text-foreground">
+                {t['onboarding.business_description']}
+              </label>
+            </div>
+            <textarea
+              id="businessDescription"
+              name="businessDescription"
+              maxLength={1000}
+              rows={4}
+              placeholder={t['onboarding.business_description_placeholder']}
+              className="w-full px-4 py-3 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground resize-none text-sm"
+            />
+            <p className="text-xs text-muted-foreground mt-1">მაქს. 1000 სიმბოლო</p>
+          </div>
+
+          {/* Step 4: Terms agreement */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="w-6 h-6 bg-primary text-white text-xs font-bold rounded-full flex items-center justify-center">4</span>
               <p className="text-sm font-semibold text-foreground">{t['onboarding.terms_section']}</p>
             </div>
             <div className="flex items-start gap-3">

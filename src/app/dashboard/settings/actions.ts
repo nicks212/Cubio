@@ -26,8 +26,9 @@ export async function updateCompany(_prev: unknown, formData: FormData) {
 
   const company_name = formData.get('company_name') as string;
   const ai_enabled = formData.get('ai_enabled') === 'true';
+  const business_description = ((formData.get('business_description') as string | null) ?? '').replace(/<[^>]*>/g, '').trim().slice(0, 1000) || null;
 
-  const { error } = await supabase.from('companies').update({ company_name, ai_enabled }).eq('id', profile.company_id);
+  const { error } = await supabase.from('companies').update({ company_name, ai_enabled, business_description }).eq('id', profile.company_id);
   if (error) return { error: error.message };
   revalidatePath('/dashboard/settings');
   return { success: true };
