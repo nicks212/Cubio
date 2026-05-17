@@ -15,6 +15,8 @@ export interface NormalizedMessage {
   senderName: string | null;
   /** The text content of the message */
   messageText: string;
+  /** Optional image URL sent by the customer (used for multimodal AI recommendations) */
+  imageUrl?: string | null;
   /** Raw provider payload for debugging / fallback */
   rawPayload: Record<string, unknown>;
 }
@@ -40,5 +42,6 @@ export interface MessageHistoryEntry {
 /** Result after processing a message through AI */
 export interface ProcessResult {
   conversationId: string;
-  reply: string;
+  /** null when AI was skipped (human takeover active or typing debounce) */
+  reply: string | null;
 }
