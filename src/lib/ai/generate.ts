@@ -33,6 +33,11 @@ export async function generateReply(
     ? buildRealEstateSystemPrompt(context as ApartmentContext)
     : buildCraftShopSystemPrompt(context as ProductContext);
 
+  // ── First message detection ───────────────────────────────────────────────
+  // History contains only user messages fetched before this turn, so
+  // an empty (or single-entry) history means this is the opening message.
+  const isFirstMessage = conversationHistory.filter(m => m.role === 'user').length === 0;
+
   // ── Conversation history (last 8 turns) ──────────────────────────────────
   const historyStr = conversationHistory
     .slice(-8)
@@ -48,6 +53,7 @@ export async function generateReply(
 
   // ── User turn ─────────────────────────────────────────────────────────────
   const userTurnParts: string[] = [];
+  if (isFirstMessage) userTurnParts.push('[SYSTEM NOTE: This is the customer\'s FIRST message. Begin your reply with a natural greeting before answering.]');
   if (historyStr) userTurnParts.push(`CONVERSATION HISTORY:\n${historyStr}`);
   if (imageUrl) userTurnParts.push(`[Customer sent an image: ${imageUrl}]`);
   userTurnParts.push(`Customer: ${message}`);
