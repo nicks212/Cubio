@@ -125,6 +125,8 @@ export interface Conversation {
   contact_phone: string | null;
   contact_email: string | null;
   status: 'open' | 'closed' | 'pending';
+  /** When true, AI is paused (human takeover active). Messages are still stored. */
+  ai_paused: boolean;
   created_at: string;
   updated_at: string;
   messages?: Message[];
