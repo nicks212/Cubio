@@ -250,7 +250,7 @@ export default function IntegrationsClient({ integrations }: Props) {
   const [connectingProvider, setConnectingProvider] = useState<Provider | null>(null);
   const [disconnectingProvider, setDisconnectingProvider] = useState<Provider | null>(null);
   const [backfilling, setBackfilling] = useState(false);
-  const [backfillResult, setBackfillResult] = useState<{ updated: number; failed: number } | null>(null);
+  const [backfillResult, setBackfillResult] = useState<{ updated: number; failed: number; errors?: string[] } | null>(null);
 
   const byProvider = new Map(integrations.map(i => [i.provider, i]));
   const visibleProviders = PROVIDERS.filter(p => !p.hidden);
@@ -262,7 +262,7 @@ export default function IntegrationsClient({ integrations }: Props) {
     setBackfillResult(null);
     try {
       const res = await fetch('/api/admin/backfill-names', { method: 'POST' });
-      const json = await res.json() as { updated: number; failed: number };
+      const json = await res.json() as { updated: number; failed: number; errors?: string[] };
       setBackfillResult(json);
     } catch {
       setBackfillResult({ updated: 0, failed: -1 });
@@ -369,11 +369,20 @@ export default function IntegrationsClient({ integrations }: Props) {
               {backfilling ? 'Running...' : 'Backfill Names'}
             </button>
             {backfillResult && (
-              <span className={`text-xs ${backfillResult.failed === -1 ? 'text-red-600' : 'text-slate-600'}`}>
-                {backfillResult.failed === -1
-                  ? 'Error — check console'
-                  : `Updated ${backfillResult.updated} record(s)${backfillResult.failed > 0 ? `, ${backfillResult.failed} failed (name unavailable)` : ''}`}
-              </span>
+              <div className="flex flex-col gap-1">
+                <span className={`text-xs ${backfillResult.failed === -1 ? 'text-red-600' : 'text-slate-600'}`}>
+                  {backfillResult.failed === -1
+                    ? 'Request failed'
+                    : `Updated ${backfillResult.updated} record(s)${backfillResult.failed > 0 ? `, ${backfillResult.failed} failed` : ''}`}
+                </span>
+                {backfillResult.errors && backfillResult.errors.length > 0 && (
+                  <div className="text-xs text-red-600 max-w-sm space-y-0.5">
+                    {backfillResult.errors.slice(0, 3).map((e, i) => (
+                      <p key={i} className="break-all">{e}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
