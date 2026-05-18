@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -10,6 +10,7 @@ import {
 import { logout } from '@/app/auth/actions';
 import type { Profile } from '@/types/database';
 import { useT } from '@/components/TranslationsProvider';
+import { createClient } from '@/lib/supabase/client';
 
 interface Props {
   profile: Profile & { company?: { business_type: string | null; company_name: string } | null };
@@ -22,6 +23,56 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
   const t = useT();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [liveLeads, setLiveLeads] = useState(leadsCount);
+  const [liveEscalations, setLiveEscalations] = useState(escalationsCount);
+
+  const companyId = profile.company_id;
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    const fetchCounts = async () => {
+      const [leadsRes, escRes] = await Promise.all([
+        supabase
+          .from('leads')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', companyId!)
+          .in('status', ['new', 'contacted', 'scheduled']),
+        supabase
+          .from('escalations')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', companyId!)
+          .eq('status', 'open'),
+      ]);
+      setLiveLeads(leadsRes.count ?? 0);
+      setLiveEscalations(escRes.count ?? 0);
+    };
+
+    const leadsChannel = supabase
+      .channel('nav-badge-leads')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'leads',
+        filter: `company_id=eq.${companyId}`,
+      }, () => { void fetchCounts(); })
+      .subscribe();
+
+    const escChannel = supabase
+      .channel('nav-badge-escalations')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'escalations',
+        filter: `company_id=eq.${companyId}`,
+      }, () => { void fetchCounts(); })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(leadsChannel);
+      void supabase.removeChannel(escChannel);
+    };
+  }, [companyId]);
 
   const isRealEstate = profile.company?.business_type === 'real_estate';
   const isCraftShop = profile.company?.business_type === 'craft_shop';
@@ -29,8 +80,8 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
   const navItems = [
     { path: '/dashboard', label: t['nav.dashboard'], icon: LayoutDashboard, exact: true, badge: 0 },
     { path: '/dashboard/conversations', label: t['nav.conversations'], icon: MessageSquare, badge: 0 },
-    { path: '/dashboard/leads', label: t['nav.leads'], icon: Users, badge: leadsCount },
-    { path: '/dashboard/escalations', label: t['nav.escalations'], icon: AlertTriangle, badge: escalationsCount },
+    { path: '/dashboard/leads', label: t['nav.leads'], icon: Users, badge: liveLeads },
+    { path: '/dashboard/escalations', label: t['nav.escalations'], icon: AlertTriangle, badge: liveEscalations },
     ...(isRealEstate ? [
       { path: '/dashboard/projects', label: t['nav.projects'], icon: Building2, badge: 0 },
       { path: '/dashboard/apartments', label: t['nav.apartments'], icon: Home, badge: 0 },

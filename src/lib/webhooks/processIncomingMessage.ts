@@ -70,6 +70,17 @@ export async function processIncomingMessage(
     // Back-fill contact_name if we resolved a name but the record was created without one
     if (resolvedName && !(existing.contact_name as string | null)) {
       await supabase.from('conversations').update({ contact_name: resolvedName }).eq('id', conversationId);
+      // Cascade to leads and escalations that were created with null contact_name
+      await Promise.all([
+        supabase.from('leads')
+          .update({ name: resolvedName, provider_nickname: resolvedName })
+          .eq('conversation_id', conversationId)
+          .is('name', null),
+        supabase.from('escalations')
+          .update({ contact_name: resolvedName, provider_nickname: resolvedName })
+          .eq('conversation_id', conversationId)
+          .is('contact_name', null),
+      ]);
     }
   } else {
     const { data: created, error: createErr } = await supabase
@@ -366,21 +377,30 @@ async function detectAndPersistLeadOrEscalation(
 // ── Meta sender name resolution ───────────────────────────────────────────────
 // Facebook/Instagram webhooks don’t include the sender’s display name.
 // We fetch it from the Graph API using the page access token.
-async function resolveMetaSenderName(
+export async function resolveMetaSenderName(
   senderId: string,
   provider: 'facebook' | 'instagram',
   accessToken: string,
 ): Promise<string | null> {
   try {
-    const fields = provider === 'instagram' ? 'username,name' : 'name';
+    const fields = provider === 'instagram' ? 'name,username' : 'name';
     const url = new URL(`https://graph.facebook.com/v19.0/${senderId}`);
     url.searchParams.set('fields', fields);
     url.searchParams.set('access_token', accessToken);
     const res = await fetch(url.toString());
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '(unreadable)');
+      console.warn(`[resolveMetaSenderName] Meta API ${res.status} for sender ${senderId} (${provider}): ${errBody}`);
+      return null;
+    }
     const data = await res.json() as { name?: string; username?: string };
-    return data.name ?? data.username ?? null;
-  } catch {
+    const resolved = data.name ?? data.username ?? null;
+    if (!resolved) {
+      console.warn(`[resolveMetaSenderName] No name/username for sender ${senderId} (${provider}):`, JSON.stringify(data));
+    }
+    return resolved;
+  } catch (err) {
+    console.error(`[resolveMetaSenderName] Fetch failed for sender ${senderId} (${provider}):`, err);
     return null;
   }
 }

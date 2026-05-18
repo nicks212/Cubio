@@ -249,9 +249,27 @@ function DisconnectModal({ provider, onClose }: { provider: Provider; onClose: (
 export default function IntegrationsClient({ integrations }: Props) {
   const [connectingProvider, setConnectingProvider] = useState<Provider | null>(null);
   const [disconnectingProvider, setDisconnectingProvider] = useState<Provider | null>(null);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<{ updated: number; failed: number } | null>(null);
 
   const byProvider = new Map(integrations.map(i => [i.provider, i]));
   const visibleProviders = PROVIDERS.filter(p => !p.hidden);
+
+  const hasMetaIntegration = integrations.some(i => i.provider === 'facebook' || i.provider === 'instagram');
+
+  const runBackfill = async () => {
+    setBackfilling(true);
+    setBackfillResult(null);
+    try {
+      const res = await fetch('/api/admin/backfill-names', { method: 'POST' });
+      const json = await res.json() as { updated: number; failed: number };
+      setBackfillResult(json);
+    } catch {
+      setBackfillResult({ updated: 0, failed: -1 });
+    } finally {
+      setBackfilling(false);
+    }
+  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
@@ -332,6 +350,33 @@ export default function IntegrationsClient({ integrations }: Props) {
           provider={disconnectingProvider}
           onClose={() => setDisconnectingProvider(null)}
         />
+      )}
+
+      {/* Backfill contact names for existing conversations */}
+      {hasMetaIntegration && (
+        <div className="mt-8 p-5 bg-white border border-slate-200 rounded-xl">
+          <h2 className="text-sm font-semibold text-foreground mb-1">Fix Unknown Contact Names</h2>
+          <p className="text-xs text-slate-500 mb-3">
+            Re-fetch display names from Facebook/Instagram for conversations that were saved as "Unknown".
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={runBackfill}
+              disabled={backfilling}
+              className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {backfilling && <Loader2 className="w-4 h-4 animate-spin" />}
+              {backfilling ? 'Running...' : 'Backfill Names'}
+            </button>
+            {backfillResult && (
+              <span className={`text-xs ${backfillResult.failed === -1 ? 'text-red-600' : 'text-slate-600'}`}>
+                {backfillResult.failed === -1
+                  ? 'Error — check console'
+                  : `Updated ${backfillResult.updated} record(s)${backfillResult.failed > 0 ? `, ${backfillResult.failed} failed (name unavailable)` : ''}`}
+              </span>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
