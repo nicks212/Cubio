@@ -13,6 +13,20 @@ const statusColors: Record<string, string> = {
   scheduled: 'bg-purple-100 text-purple-700',
   closed: 'bg-green-100 text-green-700',
 };
+const providerBadgeClass: Record<string, string> = {
+  facebook: 'bg-blue-100 text-blue-700',
+  instagram: 'bg-purple-100 text-purple-700',
+  telegram: 'bg-green-100 text-green-700',
+  whatsapp: 'bg-emerald-100 text-emerald-700',
+  viber: 'bg-violet-100 text-violet-700',
+};
+const providerLabel: Record<string, string> = {
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  telegram: 'Telegram',
+  whatsapp: 'WhatsApp',
+  viber: 'Viber',
+};
 
 interface Props {
   leads: Lead[];
@@ -165,9 +179,16 @@ export default function LeadsClient({ leads: initial, t }: Props) {
                       {lead.name ?? lead.provider_nickname ?? 'Unknown'}
                     </span>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[lead.status]}`}>
-                    {t[`leads.status_${lead.status}`] ?? lead.status}
-                  </span>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {lead.provider && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${providerBadgeClass[lead.provider] ?? 'bg-slate-100 text-slate-600'}`}>
+                        {providerLabel[lead.provider] ?? lead.provider}
+                      </span>
+                    )}
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColors[lead.status]}`}>
+                      {t[`leads.status_${lead.status}`] ?? lead.status}
+                    </span>
+                  </div>
                 </div>
                 {lead.summary && <p className="text-xs text-muted-foreground line-clamp-2 mb-1">{lead.summary}</p>}
                 <p className="text-xs text-muted-foreground">{formatDateTime(lead.created_at)}</p>
@@ -202,6 +223,11 @@ export default function LeadsClient({ leads: initial, t }: Props) {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {selected.provider && (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${providerBadgeClass[selected.provider] ?? 'bg-slate-100 text-slate-600'}`}>
+                        {providerLabel[selected.provider] ?? selected.provider}
+                      </span>
+                    )}
                     <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColors[selected.status]}`}>
                       {t[`leads.status_${selected.status}`] ?? selected.status}
                     </span>
@@ -216,21 +242,26 @@ export default function LeadsClient({ leads: initial, t }: Props) {
                 </div>
 
                 <div className="p-5 space-y-5">
-                  {(selected.phone || selected.email) && (
-                    <div>
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{t['leads.col_contact']}</p>
+                  {(selected.phone || selected.email) ? (
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                      <p className="text-xs font-semibold text-green-800 uppercase tracking-wide mb-3">📞 {t['leads.col_contact']}</p>
                       <div className="flex flex-wrap gap-3">
                         {selected.phone && (
-                          <span className="flex items-center gap-1.5 text-sm text-foreground bg-slate-50 rounded-lg px-3 py-1.5">
-                            <Phone className="w-3.5 h-3.5 text-muted-foreground" />{selected.phone}
-                          </span>
+                          <a href={`tel:${selected.phone}`} className="flex items-center gap-2 text-sm font-semibold text-green-900 bg-white border border-green-200 rounded-lg px-3 py-2 hover:bg-green-50 transition-colors">
+                            <Phone className="w-4 h-4" />{selected.phone}
+                          </a>
                         )}
                         {selected.email && (
-                          <span className="flex items-center gap-1.5 text-sm text-foreground bg-slate-50 rounded-lg px-3 py-1.5">
-                            <Mail className="w-3.5 h-3.5 text-muted-foreground" />{selected.email}
-                          </span>
+                          <a href={`mailto:${selected.email}`} className="flex items-center gap-2 text-sm font-semibold text-green-900 bg-white border border-green-200 rounded-lg px-3 py-2 hover:bg-green-50 transition-colors">
+                            <Mail className="w-4 h-4" />{selected.email}
+                          </a>
                         )}
                       </div>
+                    </div>
+                  ) : (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                      <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">📞 {t['leads.col_contact']}</p>
+                      <p className="text-xs text-amber-600">კონტაქტი ჯერ არ მოწოდებულა — AI-ს შეუძლია ავტომატურად შეაგროვოს საუბრის დროს</p>
                     </div>
                   )}
 

@@ -35,7 +35,9 @@ Return this exact JSON structure:
   "isLead": boolean,
   "summary": "2-3 sentence summary of what the customer wants and their key requirements. Empty string if not a lead.",
   "meetingDate": "preferred date/time mentioned by customer, or null",
-  "meetingNotes": "any specific requests about the meeting/visit, or null"
+  "meetingNotes": "any specific requests about the meeting/visit, or null",
+  "phone": "customer phone number if explicitly mentioned in conversation, or null",
+  "email": "customer email address if explicitly mentioned in conversation, or null"
 }`;
 
   try {
@@ -43,7 +45,7 @@ Return this exact JSON structure:
     const raw = result.response.text().trim().replace(/```json\n?|\n?```/g, '');
     return JSON.parse(raw) as LeadDetection;
   } catch {
-    return { isLead: false, summary: '', meetingDate: null, meetingNotes: null };
+    return { isLead: false, summary: '', meetingDate: null, meetingNotes: null, phone: null, email: null };
   }
 }
 

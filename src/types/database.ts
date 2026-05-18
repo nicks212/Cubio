@@ -157,6 +157,7 @@ export interface Lead {
   phone: string | null;
   email: string | null;
   provider_nickname: string | null;
+  provider: string | null;
   interest: string | null;
   summary: string | null;
   meeting_date: string | null;
@@ -174,6 +175,7 @@ export interface Escalation {
   contact_phone: string | null;
   contact_email: string | null;
   provider_nickname: string | null;
+  provider: string | null;
   summary: string;
   status: 'open' | 'resolved' | 'ignored';
   created_at: string;

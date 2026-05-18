@@ -18,8 +18,10 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext): string {
             `• Apt ${a.apartment_number}: ${a.rooms_quantity} rooms, ${a.size_sq_m}m², ` +
             `floor ${a.floor}, ₾${a.total_price.toLocaleString()}` +
             (a.project?.name ? ` — ${a.project.name}` : '');
-          const photos = a.images?.filter(u => u.startsWith('http')).slice(0, 3) ?? [];
-          if (photos.length > 0) line += `\n  photos: ${photos.join(' ')}`;
+          const aptPhotos = a.images?.filter(u => u.startsWith('http')) ?? [];
+          const projPhotos = (a.project as { name: string; images?: string[] } | null | undefined)?.images?.filter(u => u.startsWith('http')) ?? [];
+          const allPhotos = [...new Set([...aptPhotos, ...projPhotos])].slice(0, 3);
+          if (allPhotos.length > 0) line += `\n  photos: ${allPhotos.join(' ')}`;
           return line;
         })
         .join('\n')

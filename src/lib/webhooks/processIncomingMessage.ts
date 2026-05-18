@@ -38,13 +38,24 @@ export async function processIncomingMessage(
     return null;
   }
 
+  // Resolve sender name from provider API (Meta webhooks don’t include the user’s name)
+  let resolvedName = msg.senderName;
+  if (!resolvedName && (msg.provider === 'facebook' || msg.provider === 'instagram')) {
+    resolvedName = await resolveMetaSenderName(
+      msg.senderId,
+      msg.provider as 'facebook' | 'instagram',
+      integration.accessToken,
+    );
+    if (resolvedName) console.info(`${label} Resolved sender name: ${resolvedName}`);
+  }
+
   // 2. Find or create conversation — read ai_paused for human takeover check
   let conversationId: string;
   let aiPaused = false;
 
   const { data: existing } = await supabase
     .from('conversations')
-    .select('id, ai_paused')
+    .select('id, ai_paused, contact_name')
     .eq('company_id', integration.companyId)
     .eq('provider', msg.provider)
     .eq('provider_conversation_id', msg.senderId)
@@ -54,6 +65,10 @@ export async function processIncomingMessage(
   if (existing) {
     conversationId = existing.id as string;
     aiPaused = (existing.ai_paused as boolean | null) ?? false;
+    // Back-fill contact_name if we resolved a name but the record was created without one
+    if (resolvedName && !(existing.contact_name as string | null)) {
+      await supabase.from('conversations').update({ contact_name: resolvedName }).eq('id', conversationId);
+    }
   } else {
     const { data: created, error: createErr } = await supabase
       .from('conversations')
@@ -62,7 +77,7 @@ export async function processIncomingMessage(
         integration_id: integration.integrationId,
         provider: msg.provider,
         provider_conversation_id: msg.senderId,
-        contact_name: msg.senderName,
+        contact_name: resolvedName,
         status: 'open',
         ai_paused: false,
       })
@@ -215,7 +230,8 @@ export async function processIncomingMessage(
       integration.companyId,
       conversationId,
       integration.businessType,
-      msg.senderName,
+      resolvedName,
+      msg.provider,
     );
   }
 
@@ -229,6 +245,7 @@ async function detectAndPersistLeadOrEscalation(
   conversationId: string,
   businessType: 'real_estate' | 'craft_shop',
   senderName: string | null,
+  provider: string,
 ) {
   try {
     // Run both detections in parallel to minimise latency
@@ -251,11 +268,14 @@ async function detectAndPersistLeadOrEscalation(
           conversation_id: conversationId,
           name: senderName,
           provider_nickname: senderName,
+          phone: leadResult.phone,
+          email: leadResult.email,
           summary: leadResult.summary,
           meeting_date: leadResult.meetingDate,
           meeting_notes: leadResult.meetingNotes,
           status: 'new',
           ai_handled: true,
+          provider,
         });
         console.info(`[pipeline] Lead created for conversation ${conversationId}`);
       }
@@ -279,6 +299,7 @@ async function detectAndPersistLeadOrEscalation(
           provider_nickname: senderName,
           summary: escalationResult.summary,
           status: 'open',
+          provider,
         });
 
         // Pause AI — human takeover begins immediately for all future messages
@@ -292,5 +313,27 @@ async function detectAndPersistLeadOrEscalation(
     }
   } catch (err) {
     console.error('[pipeline] detectAndPersistLeadOrEscalation error:', err);
+  }
+}
+
+// ── Meta sender name resolution ───────────────────────────────────────────────
+// Facebook/Instagram webhooks don’t include the sender’s display name.
+// We fetch it from the Graph API using the page access token.
+async function resolveMetaSenderName(
+  senderId: string,
+  provider: 'facebook' | 'instagram',
+  accessToken: string,
+): Promise<string | null> {
+  try {
+    const fields = provider === 'instagram' ? 'username,name' : 'name';
+    const url = new URL(`https://graph.facebook.com/v19.0/${senderId}`);
+    url.searchParams.set('fields', fields);
+    url.searchParams.set('access_token', accessToken);
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    const data = await res.json() as { name?: string; username?: string };
+    return data.name ?? data.username ?? null;
+  } catch {
+    return null;
   }
 }

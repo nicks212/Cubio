@@ -10,7 +10,7 @@ export interface ApartmentContext {
     total_price: number;
     status: string;
     images?: string[];
-    project?: { name: string } | null;
+    project?: { name: string; images?: string[] } | null;
   }>;
   businessDescription: string | null;
 }
@@ -38,6 +38,8 @@ export interface LeadDetection {
   summary: string;
   meetingDate: string | null;
   meetingNotes: string | null;
+  phone: string | null;
+  email: string | null;
 }
 
 export interface EscalationDetection {

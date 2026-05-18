@@ -12,6 +12,20 @@ const statusColors: Record<string, string> = {
   resolved: 'bg-green-100 text-green-700',
   ignored: 'bg-slate-100 text-slate-500',
 };
+const providerBadgeClass: Record<string, string> = {
+  facebook: 'bg-blue-100 text-blue-700',
+  instagram: 'bg-purple-100 text-purple-700',
+  telegram: 'bg-green-100 text-green-700',
+  whatsapp: 'bg-emerald-100 text-emerald-700',
+  viber: 'bg-violet-100 text-violet-700',
+};
+const providerLabel: Record<string, string> = {
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  telegram: 'Telegram',
+  whatsapp: 'WhatsApp',
+  viber: 'Viber',
+};
 
 interface Props {
   escalations: Escalation[];
@@ -159,7 +173,7 @@ export default function EscalationsClient({ escalations: initial, t }: Props) {
                 onClick={() => setSelected(esc)}
                 className={`w-full text-left bg-white rounded-xl border p-4 transition-all hover:shadow-sm ${selected?.id === esc.id ? 'border-primary shadow-sm' : 'border-slate-200'}`}
               >
-                <div className="flex items-start justify-between gap-2 mb-1.5">
+                  <div className="flex items-start justify-between gap-2 mb-1.5">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
                       <AlertTriangle className="w-4 h-4 text-red-500" />
@@ -168,9 +182,16 @@ export default function EscalationsClient({ escalations: initial, t }: Props) {
                       {esc.contact_name ?? esc.provider_nickname ?? 'Unknown'}
                     </span>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[esc.status]}`}>
-                    {t[`escalations.status_${esc.status}`] ?? esc.status}
-                  </span>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {esc.provider && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${providerBadgeClass[esc.provider] ?? 'bg-slate-100 text-slate-600'}`}>
+                        {providerLabel[esc.provider] ?? esc.provider}
+                      </span>
+                    )}
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusColors[esc.status]}`}>
+                      {t[`escalations.status_${esc.status}`] ?? esc.status}
+                    </span>
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground line-clamp-2 mb-1">{esc.summary}</p>
                 <p className="text-xs text-muted-foreground">{formatDateTime(esc.created_at)}</p>
@@ -203,6 +224,11 @@ export default function EscalationsClient({ escalations: initial, t }: Props) {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {selected.provider && (
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${providerBadgeClass[selected.provider] ?? 'bg-slate-100 text-slate-600'}`}>
+                        {providerLabel[selected.provider] ?? selected.provider}
+                      </span>
+                    )}
                     <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColors[selected.status]}`}>
                       {t[`escalations.status_${selected.status}`] ?? selected.status}
                     </span>

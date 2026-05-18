@@ -13,12 +13,19 @@ const statusColors = {
   pending: 'bg-amber-100 text-amber-700',
 };
 
-const providerIcons: Record<string, string> = {
-  facebook: '📘',
-  instagram: '📸',
-  telegram: '✈️',
-  whatsapp: '💬',
-  viber: '📱',
+const providerBadgeClass: Record<string, string> = {
+  facebook: 'bg-blue-100 text-blue-700',
+  instagram: 'bg-purple-100 text-purple-700',
+  telegram: 'bg-green-100 text-green-700',
+  whatsapp: 'bg-emerald-100 text-emerald-700',
+  viber: 'bg-violet-100 text-violet-700',
+};
+const providerLabel: Record<string, string> = {
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  telegram: 'Telegram',
+  whatsapp: 'WhatsApp',
+  viber: 'Viber',
 };
 
 interface Props {
@@ -142,7 +149,9 @@ export default function ConversationsClient({ conversations: initial, companyId 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-1">
                     <p className="font-medium text-sm truncate">{conv.contact_name ?? conv.contact_phone ?? 'Unknown'}</p>
-                    <span className="text-xs text-muted-foreground">{providerIcons[conv.provider] ?? '💬'}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${providerBadgeClass[conv.provider] ?? 'bg-slate-100 text-slate-600'}`}>
+                      {providerLabel[conv.provider] ?? conv.provider}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusColors[conv.status as keyof typeof statusColors] ?? ''}`}>
@@ -186,7 +195,12 @@ export default function ConversationsClient({ conversations: initial, companyId 
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm">{selected.contact_name ?? selected.contact_phone ?? 'Unknown'}</p>
-                <p className="text-xs text-muted-foreground capitalize">{selected.provider} · {selected.status}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${providerBadgeClass[selected.provider] ?? 'bg-slate-100 text-slate-600'}`}>
+                    {providerLabel[selected.provider] ?? selected.provider}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{selected.status}</span>
+                </div>
               </div>
               {selected.ai_paused && (
                 <button
