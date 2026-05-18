@@ -4,4 +4,4 @@
  * Existing imports of '@/lib/ai' continue to work via this re-export.
  */
 export type { BusinessContext, ApartmentContext, ProductContext, LeadDetection, EscalationDetection } from './ai/index';
-export { generateReply, detectLead, detectEscalation } from './ai/index';
+export { generateReply, detectLead, detectEscalation, detectLeadAndEscalation } from './ai/index';
