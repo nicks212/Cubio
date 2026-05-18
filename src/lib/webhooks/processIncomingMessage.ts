@@ -383,8 +383,12 @@ export async function resolveMetaSenderName(
   accessToken: string,
 ): Promise<string | null> {
   try {
-    const fields = provider === 'instagram' ? 'name,username' : 'name';
-    const url = new URL(`https://graph.facebook.com/v19.0/${senderId}`);
+    // For Instagram: request name + username (display name or @handle as fallback)
+    // For Facebook: request name + first_name + last_name as fallback
+    const fields = provider === 'instagram'
+      ? 'name,username'
+      : 'name,first_name,last_name';
+    const url = new URL(`https://graph.facebook.com/v22.0/${senderId}`);
     url.searchParams.set('fields', fields);
     url.searchParams.set('access_token', accessToken);
     const res = await fetch(url.toString());
@@ -393,12 +397,22 @@ export async function resolveMetaSenderName(
       console.warn(`[resolveMetaSenderName] Meta API ${res.status} for sender ${senderId} (${provider}): ${errBody}`);
       return null;
     }
-    const data = await res.json() as { name?: string; username?: string };
-    const resolved = data.name ?? data.username ?? null;
-    if (!resolved) {
-      console.warn(`[resolveMetaSenderName] No name/username for sender ${senderId} (${provider}):`, JSON.stringify(data));
+    const data = await res.json() as { name?: string; first_name?: string; last_name?: string; username?: string };
+
+    if (provider === 'instagram') {
+      // Prefer display name; fall back to @username
+      const resolved = data.name ?? (data.username ? `@${data.username}` : null);
+      if (!resolved) console.warn(`[resolveMetaSenderName] No name/username for Instagram sender ${senderId}:`, JSON.stringify(data));
+      return resolved;
+    } else {
+      // Facebook: prefer full name, fall back to first+last, then first alone
+      const resolved =
+        data.name ??
+        ([data.first_name, data.last_name].filter(Boolean).join(' ') || null) ??
+        null;
+      if (!resolved) console.warn(`[resolveMetaSenderName] No name for Facebook sender ${senderId}:`, JSON.stringify(data));
+      return resolved;
     }
-    return resolved;
   } catch (err) {
     console.error(`[resolveMetaSenderName] Fetch failed for sender ${senderId} (${provider}):`, err);
     return null;

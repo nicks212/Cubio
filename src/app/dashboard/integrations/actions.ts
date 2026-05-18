@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 async function fetchMetaPageInfo(accessToken: string): Promise<{ id: string; name: string } | null> {
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v19.0/me?access_token=${encodeURIComponent(accessToken)}`,
+      `https://graph.facebook.com/v22.0/me?access_token=${encodeURIComponent(accessToken)}`,
       { cache: 'no-store' },
     );
     if (!res.ok) return null;

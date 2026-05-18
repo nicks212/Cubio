@@ -56,7 +56,7 @@ async function sendMetaResponse(
     console.error(`[sendMetaResponse] ${platform}: refusing to send empty message`);
     return;
   }
-  const apiVersion = 'v19.0';
+  const apiVersion = 'v22.0';
   const url = `https://graph.facebook.com/${apiVersion}/me/messages?access_token=${pageAccessToken}`;
 
   const res = await fetch(url, {
@@ -107,7 +107,7 @@ async function sendWhatsAppResponse(
   accessToken: string,
   phoneNumberId: string,
 ): Promise<void> {
-  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
+  const url = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
 
   const res = await fetch(url, {
     method: 'POST',
@@ -205,7 +205,7 @@ async function sendMetaImage(
   imageUrl: string,
   pageAccessToken: string,
 ): Promise<void> {
-  const apiVersion = 'v19.0';
+  const apiVersion = 'v22.0';
   const url = `https://graph.facebook.com/${apiVersion}/me/messages?access_token=${pageAccessToken}`;
 
   const res = await fetch(url, {
@@ -254,7 +254,7 @@ async function sendWhatsAppImage(
   accessToken: string,
   phoneNumberId: string,
 ): Promise<void> {
-  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
+  const url = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
 
   const res = await fetch(url, {
     method: 'POST',
