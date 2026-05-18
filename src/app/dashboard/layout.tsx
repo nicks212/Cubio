@@ -18,8 +18,28 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // Force onboarding if business type not set
   if (!profile.company?.business_type) redirect('/onboarding');
 
+  const companyId = profile.company_id ?? '';
+
+  // Fetch live counts for nav badges
+  const [{ count: openLeads }, { count: openEscalations }] = await Promise.all([
+    supabase
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId)
+      .in('status', ['new', 'contacted', 'scheduled']),
+    supabase
+      .from('escalations')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId)
+      .eq('status', 'open'),
+  ]);
+
   return (
-    <DashboardLayoutClient profile={profile}>
+    <DashboardLayoutClient
+      profile={profile}
+      leadsCount={openLeads ?? 0}
+      escalationsCount={openEscalations ?? 0}
+    >
       {children}
     </DashboardLayoutClient>
   );

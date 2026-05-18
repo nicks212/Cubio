@@ -33,7 +33,7 @@ ${businessType === 'real_estate'
 Return this exact JSON structure:
 {
   "isLead": boolean,
-  "summary": "2-3 sentence summary of what the customer wants and their key requirements. Empty string if not a lead.",
+  "summary": "2-3 sentence summary in GEORGIAN LANGUAGE (ქართული) of what the customer wants and their key requirements. Empty string if not a lead.",
   "meetingDate": "preferred date/time mentioned by customer, or null",
   "meetingNotes": "any specific requests about the meeting/visit, or null",
   "phone": "customer phone number if explicitly mentioned in conversation, or null",

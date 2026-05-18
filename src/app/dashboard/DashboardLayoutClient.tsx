@@ -14,9 +14,11 @@ import { useT } from '@/components/TranslationsProvider';
 interface Props {
   profile: Profile & { company?: { business_type: string | null; company_name: string } | null };
   children: React.ReactNode;
+  leadsCount?: number;
+  escalationsCount?: number;
 }
 
-export default function DashboardLayoutClient({ profile, children }: Props) {
+export default function DashboardLayoutClient({ profile, children, leadsCount = 0, escalationsCount = 0 }: Props) {
   const t = useT();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -25,20 +27,20 @@ export default function DashboardLayoutClient({ profile, children }: Props) {
   const isCraftShop = profile.company?.business_type === 'craft_shop';
 
   const navItems = [
-    { path: '/dashboard', label: t['nav.dashboard'], icon: LayoutDashboard, exact: true },
-    { path: '/dashboard/conversations', label: t['nav.conversations'], icon: MessageSquare },
-    { path: '/dashboard/leads', label: t['nav.leads'], icon: Users },
-    { path: '/dashboard/escalations', label: t['nav.escalations'], icon: AlertTriangle },
+    { path: '/dashboard', label: t['nav.dashboard'], icon: LayoutDashboard, exact: true, badge: 0 },
+    { path: '/dashboard/conversations', label: t['nav.conversations'], icon: MessageSquare, badge: 0 },
+    { path: '/dashboard/leads', label: t['nav.leads'], icon: Users, badge: leadsCount },
+    { path: '/dashboard/escalations', label: t['nav.escalations'], icon: AlertTriangle, badge: escalationsCount },
     ...(isRealEstate ? [
-      { path: '/dashboard/projects', label: t['nav.projects'], icon: Building2 },
-      { path: '/dashboard/apartments', label: t['nav.apartments'], icon: Home },
+      { path: '/dashboard/projects', label: t['nav.projects'], icon: Building2, badge: 0 },
+      { path: '/dashboard/apartments', label: t['nav.apartments'], icon: Home, badge: 0 },
     ] : []),
     ...(isCraftShop ? [
-      { path: '/dashboard/products', label: t['nav.products'], icon: Gem },
+      { path: '/dashboard/products', label: t['nav.products'], icon: Gem, badge: 0 },
     ] : []),
-    { path: '/dashboard/integrations', label: t['nav.integrations'], icon: Plug },
-    { path: '/dashboard/settings', label: t['nav.settings'], icon: Settings },
-    ...(profile.is_admin ? [{ path: '/dashboard/admin', label: t['nav.admin'], icon: Shield }] : []),
+    { path: '/dashboard/integrations', label: t['nav.integrations'], icon: Plug, badge: 0 },
+    { path: '/dashboard/settings', label: t['nav.settings'], icon: Settings, badge: 0 },
+    ...(profile.is_admin ? [{ path: '/dashboard/admin', label: t['nav.admin'], icon: Shield, badge: 0 }] : []),
   ];
 
   const isActive = (path: string, exact?: boolean) =>
@@ -46,7 +48,7 @@ export default function DashboardLayoutClient({ profile, children }: Props) {
 
   const NavItems = ({ onNavigate }: { onNavigate?: () => void }) => (
     <>
-      {navItems.map(({ path, label, icon: Icon, exact }) => (
+      {navItems.map(({ path, label, icon: Icon, exact, badge }) => (
         <Link
           key={path}
           href={path}
@@ -58,7 +60,12 @@ export default function DashboardLayoutClient({ profile, children }: Props) {
           }`}
         >
           <Icon className="w-5 h-5 flex-shrink-0" />
-          <span className="text-sm font-medium">{label}</span>
+          <span className="text-sm font-medium flex-1">{label}</span>
+          {badge > 0 && (
+            <span className="min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center leading-none">
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
         </Link>
       ))}
     </>

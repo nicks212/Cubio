@@ -261,15 +261,31 @@ async function detectAndPersistLeadOrEscalation(
       detectEscalation(history),
     ]);
 
-    // Persist lead if detected and not already recorded for this conversation
+    // Persist lead — update if an open lead exists (regenerate summary), create new if none/closed
     if (leadResult.isLead && leadResult.summary) {
-      const { data: existingLead } = await supabase
+      const { data: latestLead } = await supabase
         .from('leads')
-        .select('id')
+        .select('id, status')
         .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
-      if (!existingLead) {
+      if (latestLead && latestLead.status !== 'closed') {
+        // Existing open/active lead — regenerate with latest info
+        await supabase.from('leads').update({
+          name: senderName ?? undefined,
+          provider_nickname: senderName ?? undefined,
+          phone: leadResult.phone ?? undefined,
+          email: leadResult.email ?? undefined,
+          summary: leadResult.summary,
+          meeting_date: leadResult.meetingDate ?? undefined,
+          meeting_notes: leadResult.meetingNotes ?? undefined,
+          status: 'new',
+        }).eq('id', latestLead.id as string);
+        console.info(`[pipeline] Lead regenerated for conversation ${conversationId}`);
+      } else {
+        // No lead, or lead was closed — create fresh ticket
         await supabase.from('leads').insert({
           company_id: companyId,
           conversation_id: conversationId,
