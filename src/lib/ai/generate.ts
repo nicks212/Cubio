@@ -29,19 +29,20 @@ export async function generateReply(
   // ── Layer 1: Global rules ────────────────────────────────────────────
   const globalPrompt = buildGlobalSystemPrompt(photosSent);
 
-  // ── Layer 2: Business-type rules + data ──────────────────────────────────
+  // ── Layer 2: Business-type rules + data ────────────────────────────────────────
+  // Pass the user's current message so prompt builders can pre-filter catalog
   const businessPrompt = businessType === 'real_estate'
-    ? buildRealEstateSystemPrompt(context as ApartmentContext)
-    : buildCraftShopSystemPrompt(context as ProductContext);
+    ? buildRealEstateSystemPrompt(context as ApartmentContext, message)
+    : buildCraftShopSystemPrompt(context as ProductContext, message);
 
   // ── First message detection ───────────────────────────────────────────────
   // History contains only user messages fetched before this turn, so
   // an empty (or single-entry) history means this is the opening message.
   const isFirstMessage = conversationHistory.filter(m => m.role === 'user').length === 0;
 
-  // ── Conversation history (last 8 turns) ──────────────────────────────────
+  // ── Conversation history (last 6 turns) ────────────────────────────────────
   const historyStr = conversationHistory
-    .slice(-8)
+    .slice(-6)
     .map(m => `${m.role === 'ai' ? 'Assistant' : 'Customer'}: ${m.content}`)
     .join('\n');
 

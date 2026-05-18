@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server';
-import { generateReply, detectLead, detectEscalation } from '@/lib/ai';
+import { generateReply, detectLeadAndEscalation } from '@/lib/ai';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
 import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
@@ -170,13 +170,13 @@ export async function processIncomingMessage(
     integration.businessType,
   );
 
-  // 7. Load recent message history (last 10 turns)
+  // 7. Load recent message history (last 8 turns)
   const { data: historyRows } = await supabase
     .from('messages')
     .select('role, content')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
-    .limit(10);
+    .limit(8);
 
   const history: MessageHistoryEntry[] = ((historyRows ?? []) as MessageHistoryEntry[]).reverse();
 
@@ -266,11 +266,11 @@ async function detectAndPersistLeadOrEscalation(
   provider: string,
 ) {
   try {
-    // Run both detections in parallel to minimise latency
-    const [leadResult, escalationResult] = await Promise.all([
-      detectLead(history, businessType),
-      detectEscalation(history),
-    ]);
+    // Run combined detection in one Gemini call (saves 1 API round-trip per message)
+    const { lead: leadResult, escalation: escalationResult } = await detectLeadAndEscalation(
+      history,
+      businessType,
+    );
 
     // Persist lead — update if an open lead exists (regenerate summary), create new if none/closed
     if (leadResult.isLead && leadResult.summary) {

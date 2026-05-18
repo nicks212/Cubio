@@ -1,84 +1,68 @@
 import type { ProductContext } from '../types';
 
+type ProductRow = ProductContext['products'][0];
+
+function scoreProduct(p: ProductRow, q: string): number {
+  if (!q) return 0;
+  const text = `${p.name} ${p.category ?? ''} ${p.material ?? ''} ${(p.zodiac_compatibility ?? []).join(' ')} ${p.birthstones ?? ''}`.toLowerCase();
+  return text.includes(q.substring(0, 8)) ? 2 : 0;
+}
+
 /**
  * LAYER 2 — Craft Shop Business Rules
  *
- * Injected after global rules. Governs product recommendations,
- * lead qualification flow, image-based discovery, and craft/jewelry sales behavior.
+ * Token-efficient:
+ * - Top 5 relevant products get full detail + photo URLs
+ * - Remaining products shown in ultra-compact format (no URLs)
+ * - Accepts userQuery to pre-filter by keyword match
  */
-export function buildCraftShopSystemPrompt(context: ProductContext): string {
-  const availableProducts = context.products
-    .filter(p => p.in_stock)
-    .slice(0, 20);
+export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = ''): string {
+  const available = context.products.filter(p => p.in_stock);
+  const q = userQuery.toLowerCase();
 
-  const productList = availableProducts.length > 0
-    ? availableProducts
-        .map(p => {
-          const parts: string[] = [`• ${p.name}: ₾${p.price}`];
-          if (p.category) parts.push(p.category);
-          if (p.material) parts.push(p.material);
-          if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);
-          if (p.birthstones) parts.push(`birthstones: ${p.birthstones}`);
-          let line = parts.join(' | ');
-          const photos = p.images?.filter(u => u.startsWith('http')).slice(0, 3) ?? [];
-          if (photos.length > 0) line += `\n  photos: ${photos.join(' ')}`;
-          return line;
-        })
-        .join('\n')
+  const sorted = [...available].sort((a, b) => scoreProduct(b, q) - scoreProduct(a, q));
+  const top5 = sorted.slice(0, 5);
+  const rest = sorted.slice(5);
+
+  // Top 5 — full detail with photo URLs
+  const detailedList = top5.length > 0
+    ? top5.map(p => {
+        const parts: string[] = [`• ${p.name}: ₾${p.price}`];
+        if (p.category) parts.push(p.category);
+        if (p.material) parts.push(p.material);
+        if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);
+        if (p.birthstones) parts.push(`stones: ${p.birthstones}`);
+        let line = parts.join(' | ');
+        const photos = p.images?.filter(u => u.startsWith('http')).slice(0, 3) ?? [];
+        if (photos.length) line += `\n  photos: ${photos.join(' ')}`;
+        return line;
+      }).join('\n')
     : '(No products currently available)';
 
+  // Rest — ultra-compact, no photo URLs
+  const compactRest = rest.slice(0, 15).map(p => {
+    const parts = [`${p.name}:₾${p.price}`];
+    if (p.category) parts.push(p.category);
+    if (p.material) parts.push(p.material);
+    return parts.join('/');
+  }).join(' | ');
+
   const businessInfo = context.businessDescription
-    ? `\nBUSINESS INFORMATION:\n${context.businessDescription}\n`
+    ? `COMPANY INFO: ${context.businessDescription}\n\n`
     : '';
 
-  return `
-═══════════════════════════════════════════
-CRAFT SHOP SALES ASSISTANT RULES
-═══════════════════════════════════════════
-${businessInfo}
-ROLE:
-You are a warm, creative, and knowledgeable sales assistant for a craft jewelry shop.
-Be conversational and aesthetically oriented — focus on beauty, meaning, and feeling.
-Do not talk about products as specs or database entries.
+  return `CRAFT SHOP SALES ASSISTANT
 
-RECOMMENDATION BEHAVIOR:
-- Recommend products based on: zodiac compatibility, birthstones, materials,
-  aesthetic style, budget, and gift intentions.
-- Explain the symbolic meaning and emotional significance of stones and materials naturally.
-- Suggest complementary or visually similar products when relevant.
-- Support discovery-style shopping conversations where customers explore options.
-- When a customer is buying a gift, ask about the recipient to make better recommendations.
+${businessInfo}ROLE: Warm, creative sales assistant for a craft jewelry shop. Recommend based on zodiac, birthstones, materials, style, budget, and gift intent. Focus on meaning and beauty.
 
-IMAGE-BASED RECOMMENDATIONS:
-If a customer sends an image:
-  • Analyze the visual style, color palette, materials, and jewelry type in the image.
-  • Recommend products from the available list that are visually or aesthetically similar.
-  • Consider the customer's budget if mentioned.
-  • Respond naturally, e.g.: "This looks like a [style]. We have some similar pieces you might love..."
-  • Use multimodal understanding to compare aesthetics — not just keywords.
+IMAGE RECOMMENDATIONS: If customer sends an image, match visual style, colors, and materials to available products.
 
-LEAD QUALIFICATION — Craft Shop:
-Trigger lead qualification when the customer:
-  • Wants to buy a specific product
-  • Expresses clear purchase intent
-  • Asks how or where to buy, pay, or order
-  • Asks about delivery or pickup
+LEAD FLOW: When customer wants to buy — confirm product(s), provide shop contact/address, confirm inquiry received.
 
-Qualification flow (one step at a time, naturally):
-  Step 1 — Acknowledge their interest warmly
-  Step 2 — Confirm which product(s) they are interested in
-  Step 3 — Provide shop address and contact information
-  Step 4 — Confirm their inquiry was received
+TOP PRODUCTS${q ? ' (matched to your message)' : ''}:
+${detailedList}${
+    compactRest ? `\n\nMORE PRODUCTS (compact — ask for details on any):\n${compactRest}` : ''
+  }
 
-After completing the lead:
-  • Provide shop address/contact details
-  • Confirm the order inquiry was received
-  • Inform them that a representative will contact them if further assistance is needed
-
-AVAILABLE PRODUCTS:
-${productList}
-
-Only reference products listed above.
-Do not invent products, prices, materials, or availability.
-`.trim();
+Only reference products listed here. Do not invent products, prices, or availability.`.trim();
 }

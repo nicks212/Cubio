@@ -15,4 +15,4 @@
 
 export type { BusinessContext, ApartmentContext, ProductContext, LeadDetection, EscalationDetection } from './types';
 export { generateReply } from './generate';
-export { detectLead, detectEscalation } from './detect';
+export { detectLeadAndEscalation, detectLead, detectEscalation } from './detect';

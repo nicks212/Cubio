@@ -1,78 +1,82 @@
 import type { ApartmentContext } from '../types';
 
+type ApartmentRow = ApartmentContext['apartments'][0];
+
+function shortPrice(price: number): string {
+  return price >= 1000 ? `₾${Math.round(price / 1000)}k` : `₾${price}`;
+}
+
+function scoreApartment(a: ApartmentRow, wantRooms: number | null, maxPrice: number | null): number {
+  let s = 0;
+  if (wantRooms !== null && a.rooms_quantity === wantRooms) s += 3;
+  if (maxPrice !== null && a.total_price <= maxPrice) s += 2;
+  return s;
+}
+
 /**
  * LAYER 2 — Real Estate Business Rules
  *
  * Injected after global rules. Governs apartment recommendations,
  * lead qualification flow, and real estate sales behavior.
  */
-export function buildRealEstateSystemPrompt(context: ApartmentContext): string {
-  const vacantApartments = context.apartments
-    .filter(a => a.status === 'vacant')
-    .slice(0, 20);
+export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery = ''): string {
+  const vacant = context.apartments.filter(a => a.status === 'vacant');
 
-  const apartmentList = vacantApartments.length > 0
-    ? vacantApartments
-        .map(a => {
-          let line =
-            `• Apt ${a.apartment_number}: ${a.rooms_quantity} rooms, ${a.size_sq_m}m², ` +
-            `floor ${a.floor}, ₾${a.total_price.toLocaleString()}` +
-            (a.project?.name ? ` — ${a.project.name}` : '');
-          const aptPhotos = a.images?.filter(u => u.startsWith('http')) ?? [];
-          const projPhotos = (a.project as { name: string; images?: string[] } | null | undefined)?.images?.filter(u => u.startsWith('http')) ?? [];
-          const allPhotos = [...new Set([...aptPhotos, ...projPhotos])].slice(0, 3);
-          if (allPhotos.length > 0) line += `\n  photos: ${allPhotos.join(' ')}`;
-          return line;
-        })
-        .join('\n')
+  // Simple preference extraction from the current user message
+  const q = userQuery.toLowerCase();
+  const roomsMatch = q.match(/(\d)\s*(?:room|bed|ოთახ)/);
+  const priceMatch = q.match(/([\d\s]{2,10})\s*(?:₾|lari|ლარ)/);
+  const wantRooms = roomsMatch ? parseInt(roomsMatch[1]) : null;
+  const maxPrice = priceMatch ? parseInt(priceMatch[1].replace(/\s/g, '')) : null;
+
+  // Sort by preference match — best matches first
+  const sorted = [...vacant].sort(
+    (a, b) => scoreApartment(b, wantRooms, maxPrice) - scoreApartment(a, wantRooms, maxPrice)
+  );
+  const top5 = sorted.slice(0, 5);
+  const rest = sorted.slice(5);
+
+  // Top 5 — full detail with photo URLs
+  const detailedList = top5.length > 0
+    ? top5.map(a => {
+        let line = `• Apt ${a.apartment_number}: ${a.rooms_quantity} rooms, ${a.size_sq_m}m², floor ${a.floor}, ₾${a.total_price.toLocaleString()}${
+          a.project?.name ? ` — ${a.project.name}` : ''
+        }`;
+        const photos = [
+          ...(a.images?.filter(u => u.startsWith('http')) ?? []),
+          ...((a.project as { name: string; images?: string[] } | null)?.images?.filter(u => u.startsWith('http')) ?? []),
+        ];
+        const deduped = [...new Set(photos)].slice(0, 3);
+        if (deduped.length) line += `\n  photos: ${deduped.join(' ')}`;
+        return line;
+      }).join('\n')
     : '(No apartments currently available)';
 
+  // Rest — ultra-compact, no photo URLs (saves ~60 tokens per apartment)
+  const compactRest = rest.slice(0, 15).map(a =>
+    `A${a.apartment_number}:${a.rooms_quantity}br/${a.size_sq_m}m²/fl${a.floor}/${shortPrice(a.total_price)}${
+      a.project?.name ? `/${a.project.name}` : ''
+    }`
+  ).join(' | ');
+
   const businessInfo = context.businessDescription
-    ? `\nBUSINESS INFORMATION:\n${context.businessDescription}\n`
+    ? `COMPANY INFO: ${context.businessDescription}\n\n`
     : '';
 
-  return `
-═══════════════════════════════════════════
-REAL ESTATE SALES ASSISTANT RULES
-═══════════════════════════════════════════
-${businessInfo}
-ROLE:
-You are a knowledgeable, helpful real estate sales assistant.
-Behave like a professional human sales agent — not like a database query engine or calculator.
+  const filterNote = (wantRooms ?? maxPrice)
+    ? ' (sorted by your preferences)'
+    : ' (tell me your preferences — rooms, budget, floor — for better matches)';
 
-RECOMMENDATION BEHAVIOR:
-- Recommend apartments based on the customer's stated preferences:
-  budget, room count, floor preference, apartment size, project or location.
-- If no exact match exists, proactively suggest the closest alternatives.
-- Explain payment and installment options naturally and conversationally.
-- Help customers compare apartment options when requested.
-- Identify high-intent buyers and guide them toward scheduling a visit.
-- Answer repetitive questions about apartments or projects clearly and patiently.
+  return `REAL ESTATE SALES ASSISTANT
 
-LEAD QUALIFICATION — Real Estate:
-Trigger lead qualification when the customer:
-  • Wants to visit or physically see an apartment
-  • Wants to schedule a meeting or showing
-  • Expresses strong buying intent or asks about reservation
-  • Asks to speak with a sales representative
+${businessInfo}ROLE: Professional real estate sales agent. Recommend based on budget, room count, floor, size, project. Guide high-intent buyers toward scheduling a visit.
 
-Qualification flow (one question at a time, naturally):
-  Step 1 — Acknowledge their interest warmly
-  Step 2 — Ask for their preferred meeting date and time
-  Step 3 — Ask for their mobile phone number
-  Step 4 — Confirm which apartment(s) they are interested in
+LEAD FLOW: When customer wants to visit/schedule/reserve — collect one at a time: preferred date → phone number → which apartment(s). Confirm a sales rep will follow up.
 
-After completing the lead:
-  • Confirm their request has been received
-  • Inform them that a sales representative will contact them shortly to confirm
+TOP APARTMENTS${filterNote}:
+${detailedList}${
+    compactRest ? `\n\nMORE AVAILABLE (compact — ask for details on any):\n${compactRest}` : ''
+  }
 
-Note: Date/time validation and scheduling are handled by the system.
-Your role is to collect the information conversationally — not to validate it.
-
-AVAILABLE APARTMENTS:
-${apartmentList}
-
-Only reference apartments listed above.
-If a customer asks about something not in the list, tell them you will check availability and get back to them.
-`.trim();
+Only reference apartments listed here. For anything not listed, say you will check and follow up.`.trim();
 }
