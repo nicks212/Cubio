@@ -8,8 +8,5 @@ export const model = genAI.getGenerativeModel({
   generationConfig: {
     temperature: 0.7,
     maxOutputTokens: 600,
-    // Disable thinking tokens — a conversational sales bot doesn't need internal
-    // reasoning. Thinking tokens cost $3.50/1M vs $0.15/1M for standard input.
-    thinkingConfig: { thinkingBudget: 0 },
   },
 });
