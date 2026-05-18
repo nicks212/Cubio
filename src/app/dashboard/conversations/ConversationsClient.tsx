@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, Search, Send, User, Clock, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useCallback, useTransition } from 'react';
+import { MessageSquare, Search, Send, User, Clock, ChevronRight, BotOff, BotMessageSquare } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { Conversation, Message } from '@/types/database';
 import { formatDateTime } from '@/lib/utils';
@@ -34,7 +34,22 @@ export default function ConversationsClient({ conversations: initial, companyId 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [newMessage, setNewMessage] = useState('');
+  const [, startTransition] = useTransition();
   const supabase = createClient();
+
+  // Resume AI: clear ai_paused + mark open escalation resolved
+  const resolveEscalation = useCallback((conv: Conversation) => {
+    startTransition(async () => {
+      await supabase.from('conversations').update({ ai_paused: false }).eq('id', conv.id);
+      await supabase
+        .from('escalations')
+        .update({ status: 'resolved' })
+        .eq('conversation_id', conv.id)
+        .eq('status', 'open');
+      setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, ai_paused: false } : c));
+      setSelected(prev => prev?.id === conv.id ? { ...prev, ai_paused: false } : prev);
+    });
+  }, [supabase]);
 
   const loadMessages = useCallback(async (conversationId: string) => {
     const { data } = await supabase
@@ -129,10 +144,16 @@ export default function ConversationsClient({ conversations: initial, companyId 
                     <p className="font-medium text-sm truncate">{conv.contact_name ?? conv.contact_phone ?? 'Unknown'}</p>
                     <span className="text-xs text-muted-foreground">{providerIcons[conv.provider] ?? '💬'}</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusColors[conv.status as keyof typeof statusColors] ?? ''}`}>
                       {conv.status}
                     </span>
+                    {conv.ai_paused && (
+                      <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">
+                        <BotOff className="w-3 h-3" />
+                        AI გათიშულია
+                      </span>
+                    )}
                     <span className="text-xs text-muted-foreground flex items-center gap-0.5">
                       <Clock className="w-3 h-3" />{formatDateTime(conv.updated_at)}
                     </span>
@@ -163,11 +184,28 @@ export default function ConversationsClient({ conversations: initial, companyId 
               <div className="w-9 h-9 bg-slate-100 rounded-full flex items-center justify-center">
                 <User className="w-5 h-5 text-slate-500" />
               </div>
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm">{selected.contact_name ?? selected.contact_phone ?? 'Unknown'}</p>
                 <p className="text-xs text-muted-foreground capitalize">{selected.provider} · {selected.status}</p>
               </div>
+              {selected.ai_paused && (
+                <button
+                  onClick={() => resolveEscalation(selected)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-medium rounded-lg transition-colors flex-shrink-0"
+                >
+                  <BotMessageSquare className="w-3.5 h-3.5" />
+                  ესკალაცია მოგვარებულია
+                </button>
+              )}
             </div>
+
+            {/* AI paused notice */}
+            {selected.ai_paused && (
+              <div className="mx-4 mt-3 flex items-center gap-2 p-3 bg-orange-50 border border-orange-200 rounded-xl text-sm text-orange-800">
+                <BotOff className="w-4 h-4 flex-shrink-0" />
+                <span>AI პასუხი გათიშულია — ესკალაცია აქტიურია. დახურეთ ესკალაცია AI-ის გასააქტიურებლად.</span>
+              </div>
+            )}
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
