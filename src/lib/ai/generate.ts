@@ -87,5 +87,22 @@ export async function generateReply(
   const isGeorgian = /[\u10D0-\u10FF]/.test(message);
   return isGeorgian
     ? 'გთხოვთ მოთმინება, ცოტა ხანში გიპასუხებთ.'
+    : 'Thank you for your message. We will get back to you shortly.';   lastErr = err;
+      const status = (err as { status?: number }).status;
+      const isTransient = status === 503 || status === 429;
+
+      if (!isTransient || attempt === retryDelays.length) break;
+
+      const delay = retryDelays[attempt];
+      console.warn(`[ai/generate] Attempt ${attempt + 1} failed (${status}) — retrying in ${delay}ms`);
+      await new Promise<void>(r => setTimeout(r, delay));
+    }
+  }
+
+  console.error('[ai/generate] generateReply error:', lastErr);
+  // Language-aware fallback — check for Georgian script in message
+  const isGeorgian = /[\u10D0-\u10FF]/.test(message);
+  return isGeorgian
+    ? 'გთხოვთ მოთმინება, ცოტა ხანში გიპასუხებთ.'
     : 'Thank you for your message. We will get back to you shortly.';
 }
