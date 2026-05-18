@@ -26,3 +26,5 @@ Thumbs.db
 # Logs
 npm-debug.log
 yarn-error.log
+.env.production
+.env.test
