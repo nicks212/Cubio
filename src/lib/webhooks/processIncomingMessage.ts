@@ -92,7 +92,7 @@ export async function processIncomingMessage(
     }
   }
 
-  // 4. Save incoming message — capture ID for debounce check
+  // 4. Save incoming message — capture ID + created_at for debounce check
   const { data: savedMsg } = await supabase
     .from('messages')
     .insert({
@@ -102,10 +102,11 @@ export async function processIncomingMessage(
       content: msg.messageText,
       provider_message_id: msg.messageId ?? null,
     })
-    .select('id')
+    .select('id, created_at')
     .single();
 
   const savedMessageId = (savedMsg?.id as string | undefined) ?? null;
+  const savedMessageCreatedAt = (savedMsg?.created_at as string | undefined) ?? null;
 
   // 5. Human takeover — message stored, AI skips response
   if (aiPaused) {
@@ -118,14 +119,14 @@ export async function processIncomingMessage(
   //    responding here — the newer message's handler will respond with full context.
   await new Promise<void>(r => setTimeout(r, 800));
 
-  if (savedMessageId) {
+  if (savedMessageId && savedMessageCreatedAt) {
     const { data: newerMsg } = await supabase
       .from('messages')
       .select('id')
       .eq('conversation_id', conversationId)
       .eq('role', 'user')
       .neq('id', savedMessageId)
-      .order('created_at', { ascending: false })
+      .gt('created_at', savedMessageCreatedAt)  // only messages strictly after this one
       .limit(1)
       .maybeSingle();
 
