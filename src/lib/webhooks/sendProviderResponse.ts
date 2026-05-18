@@ -52,6 +52,10 @@ async function sendMetaResponse(
   text: string,
   pageAccessToken: string,
 ): Promise<void> {
+  if (!text.trim()) {
+    console.error(`[sendMetaResponse] ${platform}: refusing to send empty message`);
+    return;
+  }
   const apiVersion = 'v19.0';
   const url = `https://graph.facebook.com/${apiVersion}/me/messages?access_token=${pageAccessToken}`;
 

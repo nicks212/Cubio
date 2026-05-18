@@ -68,7 +68,14 @@ export async function generateReply(
   for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
     try {
       const result = await model.generateContent(fullPrompt);
-      return result.response.text().trim();
+      const text = result.response.text().trim();
+      if (text) return text;
+      // Gemini returned an empty string — treat as transient and retry
+      console.warn(`[ai/generate] Attempt ${attempt + 1} — empty response, retrying`);
+      lastErr = new Error('Empty response from Gemini');
+      if (attempt === retryDelays.length) break;
+      await new Promise<void>(r => setTimeout(r, retryDelays[attempt]));
+      continue;
     } catch (err) {
       lastErr = err;
       const status = (err as { status?: number }).status;
