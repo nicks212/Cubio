@@ -60,6 +60,7 @@ export function adaptMetaPayload(
         senderId,
         senderName: null,
         messageText: event.message.text,
+        messageId: event.message.mid ?? null,
         rawPayload: event as Record<string, unknown>,
       });
     }

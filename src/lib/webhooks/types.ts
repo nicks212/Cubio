@@ -17,6 +17,8 @@ export interface NormalizedMessage {
   messageText: string;
   /** Optional image URL sent by the customer (used for multimodal AI recommendations) */
   imageUrl?: string | null;
+  /** Provider-assigned message ID (e.g. Facebook mid) — used for idempotency / dedup */
+  messageId?: string | null;
   /** Raw provider payload for debugging / fallback */
   rawPayload: Record<string, unknown>;
 }
