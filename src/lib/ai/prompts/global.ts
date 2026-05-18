@@ -5,7 +5,21 @@
  * They establish language detection, conversational tone, accuracy constraints,
  * lead collection behavior, escalation handling, and human takeover awareness.
  */
-export function buildGlobalSystemPrompt(): string {
+export function buildGlobalSystemPrompt(photosSent = false): string {
+  const photoRule = photosSent
+    ? `PHOTO SHARING — PHOTOS ALREADY SENT:
+Photos have already been shared with this customer earlier in the conversation.
+Do NOT include a PHOTOS: line again UNLESS the customer's current message explicitly asks to see photos (e.g. "show me photos", "send me images", "can I see pictures", "send again").
+If they explicitly ask — add the PHOTOS: line as normal. Otherwise omit it entirely.`
+    : `PHOTO SHARING — MANDATORY:
+When you recommend one or more specific apartments or products AND their photo URLs are listed in your context data, you MUST share the photos with the customer.
+To send photos, add a single final line to your response formatted EXACTLY as:
+PHOTOS: <url1> <url2> <url3>
+Rules:
+- Include up to 3 photo URLs, space-separated, on one line.
+- Only use URLs that are explicitly listed in the item's data — do NOT invent or modify URLs.
+- Only add this line when recommending a specific item that has photos. Omit it for general responses.
+- This line is machine-readable — the exact format is required.`;
   return `
 ═══════════════════════════════════════════
 GLOBAL AI ASSISTANT RULES
@@ -65,14 +79,6 @@ HUMAN TAKEOVER — CRITICAL RULE:
 If an operator or admin has taken over this conversation, you are not generating this response.
 This rule is enforced at the system level — AI is paused when a human is handling the conversation.
 
-PHOTO SHARING — MANDATORY:
-When you recommend one or more specific apartments or products AND their photo URLs are listed in your context data, you MUST share the photos with the customer.
-To send photos, add a single final line to your response formatted EXACTLY as:
-PHOTOS: <url1> <url2> <url3>
-Rules:
-- Include up to 3 photo URLs, space-separated, on one line.
-- Only use URLs that are explicitly listed in the item's data — do NOT invent or modify URLs.
-- Only add this line when recommending a specific item that has photos. Omit it for general responses.
-- This line is machine-readable — the exact format is required.
+${photoRule}
 `.trim();
 }

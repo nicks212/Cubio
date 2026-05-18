@@ -48,11 +48,11 @@ export default function EscalationsClient({ escalations: initial, t }: Props) {
   const updateStatus = (esc: Escalation, status: Escalation['status']) => {
     startTransition(async () => {
       await supabase.from('escalations').update({ status }).eq('id', esc.id);
-      // When resolving, re-enable AI on the linked conversation
+      // When resolving, re-enable AI on the linked conversation + reset photos_sent
       if (status === 'resolved' && esc.conversation_id) {
         await supabase
           .from('conversations')
-          .update({ ai_paused: false })
+          .update({ ai_paused: false, photos_sent: false })
           .eq('id', esc.conversation_id);
       }
       setEscalations(prev => prev.map(e => e.id === esc.id ? { ...e, status } : e));

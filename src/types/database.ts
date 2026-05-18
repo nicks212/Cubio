@@ -127,6 +127,8 @@ export interface Conversation {
   status: 'open' | 'closed' | 'pending';
   /** When true, AI is paused (human takeover active). Messages are still stored. */
   ai_paused: boolean;
+  /** True once photos have been sent at least once in this conversation. */
+  photos_sent: boolean;
   created_at: string;
   updated_at: string;
   messages?: Message[];

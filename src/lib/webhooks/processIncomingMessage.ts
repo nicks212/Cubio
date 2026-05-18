@@ -52,10 +52,11 @@ export async function processIncomingMessage(
   // 2. Find or create conversation — read ai_paused for human takeover check
   let conversationId: string;
   let aiPaused = false;
+  let photosSent = false;
 
   const { data: existing } = await supabase
     .from('conversations')
-    .select('id, ai_paused, contact_name')
+    .select('id, ai_paused, contact_name, photos_sent')
     .eq('company_id', integration.companyId)
     .eq('provider', msg.provider)
     .eq('provider_conversation_id', msg.senderId)
@@ -65,6 +66,7 @@ export async function processIncomingMessage(
   if (existing) {
     conversationId = existing.id as string;
     aiPaused = (existing.ai_paused as boolean | null) ?? false;
+    photosSent = (existing.photos_sent as boolean | null) ?? false;
     // Back-fill contact_name if we resolved a name but the record was created without one
     if (resolvedName && !(existing.contact_name as string | null)) {
       await supabase.from('conversations').update({ contact_name: resolvedName }).eq('id', conversationId);
@@ -174,6 +176,7 @@ export async function processIncomingMessage(
     integration.businessType,
     history,
     msg.imageUrl ?? undefined,
+    photosSent,
   );
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);
@@ -218,6 +221,10 @@ export async function processIncomingMessage(
       integration.accessToken,
       integration.providerAccountId,
     );
+    // Mark photos as sent so AI won't auto-send again
+    if (!photosSent) {
+      await supabase.from('conversations').update({ photos_sent: true }).eq('id', conversationId);
+    }
   }
 
   // 11. Detect lead / escalation (fire-and-forget — runs after reply is delivered)
@@ -281,17 +288,47 @@ async function detectAndPersistLeadOrEscalation(
       }
     }
 
-    // Persist escalation if none is already open for this conversation,
-    // then auto-pause AI so the human team takes over immediately.
+    // Persist escalation — but only based on messages sent AFTER the last resolved/ignored escalation.
+    // This prevents old frustration from re-triggering new tickets after a resolved case.
     if (escalationResult.isEscalation && escalationResult.summary) {
-      const { data: existingEscalation } = await supabase
+      // Find the most recent escalation for this conversation (any status)
+      const { data: latestEscalation } = await supabase
         .from('escalations')
-        .select('id')
+        .select('id, status, updated_at')
         .eq('conversation_id', conversationId)
-        .eq('status', 'open')
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
-      if (!existingEscalation) {
+      if (latestEscalation?.status === 'open') {
+        // Already being handled — skip
+      } else if (latestEscalation?.status === 'resolved' || latestEscalation?.status === 'ignored') {
+        // Prior escalation was resolved/ignored — only open a new one if there are 2+ NEW
+        // user messages AFTER that resolution (proving fresh frustration, not replay of old history)
+        const { count: newMsgCount } = await supabase
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('conversation_id', conversationId)
+          .eq('role', 'user')
+          .gt('created_at', latestEscalation.updated_at as string);
+
+        if ((newMsgCount ?? 0) >= 2) {
+          await supabase.from('escalations').insert({
+            company_id: companyId,
+            conversation_id: conversationId,
+            contact_name: senderName,
+            provider_nickname: senderName,
+            summary: escalationResult.summary,
+            status: 'open',
+            provider,
+          });
+          await supabase.from('conversations').update({ ai_paused: true }).eq('id', conversationId);
+          console.info(`[pipeline] New escalation (post-resolution) + AI paused for conversation ${conversationId}`);
+        } else {
+          console.info(`[pipeline] Escalation detection suppressed — not enough new messages since last resolution (conversation ${conversationId})`);
+        }
+      } else {
+        // No prior escalation — create fresh one
         await supabase.from('escalations').insert({
           company_id: companyId,
           conversation_id: conversationId,
@@ -301,13 +338,7 @@ async function detectAndPersistLeadOrEscalation(
           status: 'open',
           provider,
         });
-
-        // Pause AI — human takeover begins immediately for all future messages
-        await supabase
-          .from('conversations')
-          .update({ ai_paused: true })
-          .eq('id', conversationId);
-
+        await supabase.from('conversations').update({ ai_paused: true }).eq('id', conversationId);
         console.info(`[pipeline] Escalation created + AI paused for conversation ${conversationId}`);
       }
     }

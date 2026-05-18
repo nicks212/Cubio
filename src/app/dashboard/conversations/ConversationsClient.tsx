@@ -47,7 +47,7 @@ export default function ConversationsClient({ conversations: initial, companyId 
   // Resume AI: clear ai_paused + mark open escalation resolved
   const resolveEscalation = useCallback((conv: Conversation) => {
     startTransition(async () => {
-      await supabase.from('conversations').update({ ai_paused: false }).eq('id', conv.id);
+      await supabase.from('conversations').update({ ai_paused: false, photos_sent: false }).eq('id', conv.id);
       await supabase
         .from('escalations')
         .update({ status: 'resolved' })

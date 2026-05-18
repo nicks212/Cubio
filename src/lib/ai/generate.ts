@@ -24,9 +24,10 @@ export async function generateReply(
   businessType: 'real_estate' | 'craft_shop',
   conversationHistory: Array<{ role: string; content: string }> = [],
   imageUrl?: string,
+  photosSent = false,
 ): Promise<string> {
-  // ── Layer 1: Global rules ────────────────────────────────────────────────
-  const globalPrompt = buildGlobalSystemPrompt();
+  // ── Layer 1: Global rules ────────────────────────────────────────────
+  const globalPrompt = buildGlobalSystemPrompt(photosSent);
 
   // ── Layer 2: Business-type rules + data ──────────────────────────────────
   const businessPrompt = businessType === 'real_estate'
