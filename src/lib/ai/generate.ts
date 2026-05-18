@@ -83,7 +83,6 @@ export async function generateReply(
   }
 
   console.error('[ai/generate] generateReply error:', lastErr);
-  // Language-aware fallback — check for Georgian script in message
   const isGeorgian = /[\u10D0-\u10FF]/.test(message);
   return isGeorgian
     ? 'გთხოვთ მოთმინება, ცოტა ხანში გიპასუხებთ.'
