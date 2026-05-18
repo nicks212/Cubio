@@ -171,6 +171,12 @@ export async function processIncomingMessage(
     content: reply,
   });
 
+  // Update conversation updated_at so it surfaces correctly in the dashboard
+  await supabase
+    .from('conversations')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', conversationId);
+
   // 10. Send reply back via provider
   await sendProviderResponse(
     msg.provider,
@@ -181,9 +187,9 @@ export async function processIncomingMessage(
   );
 
   // 11. Detect lead / escalation (fire-and-forget — runs after reply is delivered)
-  //     Requires at least 3 messages to produce a meaningful signal.
+  //     Requires at least 2 messages (1 user + 1 AI) to produce a meaningful signal.
   const fullHistory = [...history, { role: 'ai', content: reply }];
-  if (fullHistory.length >= 3) {
+  if (fullHistory.length >= 2) {
     void detectAndPersistLeadOrEscalation(
       supabase,
       fullHistory,
