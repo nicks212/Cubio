@@ -55,6 +55,7 @@ export default function ConversationsClient({ conversations: initial, companyId 
         .eq('status', 'open');
       setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, ai_paused: false } : c));
       setSelected(prev => prev?.id === conv.id ? { ...prev, ai_paused: false } : prev);
+      window.dispatchEvent(new CustomEvent('cubio:counts-changed'));
     });
   }, [supabase]);
 

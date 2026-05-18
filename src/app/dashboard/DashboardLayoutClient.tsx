@@ -45,6 +45,8 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
           .eq('company_id', companyId)
           .eq('status', 'open'),
       ]);
+      if (leadsRes.error) console.error('[nav-badges] leads fetch error:', leadsRes.error);
+      if (escRes.error) console.error('[nav-badges] esc fetch error:', escRes.error);
       setLiveLeads(leadsRes.count ?? 0);
       setLiveEscalations(escRes.count ?? 0);
     };
@@ -52,19 +54,28 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
     // Immediate fetch on mount so counts are always fresh
     void fetchCounts();
 
-    // Refetch whenever the tab becomes visible again (e.g. user comes back from another tab)
+    // ── Instant same-tab updates ──────────────────────────────────────────────
+    // EscalationsClient / LeadsClient dispatch this after every status change.
+    // This bypasses Supabase Realtime UPDATE limitations (needs REPLICA IDENTITY
+    // FULL for UPDATE events to pass through RLS — not required here).
+    const onCountsChanged = () => { void fetchCounts(); };
+    window.addEventListener('cubio:counts-changed', onCountsChanged);
+
+    // ── Visibility refetch ────────────────────────────────────────────────────
     const onVisibility = () => {
       if (document.visibilityState === 'visible') void fetchCounts();
     };
     document.addEventListener('visibilitychange', onVisibility);
 
-    // Realtime subscription — no filter so we don't need REPLICA IDENTITY FULL.
-    // fetchCounts() re-queries with company_id so no data leaks.
+    // ── Polling fallback (cross-tab / reconnect safety net) ───────────────────
+    const interval = setInterval(() => { void fetchCounts(); }, 15_000);
+
+    // ── Realtime (handles INSERT from AI pipeline in other tabs/server) ───────
     const channel = supabase
       .channel(`nav-badges-${companyId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' },
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' },
         () => { void fetchCounts(); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'escalations' },
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'escalations' },
         () => { void fetchCounts(); })
       .subscribe((status, err) => {
         if (err) console.error('[nav-badges] realtime error:', err);
@@ -72,7 +83,9 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
       });
 
     return () => {
+      window.removeEventListener('cubio:counts-changed', onCountsChanged);
       document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(interval);
       void supabase.removeChannel(channel);
     };
   }, [companyId]);
@@ -117,7 +130,7 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
           <span className="text-sm font-medium flex-1">{label}</span>
           {badge > 0 && (
             <span className="min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center leading-none">
-              {badge > 99 ? '99+' : badge}
+              {badge > 99 ? '99+' : String(badge)}
             </span>
           )}
         </Link>

@@ -57,6 +57,7 @@ export default function EscalationsClient({ escalations: initial, t }: Props) {
       }
       setEscalations(prev => prev.map(e => e.id === esc.id ? { ...e, status } : e));
       if (selected?.id === esc.id) setSelected(prev => prev ? { ...prev, status } : null);
+      window.dispatchEvent(new CustomEvent('cubio:counts-changed'));
     });
   };
 
@@ -66,6 +67,7 @@ export default function EscalationsClient({ escalations: initial, t }: Props) {
       setEscalations(prev => prev.filter(e => e.id !== esc.id));
       if (selected?.id === esc.id) setSelected(null);
       setDeleteConfirm(null);
+      window.dispatchEvent(new CustomEvent('cubio:counts-changed'));
     });
   };
 

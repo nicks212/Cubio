@@ -51,6 +51,7 @@ export default function LeadsClient({ leads: initial, t }: Props) {
       await supabase.from('leads').update({ status }).eq('id', lead.id);
       setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, status } : l));
       if (selected?.id === lead.id) setSelected(prev => prev ? { ...prev, status } : null);
+      window.dispatchEvent(new CustomEvent('cubio:counts-changed'));
     });
   };
 
@@ -60,6 +61,7 @@ export default function LeadsClient({ leads: initial, t }: Props) {
       setLeads(prev => prev.filter(l => l.id !== lead.id));
       if (selected?.id === lead.id) setSelected(null);
       setDeleteConfirm(null);
+      window.dispatchEvent(new CustomEvent('cubio:counts-changed'));
     });
   };
 
