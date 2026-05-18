@@ -77,7 +77,22 @@ export async function processIncomingMessage(
     console.info(`${label} Created conversation ${conversationId} for sender ${msg.senderId}`);
   }
 
-  // 3. Save incoming message — capture ID for debounce check
+  // 3. Idempotency guard — skip if we already processed this provider message ID
+  if (msg.messageId) {
+    const { data: alreadyProcessed } = await supabase
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('provider_message_id', msg.messageId)
+      .maybeSingle();
+
+    if (alreadyProcessed) {
+      console.info(`${label} Duplicate event for message ${msg.messageId} — skipping`);
+      return null;
+    }
+  }
+
+  // 4. Save incoming message — capture ID for debounce check
   const { data: savedMsg } = await supabase
     .from('messages')
     .insert({
@@ -85,13 +100,14 @@ export async function processIncomingMessage(
       company_id: integration.companyId,
       role: 'user',
       content: msg.messageText,
+      provider_message_id: msg.messageId ?? null,
     })
     .select('id')
     .single();
 
   const savedMessageId = (savedMsg?.id as string | undefined) ?? null;
 
-  // 4. Human takeover — message stored, AI skips response
+  // 5. Human takeover — message stored, AI skips response
   if (aiPaused) {
     console.info(`${label} Conversation ${conversationId} is paused (human takeover) — message saved, AI skipped`);
     return { conversationId, reply: null };
