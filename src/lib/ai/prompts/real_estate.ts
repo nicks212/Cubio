@@ -39,12 +39,14 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery
   // Top 5 — full detail with photo URLs
   const detailedList = top5.length > 0
     ? top5.map(a => {
-        let line = `• Apt ${a.apartment_number}: ${a.rooms_quantity} rooms, ${a.size_sq_m}m², floor ${a.floor}, ₾${a.total_price.toLocaleString()}${
-          a.project?.name ? ` — ${a.project.name}` : ''
-        }`;
+        const proj = a.project as { name: string; location?: string | null; description?: string | null; completion_date?: string | null; images?: string[] } | null;
+        let line = `• Apt ${a.apartment_number}: ${a.rooms_quantity} rooms, ${a.size_sq_m}m², floor ${a.floor}, ₾${a.total_price.toLocaleString()}${proj?.name ? ` — ${proj.name}` : ''}`;
+        if (proj?.location) line += ` | 📍 ${proj.location}`;
+        if (proj?.completion_date) line += ` | completion: ${proj.completion_date}`;
+        if (proj?.description) line += `\n  project info: ${proj.description}`;
         const photos = [
           ...(a.images?.filter(u => u.startsWith('http')) ?? []),
-          ...((a.project as { name: string; images?: string[] } | null)?.images?.filter(u => u.startsWith('http')) ?? []),
+          ...(proj?.images?.filter(u => u.startsWith('http')) ?? []),
         ];
         const deduped = [...new Set(photos)].slice(0, 3);
         if (deduped.length) line += `\n  photos: ${deduped.join(' ')}`;
@@ -53,11 +55,12 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery
     : '(No apartments currently available)';
 
   // Rest — ultra-compact, no photo URLs (saves ~60 tokens per apartment)
-  const compactRest = rest.slice(0, 15).map(a =>
-    `A${a.apartment_number}:${a.rooms_quantity}br/${a.size_sq_m}m²/fl${a.floor}/${shortPrice(a.total_price)}${
-      a.project?.name ? `/${a.project.name}` : ''
-    }`
-  ).join(' | ');
+  const compactRest = rest.slice(0, 15).map(a => {
+    const proj = a.project as { name: string; location?: string | null } | null;
+    return `A${a.apartment_number}:${a.rooms_quantity}br/${a.size_sq_m}m²/fl${a.floor}/${shortPrice(a.total_price)}${
+      proj?.name ? `/${proj.name}` : ''
+    }${proj?.location ? `@${proj.location}` : ''}`;
+  }).join(' | ');
 
   const businessInfo = context.businessDescription
     ? `COMPANY INFO: ${context.businessDescription}\n\n`

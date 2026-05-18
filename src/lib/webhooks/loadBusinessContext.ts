@@ -24,7 +24,7 @@ export async function loadBusinessContext(
   if (businessType === 'real_estate') {
     const { data: apartments } = await supabase
       .from('apartments')
-      .select('apartment_number, size_sq_m, floor, rooms_quantity, price_per_sq_m, total_price, status, images, project:projects(name, images)')
+      .select('apartment_number, size_sq_m, floor, rooms_quantity, price_per_sq_m, total_price, status, images, project:projects(name, location, description, completion_date, images)')
       .eq('company_id', companyId)
       .eq('status', 'vacant')
       .is('deleted_at', null)

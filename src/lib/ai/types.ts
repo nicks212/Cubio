@@ -10,7 +10,7 @@ export interface ApartmentContext {
     total_price: number;
     status: string;
     images?: string[];
-    project?: { name: string; images?: string[] } | null;
+    project?: { name: string; location?: string | null; description?: string | null; completion_date?: string | null; images?: string[] } | null;
   }>;
   businessDescription: string | null;
 }
