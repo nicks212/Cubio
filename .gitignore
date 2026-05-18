@@ -12,6 +12,7 @@ yarn.lock
 out/
 dist/
 build/
+*.tsbuildinfo
 
 # IDE
 .vscode/settings.json
