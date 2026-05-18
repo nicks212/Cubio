@@ -29,6 +29,7 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
   const companyId = profile.company_id;
 
   useEffect(() => {
+    if (!companyId) return;
     const supabase = createClient();
 
     const fetchCounts = async () => {
@@ -36,41 +37,43 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
         supabase
           .from('leads')
           .select('id', { count: 'exact', head: true })
-          .eq('company_id', companyId!)
+          .eq('company_id', companyId)
           .in('status', ['new', 'contacted', 'scheduled']),
         supabase
           .from('escalations')
           .select('id', { count: 'exact', head: true })
-          .eq('company_id', companyId!)
+          .eq('company_id', companyId)
           .eq('status', 'open'),
       ]);
       setLiveLeads(leadsRes.count ?? 0);
       setLiveEscalations(escRes.count ?? 0);
     };
 
-    const leadsChannel = supabase
-      .channel('nav-badge-leads')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'leads',
-        filter: `company_id=eq.${companyId}`,
-      }, () => { void fetchCounts(); })
-      .subscribe();
+    // Immediate fetch on mount so counts are always fresh
+    void fetchCounts();
 
-    const escChannel = supabase
-      .channel('nav-badge-escalations')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'escalations',
-        filter: `company_id=eq.${companyId}`,
-      }, () => { void fetchCounts(); })
-      .subscribe();
+    // Refetch whenever the tab becomes visible again (e.g. user comes back from another tab)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void fetchCounts();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // Realtime subscription — no filter so we don't need REPLICA IDENTITY FULL.
+    // fetchCounts() re-queries with company_id so no data leaks.
+    const channel = supabase
+      .channel(`nav-badges-${companyId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' },
+        () => { void fetchCounts(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'escalations' },
+        () => { void fetchCounts(); })
+      .subscribe((status, err) => {
+        if (err) console.error('[nav-badges] realtime error:', err);
+        else console.info('[nav-badges] realtime status:', status);
+      });
 
     return () => {
-      void supabase.removeChannel(leadsChannel);
-      void supabase.removeChannel(escChannel);
+      document.removeEventListener('visibilitychange', onVisibility);
+      void supabase.removeChannel(channel);
     };
   }, [companyId]);
 
