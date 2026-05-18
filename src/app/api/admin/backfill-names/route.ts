@@ -26,10 +26,10 @@ export async function POST() {
 
   const admin = createAdminClient();
 
-  // Fetch all facebook/instagram integrations for the company (to get access tokens)
+  // Fetch all facebook/instagram integrations for the company (to get access tokens + page IDs)
   const { data: integrations } = await admin
     .from('integrations')
-    .select('id, provider, access_token')
+    .select('id, provider, access_token, provider_account_id')
     .eq('company_id', profile.company_id)
     .in('provider', ['facebook', 'instagram']);
 
@@ -37,11 +37,14 @@ export async function POST() {
     return NextResponse.json({ updated: 0, message: 'No Meta integrations found' });
   }
 
-  // Build a map: provider -> access_token
-  const tokenMap: Record<string, string> = {};
+  // Build a map: provider -> { accessToken, pageId }
+  const integrationMap: Record<string, { accessToken: string; pageId: string }> = {};
   for (const i of integrations) {
-    if (i.provider && i.access_token) {
-      tokenMap[i.provider as string] = i.access_token as string;
+    if (i.provider && i.access_token && i.provider_account_id) {
+      integrationMap[i.provider as string] = {
+        accessToken: i.access_token as string,
+        pageId: i.provider_account_id as string,
+      };
     }
   }
 
@@ -73,10 +76,10 @@ export async function POST() {
   for (const conv of conversations) {
     const provider = conv.provider as 'facebook' | 'instagram';
     const senderId = conv.provider_conversation_id as string;
-    const accessToken = tokenMap[provider];
+    const integration = integrationMap[provider];
 
-    if (!accessToken) {
-      errors.push(`No access token for provider: ${provider}`);
+    if (!integration) {
+      errors.push(`No integration for provider: ${provider}`);
       failed++;
       continue;
     }
@@ -86,31 +89,48 @@ export async function POST() {
       continue;
     }
 
-    // Make the Meta Graph API call directly so we can capture the exact error
-    const fields = provider === 'instagram' ? 'name,username' : 'name,first_name,last_name';
-    const apiUrl = new URL(`https://graph.facebook.com/v22.0/${senderId}`);
-    apiUrl.searchParams.set('fields', fields);
-    apiUrl.searchParams.set('access_token', accessToken);
-
+    const { accessToken, pageId } = integration;
     let name: string | null = null;
+
     try {
+      // Attempt 1: direct PSID/IGSID profile lookup
+      const fields = provider === 'instagram' ? 'name,username' : 'name,first_name,last_name';
+      const apiUrl = new URL(`https://graph.facebook.com/v22.0/${senderId}`);
+      apiUrl.searchParams.set('fields', fields);
+      apiUrl.searchParams.set('access_token', accessToken);
       const res = await fetch(apiUrl.toString());
-      const body = await res.text();
-      if (!res.ok) {
-        errors.push(`${provider}/${senderId}: HTTP ${res.status} — ${body.substring(0, 300)}`);
-        failed++;
-        continue;
+      if (res.ok) {
+        const data = JSON.parse(await res.text()) as { name?: string; first_name?: string; last_name?: string; username?: string };
+        name = provider === 'instagram'
+          ? (data.name ?? (data.username ? `@${data.username}` : null) ?? null)
+          : (data.name ?? ([data.first_name, data.last_name].filter(Boolean).join(' ') || null));
       }
-      const data = JSON.parse(body) as { name?: string; first_name?: string; last_name?: string; username?: string };
-      if (provider === 'instagram') {
-        name = data.name ?? (data.username ? `@${data.username}` : null) ?? null;
-      } else {
-        name = data.name ??
-          ([data.first_name, data.last_name].filter(Boolean).join(' ') || null) ??
-          null;
-      }
+
+      // Attempt 2: Conversations API fallback (pages_messaging permission)
       if (!name) {
-        errors.push(`${provider}/${senderId}: API returned no name — ${body.substring(0, 200)}`);
+        const convUrl = new URL(`https://graph.facebook.com/v22.0/${pageId}/conversations`);
+        convUrl.searchParams.set('user_id', senderId);
+        convUrl.searchParams.set('fields', 'participants');
+        convUrl.searchParams.set('access_token', accessToken);
+        const convRes = await fetch(convUrl.toString());
+        if (convRes.ok) {
+          const convData = JSON.parse(await convRes.text()) as {
+            data?: Array<{ participants?: { data?: Array<{ name?: string; id?: string }> } }>;
+          };
+          const thread = (convData.data ?? [])[0];
+          const participants = thread?.participants?.data ?? [];
+          const participant =
+            participants.find(p => p.id === senderId) ??
+            participants.find(p => p.id !== pageId);
+          name = participant?.name ?? null;
+        } else {
+          const body = await convRes.text();
+          errors.push(`${provider}/${senderId}: Conversations API ${convRes.status} — ${body.substring(0, 200)}`);
+        }
+      }
+
+      if (!name) {
+        errors.push(`${provider}/${senderId}: name unavailable from both profile and conversations API`);
         failed++;
         continue;
       }

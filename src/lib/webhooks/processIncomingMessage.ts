@@ -45,6 +45,7 @@ export async function processIncomingMessage(
       msg.senderId,
       msg.provider as 'facebook' | 'instagram',
       integration.accessToken,
+      integration.providerAccountId, // page ID — used for Conversations API fallback
     );
     if (resolvedName) console.info(`${label} Resolved sender name: ${resolvedName}`);
   }
@@ -375,44 +376,56 @@ async function detectAndPersistLeadOrEscalation(
 }
 
 // ── Meta sender name resolution ───────────────────────────────────────────────
-// Facebook/Instagram webhooks don’t include the sender’s display name.
-// We fetch it from the Graph API using the page access token.
+// Facebook/Instagram webhooks don't include the sender's display name.
+// Attempt 1: direct PSID/IGSID lookup (requires pages_user_profiles — often blocked by Meta privacy)
+// Attempt 2: Conversations API participant lookup (only needs pages_messaging — usually available)
 export async function resolveMetaSenderName(
   senderId: string,
   provider: 'facebook' | 'instagram',
   accessToken: string,
+  pageId?: string,
 ): Promise<string | null> {
   try {
-    // For Instagram: request name + username (display name or @handle as fallback)
-    // For Facebook: request name + first_name + last_name as fallback
-    const fields = provider === 'instagram'
-      ? 'name,username'
-      : 'name,first_name,last_name';
+    // ── Attempt 1: direct user profile lookup ──────────────────────────────
+    const fields = provider === 'instagram' ? 'name,username' : 'name,first_name,last_name';
     const url = new URL(`https://graph.facebook.com/v22.0/${senderId}`);
     url.searchParams.set('fields', fields);
     url.searchParams.set('access_token', accessToken);
     const res = await fetch(url.toString());
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => '(unreadable)');
-      console.warn(`[resolveMetaSenderName] Meta API ${res.status} for sender ${senderId} (${provider}): ${errBody}`);
-      return null;
+    if (res.ok) {
+      const data = await res.json() as { name?: string; first_name?: string; last_name?: string; username?: string };
+      const resolved = provider === 'instagram'
+        ? (data.name ?? (data.username ? `@${data.username}` : null) ?? null)
+        : (data.name ?? ([data.first_name, data.last_name].filter(Boolean).join(' ') || null));
+      if (resolved) return resolved;
     }
-    const data = await res.json() as { name?: string; first_name?: string; last_name?: string; username?: string };
 
-    if (provider === 'instagram') {
-      // Prefer display name; fall back to @username
-      const resolved = data.name ?? (data.username ? `@${data.username}` : null);
-      if (!resolved) console.warn(`[resolveMetaSenderName] No name/username for Instagram sender ${senderId}:`, JSON.stringify(data));
-      return resolved;
-    } else {
-      // Facebook: prefer full name, fall back to first+last, then first alone
-      const resolved =
-        data.name ??
-        ([data.first_name, data.last_name].filter(Boolean).join(' ') || null) ??
-        null;
-      if (!resolved) console.warn(`[resolveMetaSenderName] No name for Facebook sender ${senderId}:`, JSON.stringify(data));
-      return resolved;
+    // ── Attempt 2: Conversations API (pages_messaging permission) ──────────
+    // Works even when direct profile lookup is blocked by Meta privacy restrictions.
+    if (pageId) {
+      const convUrl = new URL(`https://graph.facebook.com/v22.0/${pageId}/conversations`);
+      convUrl.searchParams.set('user_id', senderId);
+      convUrl.searchParams.set('fields', 'participants');
+      convUrl.searchParams.set('access_token', accessToken);
+      const convRes = await fetch(convUrl.toString());
+      if (convRes.ok) {
+        const convData = await convRes.json() as {
+          data?: Array<{ participants?: { data?: Array<{ name?: string; id?: string }> } }>;
+        };
+        const thread = (convData.data ?? [])[0];
+        const participants = thread?.participants?.data ?? [];
+        const participant =
+          participants.find(p => p.id === senderId) ??
+          participants.find(p => p.id !== pageId);
+        if (participant?.name) return participant.name;
+      } else {
+        const errBody = await convRes.text().catch(() => '');
+        console.warn(`[resolveMetaSenderName] Conversations API ${convRes.status} for ${provider}/${senderId}: ${errBody}`);
+      }
     }
+
+    console.warn(`[resolveMetaSenderName] Could not resolve name for ${provider} sender ${senderId}`);
+    return null;
   } catch (err) {
     console.error(`[resolveMetaSenderName] Fetch failed for sender ${senderId} (${provider}):`, err);
     return null;
