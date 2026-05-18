@@ -158,3 +158,120 @@ async function sendViberResponse(
     console.error('[sendViberResponse] Viber API error:', errorBody);
   }
 }
+
+// ── Image sending ─────────────────────────────────────────────────────────────
+
+/**
+ * Sends one or more image URLs as separate messages via the appropriate provider API.
+ * Called after the text reply when the AI includes a PHOTOS: line.
+ */
+export async function sendImageUrls(
+  provider: Provider,
+  senderId: string,
+  urls: string[],
+  accessToken: string,
+  providerAccountId?: string,
+): Promise<void> {
+  for (const url of urls) {
+    try {
+      switch (provider) {
+        case 'facebook':
+          await sendMetaImage('messenger', senderId, url, accessToken);
+          break;
+        case 'instagram':
+          await sendMetaImage('instagram', senderId, url, accessToken);
+          break;
+        case 'telegram':
+          await sendTelegramPhoto(senderId, url, accessToken);
+          break;
+        case 'whatsapp': {
+          if (!providerAccountId) break;
+          await sendWhatsAppImage(senderId, url, accessToken, providerAccountId);
+          break;
+        }
+        // Viber image API requires additional sender profile setup; skip for now
+        default:
+          break;
+      }
+    } catch (err) {
+      console.error(`[sendImageUrls] Failed to send image via ${provider}:`, err);
+    }
+  }
+}
+
+async function sendMetaImage(
+  platform: 'messenger' | 'instagram',
+  recipientId: string,
+  imageUrl: string,
+  pageAccessToken: string,
+): Promise<void> {
+  const apiVersion = 'v19.0';
+  const url = `https://graph.facebook.com/${apiVersion}/me/messages?access_token=${pageAccessToken}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id: recipientId },
+      message: {
+        attachment: {
+          type: 'image',
+          payload: { url: imageUrl, is_reusable: true },
+        },
+      },
+      messaging_type: 'RESPONSE',
+    }),
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.text();
+    console.error(`[sendMetaImage] ${platform} API error:`, errorBody);
+  }
+}
+
+async function sendTelegramPhoto(
+  chatId: string,
+  photoUrl: string,
+  botToken: string,
+): Promise<void> {
+  const url = `https://api.telegram.org/bot${botToken}/sendPhoto`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, photo: photoUrl }),
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.text();
+    console.error('[sendTelegramPhoto] Telegram API error:', errorBody);
+  }
+}
+
+async function sendWhatsAppImage(
+  recipientPhone: string,
+  imageUrl: string,
+  accessToken: string,
+  phoneNumberId: string,
+): Promise<void> {
+  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: recipientPhone,
+      type: 'image',
+      image: { link: imageUrl },
+    }),
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.text();
+    console.error('[sendWhatsAppImage] WhatsApp API error:', errorBody);
+  }
+}

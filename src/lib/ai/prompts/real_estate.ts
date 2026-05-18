@@ -13,11 +13,15 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext): string {
 
   const apartmentList = vacantApartments.length > 0
     ? vacantApartments
-        .map(a =>
-          `• Apt ${a.apartment_number}: ${a.rooms_quantity} rooms, ${a.size_sq_m}m², ` +
-          `floor ${a.floor}, ₾${a.total_price.toLocaleString()}` +
-          (a.project?.name ? ` — ${a.project.name}` : '')
-        )
+        .map(a => {
+          let line =
+            `• Apt ${a.apartment_number}: ${a.rooms_quantity} rooms, ${a.size_sq_m}m², ` +
+            `floor ${a.floor}, ₾${a.total_price.toLocaleString()}` +
+            (a.project?.name ? ` — ${a.project.name}` : '');
+          const photos = a.images?.filter(u => u.startsWith('http')).slice(0, 3) ?? [];
+          if (photos.length > 0) line += `\n  photos: ${photos.join(' ')}`;
+          return line;
+        })
         .join('\n')
     : '(No apartments currently available)';
 

@@ -19,7 +19,10 @@ export function buildCraftShopSystemPrompt(context: ProductContext): string {
           if (p.material) parts.push(p.material);
           if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);
           if (p.birthstones) parts.push(`birthstones: ${p.birthstones}`);
-          return parts.join(' | ');
+          let line = parts.join(' | ');
+          const photos = p.images?.filter(u => u.startsWith('http')).slice(0, 3) ?? [];
+          if (photos.length > 0) line += `\n  photos: ${photos.join(' ')}`;
+          return line;
         })
         .join('\n')
     : '(No products currently available)';

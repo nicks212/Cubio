@@ -9,6 +9,7 @@ export interface ApartmentContext {
     price_per_sq_m: number;
     total_price: number;
     status: string;
+    images?: string[];
     project?: { name: string } | null;
   }>;
   businessDescription: string | null;

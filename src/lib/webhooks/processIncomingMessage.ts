@@ -2,7 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { generateReply, detectLead, detectEscalation } from '@/lib/ai';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
-import { sendProviderResponse } from './sendProviderResponse';
+import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
 import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './types';
 
 /**
@@ -163,12 +163,19 @@ export async function processIncomingMessage(
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);
 
+  // Strip PHOTOS: tag from the reply — parse image URLs before saving/sending text
+  const photosMatch = reply.match(/\nPHOTOS:\s*(.+)$/m);
+  const imageUrlsToSend: string[] = photosMatch
+    ? photosMatch[1].trim().split(/\s+/).filter(u => u.startsWith('http')).slice(0, 5)
+    : [];
+  const cleanReply = reply.replace(/\nPHOTOS:\s*.+$/m, '').trim();
+
   // 9. Save AI reply
   await supabase.from('messages').insert({
     conversation_id: conversationId,
     company_id: integration.companyId,
     role: 'ai',
-    content: reply,
+    content: cleanReply,
   });
 
   // Update conversation updated_at so it surfaces correctly in the dashboard
@@ -181,14 +188,26 @@ export async function processIncomingMessage(
   await sendProviderResponse(
     msg.provider,
     msg.senderId,
-    reply,
+    cleanReply,
     integration.accessToken,
     integration.providerAccountId,
   );
 
+  // 10b. Send photo attachments if AI included any
+  if (imageUrlsToSend.length > 0) {
+    console.info(`${label} Sending ${imageUrlsToSend.length} photo(s) for conversation ${conversationId}`);
+    await sendImageUrls(
+      msg.provider,
+      msg.senderId,
+      imageUrlsToSend,
+      integration.accessToken,
+      integration.providerAccountId,
+    );
+  }
+
   // 11. Detect lead / escalation (fire-and-forget — runs after reply is delivered)
   //     Requires at least 2 messages (1 user + 1 AI) to produce a meaningful signal.
-  const fullHistory = [...history, { role: 'ai', content: reply }];
+  const fullHistory = [...history, { role: 'ai', content: cleanReply }];
   if (fullHistory.length >= 2) {
     void detectAndPersistLeadOrEscalation(
       supabase,
