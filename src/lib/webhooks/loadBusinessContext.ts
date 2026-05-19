@@ -22,7 +22,7 @@ export async function loadBusinessContext(
   const businessDescription = (company?.business_description as string | null) ?? null;
 
   if (businessType === 'real_estate') {
-    const { data: apartments } = await supabase
+    const { data: apartments, error: aptError } = await supabase
       .from('apartments')
       .select('apartment_number, size_sq_m, floor, rooms_quantity, price_per_sq_m, total_price, currency, status, images, project:projects(name, location, description, completion_date, images)')
       .eq('company_id', companyId)
@@ -31,11 +31,27 @@ export async function loadBusinessContext(
       .order('floor', { ascending: true })
       .limit(30);
 
+    // Fallback: if `currency` column doesn't exist yet (migration pending), retry without it
+    let finalApartments = apartments;
+    if (aptError) {
+      console.warn('[loadBusinessContext] apartment query failed, retrying without currency:', aptError.message);
+      const { data: aptFallback } = await supabase
+        .from('apartments')
+        .select('apartment_number, size_sq_m, floor, rooms_quantity, price_per_sq_m, total_price, status, images, project:projects(name, location, description, completion_date, images)')
+        .eq('company_id', companyId)
+        .eq('status', 'vacant')
+        .is('deleted_at', null)
+        .order('floor', { ascending: true })
+        .limit(30);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      finalApartments = aptFallback as any;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return { apartments: (apartments ?? []) as any, businessDescription };
+    return { apartments: (finalApartments ?? []) as any, businessDescription };
   }
 
-  const { data: products } = await supabase
+  const { data: products, error: prodError } = await supabase
     .from('products')
     .select('name, price, currency, category, zodiac_compatibility, birthstones, material, in_stock, images')
     .eq('company_id', companyId)
@@ -43,5 +59,20 @@ export async function loadBusinessContext(
     .is('deleted_at', null)
     .limit(30);
 
-  return { products: products ?? [], businessDescription };
+  // Fallback: if `currency` column doesn't exist yet (migration pending), retry without it
+  let finalProducts = products;
+  if (prodError) {
+    console.warn('[loadBusinessContext] product query failed, retrying without currency:', prodError.message);
+    const { data: prodFallback } = await supabase
+      .from('products')
+      .select('name, price, category, zodiac_compatibility, birthstones, material, in_stock, images')
+      .eq('company_id', companyId)
+      .eq('in_stock', true)
+      .is('deleted_at', null)
+      .limit(30);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    finalProducts = prodFallback as any;
+  }
+
+  return { products: finalProducts ?? [], businessDescription };
 }

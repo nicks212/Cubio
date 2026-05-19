@@ -7,7 +7,7 @@ export const model = genAI.getGenerativeModel({
   model: 'gemini-2.5-flash',
   generationConfig: {
     temperature: 0.7,
-    maxOutputTokens: 600,
+    maxOutputTokens: 1200,
   },
   // Sales assistant replies don't need chain-of-thought reasoning.
   // Disabling thinking cuts ~95% of cost per interaction.
