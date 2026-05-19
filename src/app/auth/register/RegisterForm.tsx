@@ -2,7 +2,8 @@
 
 import { useActionState } from 'react';
 import Link from 'next/link';
-import { Box, Mail, Lock, User, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, User, ArrowLeft } from 'lucide-react';
+import { CubioLogo } from '@/components/CubioLogo';
 import { register } from '../actions';
 import { useT } from '@/components/TranslationsProvider';
 
@@ -24,7 +25,7 @@ export function RegisterForm() {
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
           <div className="flex flex-col items-center mb-8">
             <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4">
-              <Box className="w-8 h-8 text-white" />
+            <CubioLogo size={32} />
             </div>
             <h1 className="text-2xl font-bold text-foreground">{t['auth.register_title']}</h1>
             <p className="text-muted-foreground mt-2">{t['auth.register_subtitle']}</p>

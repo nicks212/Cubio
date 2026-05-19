@@ -3,7 +3,8 @@
 import { Suspense, useActionState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Box, Mail, Lock, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, ArrowLeft, Sparkles } from 'lucide-react';
+import { CubioLogo } from '@/components/CubioLogo';
 import { login, resendConfirmationEmail } from '../actions';
 import { useT } from '@/components/TranslationsProvider';
 
@@ -36,7 +37,7 @@ function LoginForm() {
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
           <div className="flex flex-col items-center mb-8">
             <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4">
-              <Box className="w-8 h-8 text-white" />
+            <CubioLogo size={32} />
             </div>
             <h1 className="text-2xl font-bold text-foreground">{t['auth.sign_in_title']}</h1>
             <p className="text-muted-foreground mt-2">{t['auth.sign_in_subtitle']}</p>
@@ -134,7 +135,7 @@ function LoginForm() {
 
         <div className="mt-8 flex justify-center">
           <div className="w-20 h-20 bg-primary/10 rounded-2xl flex items-center justify-center transform rotate-3">
-            <Box className="w-10 h-10 text-primary" />
+            <Sparkles className="w-10 h-10 text-primary" />
           </div>
         </div>
       </div>

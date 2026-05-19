@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Box, Globe } from 'lucide-react';
+import { Globe } from 'lucide-react';
+import { CubioLogo } from '@/components/CubioLogo';
 
 interface Props {
   contentKa: string;
@@ -38,9 +39,7 @@ export default function TermsClient({
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-2 flex-shrink-0">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <Box className="w-5 h-5 text-white" />
-            </div>
+            <CubioLogo size={24} />
             <span className="text-lg font-semibold text-foreground">Cubio</span>
           </Link>
 

@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { Box, CheckCircle } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
+import { CubioLogo } from '@/components/CubioLogo';
 import { getTranslations } from '@/lib/i18n';
 
 export default async function EmailConfirmedPage() {
@@ -9,9 +10,7 @@ export default async function EmailConfirmedPage() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
           <div className="flex flex-col items-center mb-6">
-            <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4">
-              <Box className="w-8 h-8 text-white" />
-            </div>
+            <CubioLogo size={32} />
             <div className="w-14 h-14 bg-green-50 rounded-full flex items-center justify-center mb-4">
               <CheckCircle className="w-7 h-7 text-green-500" />
             </div>

@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Box, Mail } from 'lucide-react';
+import { Mail } from 'lucide-react';
+import { CubioLogo } from '@/components/CubioLogo';
 import { useT } from '@/components/TranslationsProvider';
 
 export default function VerifyEmailPage() {
@@ -12,7 +13,7 @@ export default function VerifyEmailPage() {
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
           <div className="flex flex-col items-center mb-6">
             <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4">
-              <Box className="w-8 h-8 text-white" />
+            <CubioLogo size={32} />
             </div>
             <div className="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center mb-4">
               <Mail className="w-7 h-7 text-primary" />

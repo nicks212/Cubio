@@ -1,7 +1,8 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { Box, Building2, Gem, CheckCircle2, LogOut, FileText, X, ChevronDown } from 'lucide-react';
+import { Building2, Gem, CheckCircle2, LogOut, FileText, X, ChevronDown } from 'lucide-react';
+import { CubioLogo } from '@/components/CubioLogo';
 import { setupCompany } from './actions';
 import { logout } from '@/app/auth/actions';
 import { useT } from '@/components/TranslationsProvider';
@@ -57,7 +58,7 @@ export default function OnboardingClient({ termsKa, termsEn }: Props) {
         <div className="text-center mb-10">
           <div className="flex items-center justify-center gap-3 mb-4">
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center">
-              <Box className="w-7 h-7 text-white" />
+          <CubioLogo size={28} className="text-white" />
             </div>
             <span className="text-2xl font-bold">Cubio</span>
           </div>

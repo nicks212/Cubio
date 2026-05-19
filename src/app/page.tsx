@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { Box, Building2, MessageSquare, Clock, TrendingUp, Sparkles, ArrowRight, Gem, Bot, Zap } from 'lucide-react';
+import { Building2, MessageSquare, Clock, TrendingUp, Sparkles, ArrowRight, Gem, Bot, Zap } from 'lucide-react';
+import { CubioLogo } from '@/components/CubioLogo';
 import { getTranslations } from '@/lib/i18n';
 
 export default async function LandingPage() {
@@ -11,9 +12,7 @@ export default async function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <Box className="w-5 h-5 text-white" />
-              </div>
+              <CubioLogo size={24} />
               <span className="text-xl font-semibold text-foreground">Cubio</span>
             </div>
             <div className="flex items-center gap-3">
@@ -178,9 +177,7 @@ export default async function LandingPage() {
       <footer className="border-t border-slate-200 py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-primary rounded flex items-center justify-center">
-              <Box className="w-4 h-4 text-white" />
-            </div>
+            <CubioLogo size={20} />
             <span className="font-semibold">Cubio</span>
           </div>
           <Link
