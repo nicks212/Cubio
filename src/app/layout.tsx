@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { cookies } from 'next/headers';
 import { TranslationsProvider } from '@/components/TranslationsProvider';
 import { getTranslations } from '@/lib/i18n';
 
@@ -9,9 +10,11 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const translations = await getTranslations();
+  const cookieStore = await cookies();
+  const lang = cookieStore.get('cubio_lang')?.value === 'en' ? 'en' : 'ka';
+  const translations = await getTranslations(lang);
   return (
-    <html lang="ka" dir="ltr">
+    <html lang={lang} dir="ltr">
       <body>
         <TranslationsProvider translations={translations}>
           {children}

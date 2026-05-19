@@ -19,7 +19,7 @@ const providerIcons: Record<string, string> = { facebook: '📘', instagram: '�
 interface Props {
   users: Array<{ id: string; full_name: string | null; email: string | null; is_admin: boolean; created_at: string; company?: { company_name: string; business_type: string } | null }>;
   integrations: Array<{ id: string; company_id: string; provider: string; provider_account_id: string; account_name: string; access_token: string; refresh_token?: string | null; is_active: boolean; created_at: string; company?: { company_name: string } | null }>;
-  localizations: Array<{ id: string | null; keyword: string; localization_text: string }>;
+  localizations: Array<{ id: string | null; keyword: string; localization_text: string; localization_text_en: string }>;
   companies: Array<{ id: string; company_name: string }>;
   termsContent: Array<{ language: string; content: string; updated_at: string }>;
 }
@@ -32,6 +32,7 @@ export default function AdminClient({ users, integrations, localizations, compan
   const [locModal, setLocModal] = useState(false);
   const [editingLoc, setEditingLoc] = useState<Props['localizations'][0] | null>(null);
   const [locSearch, setLocSearch] = useState('');
+  const [showBlanks, setShowBlanks] = useState(false);
 
   // Terms tab state
   const initKa = termsContent.find(r => r.language === 'ka')?.content ?? '';
@@ -68,16 +69,24 @@ export default function AdminClient({ users, integrations, localizations, compan
   const openLocEdit = (l: Props['localizations'][0]) => { setEditingLoc(l); setLocModal(true); };
 
   const filterLocalizations = (query: string) => {
-    if (!query.trim()) return localizations;
+    let list = localizations;
+    if (showBlanks) {
+      list = list.filter(loc => !loc.localization_text.trim() || !loc.localization_text_en.trim());
+    }
+    if (!query.trim()) return list;
     const q = query.toLowerCase();
-    return localizations.filter(loc => {
+    return list.filter(loc => {
       const keyword = loc.keyword.toLowerCase();
       const text = loc.localization_text.toLowerCase();
-      return keyword.startsWith(q) || text.startsWith(q) || keyword.includes(q) || text.includes(q);
+      const textEn = loc.localization_text_en.toLowerCase();
+      return keyword.startsWith(q) || text.startsWith(q) || textEn.startsWith(q) || keyword.includes(q) || text.includes(q) || textEn.includes(q);
     });
   };
 
   const filteredLocalizations = filterLocalizations(locSearch);
+
+  // Recompute when showBlanks or locSearch changes
+  const blankCount = localizations.filter(l => !l.localization_text.trim() || !l.localization_text_en.trim()).length;
 
   const tabs = [
     { id: 'users' as Tab, label: t['admin.tab_users'] ?? 'Users', icon: Users },
@@ -155,9 +164,21 @@ export default function AdminClient({ users, integrations, localizations, compan
             </div>
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">{filteredLocalizations.length} {t['admin.strings_count']} {locSearch && `(${localizations.length} total)`}</p>
-              <button onClick={() => { setEditingLoc(null); setLocModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm">
-                <Plus className="w-4 h-4" />{t['admin.add_string']}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowBlanks(v => !v)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    showBlanks
+                      ? 'bg-amber-50 border-amber-300 text-amber-700'
+                      : 'bg-white border-slate-200 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {showBlanks ? `${t['admin.hide_blanks'] ?? 'All'}` : `${t['admin.show_blanks'] ?? 'Show Blanks'}${blankCount > 0 ? ` (${blankCount})` : ''}`}
+                </button>
+                <button onClick={() => { setEditingLoc(null); setLocModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm">
+                  <Plus className="w-4 h-4" />{t['admin.add_string']}
+                </button>
+              </div>
             </div>
           </div>
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -167,20 +188,26 @@ export default function AdminClient({ users, integrations, localizations, compan
                   <tr>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground w-64">{t['admin.col_key']}</th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground">{t['admin.col_text']}</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground">{t['admin.col_text_en'] ?? 'Text (EN)'}</th>
                     <th className="w-20"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredLocalizations.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="py-8 px-4 text-center text-muted-foreground">
+                      <td colSpan={4} className="py-8 px-4 text-center text-muted-foreground">
                         {locSearch ? (t['admin.no_results'] ?? 'No localizations found') : (t['admin.no_strings'] ?? 'No localizations yet')}
                       </td>
                     </tr>
                   ) : filteredLocalizations.map(loc => (
                     <tr key={loc.keyword} className="hover:bg-slate-50">
                       <td className="py-3 px-4 text-xs font-mono text-muted-foreground align-top pt-4">{loc.keyword}</td>
-                      <td className="py-3 px-4 text-sm">{loc.localization_text}</td>
+                      <td className={`py-3 px-4 text-sm align-top ${!loc.localization_text.trim() ? 'text-amber-500 italic' : ''}`}>
+                        {loc.localization_text || <span className="text-amber-400 text-xs">—</span>}
+                      </td>
+                      <td className={`py-3 px-4 text-sm align-top ${!loc.localization_text_en.trim() ? 'text-amber-500 italic' : ''}`}>
+                        {loc.localization_text_en || <span className="text-amber-400 text-xs">—</span>}
+                      </td>
                       <td className="py-3 px-4">
                         <div className="flex gap-1 justify-end">
                           <button onClick={() => openLocEdit(loc)} className="p-1.5 hover:bg-slate-100 rounded text-muted-foreground" title={t['admin.edit_string']}><Edit className="w-4 h-4" /></button>
@@ -401,8 +428,12 @@ export default function AdminClient({ users, integrations, localizations, compan
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">{t['admin.text_label'] ?? 'Text'} *</label>
+                <label className="block text-sm font-medium mb-2">{t['admin.text_label'] ?? 'Text (Georgian)'} *</label>
                 <textarea name="localization_text" required rows={3} defaultValue={editingLoc?.localization_text ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">{t['admin.text_en_label'] ?? 'Text (English)'}</label>
+                <textarea name="localization_text_en" rows={3} defaultValue={editingLoc?.localization_text_en ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none" />
               </div>
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => { setLocModal(false); setEditingLoc(null); }} className="flex-1 py-3 bg-slate-100 rounded-lg hover:bg-slate-200 font-medium">{t['admin.cancel'] ?? 'Cancel'}</button>

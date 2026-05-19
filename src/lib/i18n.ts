@@ -21,7 +21,7 @@ export const DEFAULT_TRANSLATIONS: T = {
   'landing.badge': 'AI-ზე დაფუძნებული გაყიდვების ავტომატიზაცია',
   'landing.hero_title': 'AI-ზე დაფუძნებული ბიზნეს ავტომატიზაციის პლატფორმა',
   'landing.hero_subtitle': 'Cubio ოპტიმიზებს თქვენი ბიზნეს პროცესებს ინტელექტური ავტომატიზაციით. მართეთ ინვენტარი, თვალყური ადევნეთ ლიდებს და ავტომატიზირეთ კლიენტებთან კომუნიკაცია 24/7.',
-  'landing.cta_start': 'დაიწყეთ უფასოდ',
+  'landing.cta_start': 'დაიწყეთ',
   'landing.industry_title': 'თქვენი ინდუსტრიისთვის შექმნილი',
   'landing.industry_subtitle': 'Cubio ადაპტირდება თქვენი სპეციფიკური ბიზნეს ტიპისთვის მორგებული AI სამუშაო ნაკადებით',
   'landing.re_title': 'უძრავი ქონების დეველოპმენტი',
@@ -54,7 +54,7 @@ export const DEFAULT_TRANSLATIONS: T = {
   // === LANDING – CTA & FOOTER ===
   'landing.cta_title': 'მზად ხართ ბიზნეს ტრანსფორმაციისთვის?',
   'landing.cta_subtitle': 'შეუერთდით ბიზნესებს, რომლებიც AI-ს იყენებენ ოპერაციების ავტომატიზაციისა და ეფექტიანობის გაუმჯობესებისთვის',
-  'landing.cta_btn': 'უფასოდ დაიწყეთ',
+  'landing.cta_btn': 'დაიწყეთ',
   'landing.re_feat1': 'პროექტებისა და ბინების კატალოგი',
   'landing.re_feat2': 'ლიდების კვალიფიკაცია',
   'landing.re_feat3': 'სართულების მასიური მართვა',
@@ -237,7 +237,8 @@ export const DEFAULT_TRANSLATIONS: T = {
   'admin.col_admin': 'ადმინი',
   'admin.col_joined': 'გაწევრება',
   'admin.col_key': 'გასაღები',
-  'admin.col_text': 'ტექსტი',
+  'admin.col_text': 'ტექსტი (KA)',
+  'admin.col_text_en': 'ტექსტი (EN)',
   'admin.col_provider': 'პროვაიდერი',
   'admin.col_account': 'ანგარიში',
   'admin.col_status': 'სტატუსი',
@@ -256,13 +257,16 @@ export const DEFAULT_TRANSLATIONS: T = {
   'admin.provider_account_id': 'პროვაიდერის ანგარიშის ID',
   'admin.is_active_label': 'აქტიური',
   'admin.key_label': 'გასაღები',
-  'admin.text_label': 'ტექსტი',
+  'admin.text_label': 'ტექსტი (ქართული)',
+  'admin.text_en_label': 'ტექსტი (ინგლისური)',
   'admin.reset_to_default': 'ნაგულისხმევზე გადაბრუნება',
   'admin.delete_confirm': 'ინტეგრაცია წაიშლება. დარწმუნებული ხართ?',
   'admin.strings_count': 'სტრიქონი',
   'admin.search_localizations': 'ძიება გასაღებებში ან ტექსტში...',
   'admin.no_results': 'ლოკალიზაციები ვერ მოიძებნა',
   'admin.no_strings': 'ლოკალიზაციები ჯერ არ არის',
+  'admin.show_blanks': 'ცარიელი',
+  'admin.hide_blanks': 'ყველა',
 
   // === COMMON ===
   'common.delete': 'წაშლა',
@@ -444,7 +448,446 @@ export const DEFAULT_TRANSLATIONS: T = {
   'onboarding.business_description_placeholder': 'თქვენი ბიზნესის აღწერილობა, როგორ არის: მისამართი, საკონტაქტო ინფორმაცია, სამუშაო განრიგი და სხვა დეტალები, რაც თქვენს მომხმარებელს შეიძლება გამოადგეს',
 };
 
-export const getTranslations = unstable_cache(
+// ============================================================
+// ENGLISH DEFAULTS
+// ============================================================
+
+export const DEFAULT_TRANSLATIONS_EN: T = {
+  // === NAVIGATION ===
+  'nav.sign_in': 'Sign In',
+  'nav.get_started': 'Get Started',
+  'nav.dashboard': 'Dashboard',
+  'nav.conversations': 'Conversations',
+  'nav.projects': 'Projects',
+  'nav.apartments': 'Apartments',
+  'nav.products': 'Products',
+  'nav.integrations': 'Integrations',
+  'nav.settings': 'Settings',
+  'nav.admin': 'Admin',
+  'nav.sign_out': 'Sign Out',
+  'nav.leads': 'Leads',
+  'nav.escalations': 'Escalations',
+
+  // === LANDING ===
+  'landing.badge': 'AI-Powered Sales Automation',
+  'landing.hero_title': 'AI-Powered Business Automation Platform',
+  'landing.hero_subtitle': 'Cubio optimizes your business processes with intelligent automation. Manage inventory, track leads, and automate customer communication 24/7.',
+  'landing.cta_start': 'Get Started',
+  'landing.industry_title': 'Built for Your Industry',
+  'landing.industry_subtitle': 'Cubio adapts to your specific business type with tailored AI workflows',
+  'landing.re_title': 'Real Estate Development',
+  'landing.re_desc': 'Manage projects, apartments, leads and AI-powered sales automation',
+  'landing.craft_title': 'Birthstone Crafts Shop',
+  'landing.craft_desc': 'Manage your product catalog, birthstone jewelry and zodiac compatibility',
+
+  // === LANDING – HOW IT WORKS ===
+  'landing.how_title': 'How Cubio Works',
+  'landing.how_subtitle': 'Three simple steps to automate customer communication',
+  'landing.step1_title': 'Connect Channels',
+  'landing.step1_desc': 'Connect your Facebook, Instagram, Telegram, WhatsApp or Viber accounts in minutes.',
+  'landing.step2_title': 'AI Learns Your Business',
+  'landing.step2_desc': 'Configure your catalog, prices and AI responses. Cubio will understand your products and customers.',
+  'landing.step3_title': 'Automate and Grow',
+  'landing.step3_desc': 'AI handles requests 24/7. You meet leads, track conversations and close deals.',
+
+  // === LANDING – WHY CUBIO ===
+  'landing.why_title': 'Why Choose Cubio',
+  'landing.why_subtitle': 'Simplify operations with intelligent automation',
+  'landing.benefit1_title': 'Instant Responses',
+  'landing.benefit1_desc': 'AI agents instantly respond to customer inquiries — every message is handled.',
+  'landing.benefit2_title': '24/7 Availability',
+  'landing.benefit2_desc': 'Never miss a request outside business hours. AI assistant works around the clock.',
+  'landing.benefit3_title': 'Smart Automation',
+  'landing.benefit3_desc': 'Automatically manage inventory, track leads and qualify customers.',
+  'landing.benefit4_title': 'High Efficiency',
+  'landing.benefit4_desc': 'Your team focuses on high-value tasks — AI handles daily operations.',
+
+  // === LANDING – CTA & FOOTER ===
+  'landing.cta_title': 'Ready for Business Transformation?',
+  'landing.cta_subtitle': 'Join businesses using AI to automate operations and improve efficiency.',
+  'landing.cta_btn': 'Get Started',
+  'landing.re_feat1': 'Project & Apartment Catalog',
+  'landing.re_feat2': 'Lead Qualification',
+  'landing.re_feat3': 'Bulk Floor Management',
+  'landing.re_feat4': 'Multi-Channel AI Sales',
+  'landing.craft_feat1': 'Birthstone Product Catalog',
+  'landing.craft_feat2': 'Zodiac Compatibility',
+  'landing.craft_feat3': 'AI Product Recommendations',
+  'landing.craft_feat4': 'Multi-Channel Messaging',
+  'landing.terms_link': 'Terms & Conditions / Privacy Policy',
+
+  // === AUTH – COMMON ===
+  'auth.back_home': 'Back to Home',
+  'auth.back_login': 'Back to Login',
+  'auth.email': 'Email',
+  'auth.email_placeholder': 'your@company.com',
+  'auth.password': 'Password',
+  'auth.min_8': 'Minimum 8 characters',
+  'auth.full_name': 'Full Name',
+  'auth.full_name_placeholder': 'John Smith',
+  'auth.confirm_password': 'Confirm Password',
+
+  // === AUTH – LOGIN ===
+  'auth.sign_in_title': 'Welcome back to Cubio',
+  'auth.sign_in_subtitle': 'Sign in to your account',
+  'auth.remember_me': 'Remember me',
+  'auth.forgot_password': 'Forgot password?',
+  'auth.sign_in_btn': 'Sign In',
+  'auth.signing_in': 'Signing in...',
+  'auth.no_account': "Don't have an account?",
+  'auth.create_one': 'Create one',
+
+  // === AUTH – REGISTER ===
+  'auth.register_title': 'Create an Account',
+  'auth.register_subtitle': 'Start automating your business today',
+  'auth.create_account_btn': 'Create Account',
+  'auth.creating_account': 'Creating account...',
+  'auth.have_account': 'Already have an account?',
+  'auth.sign_in_link': 'Sign in',
+
+  // === AUTH – FORGOT PASSWORD ===
+  'auth.forgot_title': 'Forgot Password',
+  'auth.forgot_subtitle': "Enter your email and we'll send you a reset link",
+  'auth.send_reset': 'Send Reset Link',
+  'auth.sending': 'Sending...',
+  'auth.reset_check_email': 'Check your email for the reset link',
+
+  // === AUTH – RESET PASSWORD ===
+  'auth.reset_title': 'Set New Password',
+  'auth.reset_subtitle': 'Choose a strong password for your account',
+  'auth.new_password': 'New Password',
+  'auth.confirm_new_password': 'Confirm New Password',
+  'auth.update_password_btn': 'Update Password',
+  'auth.updating': 'Updating...',
+  'auth.password_updated_title': 'Password Updated!',
+  'auth.password_updated_msg': 'Your password has been successfully changed.',
+  'auth.sign_in_new_password': 'Sign in with new password',
+
+  // === AUTH – VERIFY EMAIL ===
+  'auth.verify_title': 'Check Your Email',
+  'auth.verify_msg': 'We sent a confirmation link to your email. Click the link to activate your account.',
+  'auth.verify_no_email': "Didn't receive the email? Check your spam folder, or",
+  'auth.verify_retry': 'try a different address',
+
+  // === AUTH – EMAIL CONFIRMED ===
+  'auth.confirmed_title': 'Email Confirmed!',
+  'auth.confirmed_msg': 'Your email has been successfully confirmed. Continue to company setup.',
+  'auth.continue_setup': 'Continue Setup',
+
+  // === AUTH – UNCONFIRMED BANNER ===
+  'auth.unconfirmed_title': 'Email Not Confirmed',
+  'auth.unconfirmed_msg': 'Please check your inbox and click the confirmation link before signing in.',
+  'auth.resend_link': "Didn't receive the email? Resend",
+  'auth.resending': 'Sending...',
+  'auth.resent_ok': 'Confirmation email sent! Check your inbox.',
+
+  // === ONBOARDING ===
+  'onboarding.title': 'Set Up Your Company',
+  'onboarding.subtitle': 'Tell us about your business',
+  'onboarding.company_name': 'Company Name',
+  'onboarding.company_placeholder': 'My Company LLC',
+  'onboarding.select_type': 'Select Business Type',
+  'onboarding.get_started': 'Get Started',
+  'onboarding.setting_up': 'Processing...',
+  'onboarding.sign_out': 'Sign Out',
+  'onboarding.re_title': 'Real Estate Development',
+  'onboarding.re_desc': 'Manage projects, apartments, leads and AI-powered sales automation',
+  'onboarding.craft_title': 'Birthstone Crafts Shop',
+  'onboarding.craft_desc': 'Manage your product catalog, birthstone jewelry and zodiac compatibility',
+  'onboarding.feat_projects': 'Project Management',
+  'onboarding.feat_apartments': 'Apartment Catalog',
+  'onboarding.feat_leads': 'Lead Tracking',
+  'onboarding.feat_ai_sales': 'AI Sales Agent',
+  'onboarding.feat_products': 'Product Catalog',
+  'onboarding.feat_birthstone': 'Birthstone Management',
+  'onboarding.feat_zodiac': 'Zodiac Compatibility',
+  'onboarding.feat_inventory': 'Inventory Tracking',
+  'onboarding.business_description': 'Business Description (optional but recommended)',
+  'onboarding.business_description_placeholder': 'Your business description: address, contact information, working hours and other details your customers might need',
+  'onboarding.terms_section': 'Terms & Conditions',
+  'onboarding.terms_agree_label': 'I agree to the Terms & Conditions',
+  'onboarding.terms_read_link': 'Read',
+  'onboarding.terms_required': 'Please agree to the Terms & Conditions',
+  'onboarding.terms_agree_btn': 'I Agree',
+  'onboarding.terms_close': 'Close',
+  'onboarding.terms_modal_title': 'Terms & Conditions',
+  'onboarding.terms_empty': 'Content coming soon',
+
+  // === DASHBOARD ===
+  'dashboard.title': 'Dashboard Overview',
+  'dashboard.subtitle': 'Monitor business metrics and AI agent activity',
+  'dashboard.total_leads': 'Total Leads',
+  'dashboard.vacant_units': 'Vacant Units',
+  'dashboard.reserved': 'Reserved',
+  'dashboard.sold': 'Sold',
+  'dashboard.total_products': 'Total Products',
+  'dashboard.ai_conversations': 'AI Conversations',
+  'dashboard.conversion_rate': 'Conversion Rate',
+  'dashboard.recent_leads': 'Recent Lead Activity',
+  'dashboard.no_leads': 'No leads yet. They will appear when AI conversations begin.',
+  'dashboard.ai_label': 'AI',
+
+  // === INTEGRATIONS ===
+  'integrations.title': 'Integrations',
+  'integrations.subtitle': 'Messaging channels connected to your AI assistant',
+  'integrations.connected': 'Connected',
+  'integrations.not_connected': 'Not Connected',
+  'integrations.inactive': 'Inactive',
+
+  // === SETTINGS ===
+  'settings.title': 'Settings',
+  'settings.subtitle': 'Manage your profile and company settings',
+  'settings.profile': 'Profile',
+  'settings.full_name': 'Full Name',
+  'settings.email': 'Email',
+  'settings.email_note': 'Email cannot be changed here',
+  'settings.save_profile': 'Save Profile',
+  'settings.company': 'Company',
+  'settings.company_name': 'Company Name',
+  'settings.ai_enabled': 'Enable AI Assistant',
+  'settings.ai_enabled_desc': 'AI will automatically respond to incoming messages',
+  'settings.save_company': 'Save Company',
+  'settings.change_password': 'Change Password',
+  'settings.new_password': 'New Password',
+  'settings.confirm_password': 'Confirm Password',
+  'settings.update_password': 'Update Password',
+  'settings.saving': 'Saving...',
+  'settings.updating': 'Updating...',
+  'settings.saved': 'Saved successfully',
+  'settings.business_description': 'Business Description',
+  'settings.business_description_hint': 'AI will use this information when talking to customers',
+  'settings.business_description_placeholder': 'Your business description: address, contact information, working hours and other details your customers might need',
+
+  // === CONVERSATIONS ===
+  'conversations.title': 'Conversations',
+  'conversations.search': 'Search...',
+  'conversations.all': 'All',
+  'conversations.open': 'Open',
+  'conversations.closed': 'Closed',
+  'conversations.pending': 'Pending',
+  'conversations.no_conversations': 'No conversations',
+  'conversations.select_hint': 'Select a conversation from the left to view it',
+  'conversations.type_message': 'Type a message...',
+  'conversations.ai_assistant': 'AI Assistant',
+
+  // === APARTMENTS ===
+  'apartments.title': 'Apartments',
+  'apartments.subtitle': 'Manage project apartments',
+  'apartments.add': 'Add Apartment',
+  'apartments.no_apartments': 'No apartments yet',
+  'apartments.status_vacant': 'Vacant',
+  'apartments.status_reserved': 'Reserved',
+  'apartments.status_sold': 'Sold',
+  'apartments.all': 'All',
+  'apartments.saving': 'Saving...',
+  'apartments.cancel': 'Cancel',
+  'apartments.edit': 'Edit Apartment',
+  'apartments.create': 'Add Apartment',
+  'apartments.project': 'Project',
+  'apartments.number': 'Apartment Number',
+  'apartments.floor': 'Floor',
+  'apartments.size': 'Area (m²)',
+  'apartments.rooms': 'Rooms',
+  'apartments.price_per_sqm': 'Price/m²',
+  'apartments.total_price': 'Total Price',
+  'apartments.description': 'Description',
+  'apartments.images': 'Photos (max 10)',
+  'apartments.save': 'Save',
+  'apartments.status_label': 'Status',
+  'apartments.templates': 'Templates',
+  'apartments.bulk_add': 'Bulk Add',
+  'apartments.bulk_no_template': 'Create a template first for bulk adding.',
+  'apartments.bulk_template_placeholder': 'Select template...',
+  'apartments.bulk_project_placeholder': 'Select project...',
+  'apartments.template_existing': 'Existing Templates',
+  'apartments.template_create': 'Create New Template',
+  'apartments.template_name_placeholder': 'e.g. 2-room standard',
+  'apartments.template_save': 'Create Template',
+  'apartments.template_saving': 'Saving...',
+  'apartments.template_close': 'Close',
+  'apartments.template_images': 'Photos (max 10)',
+  'apartments.bulk_title': 'Bulk Create Apartments',
+  'apartments.bulk_template': 'Select Template',
+  'apartments.bulk_project': 'Project',
+  'apartments.bulk_floors_from': 'From Floor',
+  'apartments.bulk_floors_to': 'To Floor',
+  'apartments.bulk_units_per_floor': 'Units/Floor',
+  'apartments.bulk_price_adj': 'Price Adjustment per Floor (%)',
+  'apartments.bulk_price_note': 'e.g. 1 = 1% more expensive per floor',
+  'apartments.bulk_will_create': 'Will Create',
+  'apartments.bulk_apartments': 'Apartments',
+  'apartments.bulk_create': 'Create Apartments',
+  'apartments.bulk_creating': 'Creating...',
+  'apartments.status_all': 'All Statuses',
+  'apartments.project_all': 'All Projects',
+
+  // === ADMIN ===
+  'admin.title': 'Admin Panel',
+  'admin.subtitle': 'Manage users, content and integrations',
+  'admin.tab_users': 'Users',
+  'admin.tab_localizations': 'Localizations',
+  'admin.tab_integrations': 'Integrations',
+  'admin.tab_terms': 'Terms',
+  'admin.webhook_title': 'Webhook URLs',
+  'admin.webhook_desc': 'Use these URLs in your messaging platform settings:',
+  'admin.copy': 'Copy',
+  'admin.add_integration': 'Add Integration',
+  'admin.add_string': 'Add String',
+  'admin.edit_integration': 'Edit Integration',
+  'admin.edit_string': 'Edit String',
+  'admin.col_name': 'Name',
+  'admin.col_email': 'Email',
+  'admin.col_company': 'Company',
+  'admin.col_business': 'Business Type',
+  'admin.col_admin': 'Admin',
+  'admin.col_joined': 'Joined',
+  'admin.col_key': 'Key',
+  'admin.col_text': 'Text (KA)',
+  'admin.col_text_en': 'Text (EN)',
+  'admin.col_provider': 'Provider',
+  'admin.col_account': 'Account',
+  'admin.col_status': 'Status',
+  'admin.is_admin': 'Admin',
+  'admin.is_user': 'User',
+  'admin.active': 'Active',
+  'admin.off': 'Off',
+  'admin.save': 'Save',
+  'admin.saving': 'Saving...',
+  'admin.cancel': 'Cancel',
+  'admin.company_select': 'Select company...',
+  'admin.provider_select': 'Select provider...',
+  'admin.access_token': 'Access Token',
+  'admin.refresh_token': 'Refresh Token',
+  'admin.account_name': 'Account Name',
+  'admin.provider_account_id': 'Provider Account ID',
+  'admin.is_active_label': 'Active',
+  'admin.key_label': 'Key',
+  'admin.text_label': 'Text (Georgian)',
+  'admin.text_en_label': 'Text (English)',
+  'admin.reset_to_default': 'Reset to Default',
+  'admin.delete_confirm': 'Delete integration. Are you sure?',
+  'admin.strings_count': 'strings',
+  'admin.search_localizations': 'Search by key or text...',
+  'admin.no_results': 'No localizations found',
+  'admin.no_strings': 'No localizations yet',
+  'admin.show_blanks': 'Show Blanks',
+  'admin.hide_blanks': 'All',
+  'admin.terms_title': 'Terms & Conditions',
+  'admin.terms_subtitle': 'Manage agreement text in Georgian and English',
+  'admin.terms_lang_ka': 'Georgian',
+  'admin.terms_lang_en': 'English',
+  'admin.terms_save': 'Save',
+  'admin.terms_saving': 'Saving...',
+  'admin.terms_saved': '✓ Saved',
+
+  // === COMMON ===
+  'common.delete': 'Delete',
+  'common.cancel': 'Cancel',
+  'common.save': 'Save',
+  'common.saving': 'Saving...',
+  'common.edit': 'Edit',
+  'common.close': 'Close',
+
+  // === IMAGE UPLOAD ===
+  'image.photos': 'Photos',
+  'image.uploading': 'Uploading...',
+  'image.upload_error_type': 'Allowed formats: PNG, JPG, WEBP',
+  'image.upload_error_size': 'File too large. Max 15 MB',
+  'image.compress_error': 'Failed to process image',
+
+  // === PROJECTS ===
+  'projects.title': 'Projects',
+  'projects.subtitle': 'Manage your real estate construction projects',
+  'projects.add': 'Add Project',
+  'projects.no_projects': 'No projects yet. Create your first project.',
+  'projects.name': 'Project Name',
+  'projects.location': 'Location',
+  'projects.completion_date': 'Completion Date',
+  'projects.total_floors': 'Number of Floors',
+  'projects.status': 'Status',
+  'projects.description': 'Description',
+  'projects.status_planning': 'Planning',
+  'projects.status_construction': 'Under Construction',
+  'projects.status_completed': 'Completed',
+  'projects.edit': 'Edit Project',
+  'projects.save': 'Save Project',
+  'projects.saving': 'Saving...',
+  'projects.cancel': 'Cancel',
+  'projects.delete_confirm': 'Delete this project? All apartments will also be deleted.',
+  'projects.floors': 'Floor',
+  'projects.images': 'Photos (max 3)',
+
+  // === PRODUCTS ===
+  'products.title': 'Products',
+  'products.subtitle': 'Manage your handmade products and gemstones',
+  'products.add': 'Add Product',
+  'products.no_products': 'No products yet. Add your first product.',
+  'products.name': 'Product Name',
+  'products.price': 'Price',
+  'products.category': 'Category',
+  'products.material': 'Material',
+  'products.birthstones': 'Birthstones',
+  'products.zodiac': 'Zodiac Compatibility',
+  'products.description': 'Description',
+  'products.in_stock': 'In Stock',
+  'products.out_of_stock': 'Out of Stock',
+  'products.save': 'Save Product',
+  'products.saving': 'Saving...',
+  'products.cancel': 'Cancel',
+  'products.edit': 'Edit Product',
+  'products.delete_confirm': 'Delete this product?',
+  'products.images': 'Photos (max 10)',
+
+  // === TERMS PAGE ===
+  'terms.title': 'Terms & Conditions',
+  'terms.subtitle': 'Please read our terms and conditions',
+  'terms.lang_ka': 'Georgian',
+  'terms.lang_en': 'English',
+  'terms.last_updated': 'Last Updated',
+  'terms.empty': 'Content not yet published',
+  'terms.back': 'Back to Home',
+
+  // === LEADS ===
+  'leads.title': 'Leads',
+  'leads.subtitle': 'Sales opportunities identified by AI',
+  'leads.no_leads': 'No leads yet. They will appear when AI detects buying intent in conversations.',
+  'leads.status_new': 'New',
+  'leads.status_contacted': 'Contacted',
+  'leads.status_scheduled': 'Scheduled',
+  'leads.status_closed': 'Closed',
+  'leads.col_customer': 'Customer',
+  'leads.col_contact': 'Contact',
+  'leads.col_summary': 'Summary',
+  'leads.col_meeting': 'Meeting',
+  'leads.col_status': 'Status',
+  'leads.col_date': 'Date',
+  'leads.mark_contacted': 'Contacted',
+  'leads.mark_scheduled': 'Meeting Scheduled',
+  'leads.mark_closed': 'Close',
+  'leads.provider': 'Source',
+
+  // === ESCALATIONS ===
+  'escalations.title': 'Escalations',
+  'escalations.subtitle': 'Users requiring human intervention',
+  'escalations.no_escalations': 'No escalations yet. They will appear when AI detects a dissatisfied customer.',
+  'escalations.status_open': 'Open',
+  'escalations.status_resolved': 'Resolved',
+  'escalations.status_ignored': 'Ignored',
+  'escalations.col_customer': 'Customer',
+  'escalations.col_contact': 'Contact',
+  'escalations.col_summary': 'Situation Summary',
+  'escalations.col_status': 'Status',
+  'escalations.col_date': 'Date',
+  'escalations.mark_resolved': 'Resolved',
+  'escalations.mark_ignored': 'Ignore',
+  'escalations.provider': 'Source',
+};
+
+// ============================================================
+// CACHE + EXPORT
+// ============================================================
+
+const _getTranslationsKa = unstable_cache(
   async (): Promise<T> => {
     try {
       const supabase = createAdminClient();
@@ -458,6 +901,43 @@ export const getTranslations = unstable_cache(
       return { ...DEFAULT_TRANSLATIONS };
     }
   },
-  ['translations_cache_v2'],
+  ['translations_ka'],
   { tags: ['translations'], revalidate: 10 },
 );
+
+const _getTranslationsEn = unstable_cache(
+  async (): Promise<T> => {
+    try {
+      const supabase = createAdminClient();
+      const { data } = await supabase
+        .from('localizations')
+        .select('keyword, localization_text_en')
+        .not('localization_text_en', 'is', null)
+        .neq('localization_text_en', '');
+      const overrides: T = {};
+      for (const row of (data ?? []) as Array<{ keyword: string; localization_text_en: string | null }>) {
+        if (row.localization_text_en) overrides[row.keyword] = row.localization_text_en;
+      }
+      return { ...DEFAULT_TRANSLATIONS_EN, ...overrides };
+    } catch {
+      return { ...DEFAULT_TRANSLATIONS_EN };
+    }
+  },
+  ['translations_en'],
+  { tags: ['translations'], revalidate: 10 },
+);
+
+async function getLang(): Promise<'ka' | 'en'> {
+  try {
+    const { cookies } = await import('next/headers');
+    const cookieStore = await cookies();
+    return cookieStore.get('cubio_lang')?.value === 'en' ? 'en' : 'ka';
+  } catch {
+    return 'ka';
+  }
+}
+
+export async function getTranslations(lang?: 'ka' | 'en'): Promise<T> {
+  const resolvedLang = lang ?? await getLang();
+  return resolvedLang === 'en' ? _getTranslationsEn() : _getTranslationsKa();
+}

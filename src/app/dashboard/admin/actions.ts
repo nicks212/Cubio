@@ -27,12 +27,13 @@ export async function upsertLocalization(_prev: unknown, formData: FormData) {
   const supabase = createAdminClient();
   const keyword = formData.get('keyword') as string;
   const localization_text = formData.get('localization_text') as string;
+  const localization_text_en = (formData.get('localization_text_en') as string) ?? '';
   if (!keyword || !localization_text) return { error: 'Key and text are required' };
 
   // Always upsert by keyword — works for both new strings and edits to default keys
   const { error } = await supabase
     .from('localizations')
-    .upsert({ keyword, localization_text }, { onConflict: 'keyword' });
+    .upsert({ keyword, localization_text, localization_text_en }, { onConflict: 'keyword' });
   if (error) return { error: error.message };
   revalidatePath('/dashboard/admin');
   (revalidateTag as (tag: string) => void)('translations');

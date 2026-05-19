@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { DEFAULT_TRANSLATIONS } from '@/lib/i18n';
+import { DEFAULT_TRANSLATIONS, DEFAULT_TRANSLATIONS_EN } from '@/lib/i18n';
 import AdminClient from './AdminClient';
 
 export default async function AdminPage() {
@@ -15,7 +15,7 @@ export default async function AdminPage() {
 
   const [{ data: users }, { data: dbLocalizations }, { data: integrations }, { data: companies }, { data: termsRows }] = await Promise.all([
     adminClient.from('profiles').select('*, company:companies(company_name, business_type)').order('created_at', { ascending: false }),
-    adminClient.from('localizations').select('*').order('keyword'),
+    adminClient.from('localizations').select('id, keyword, localization_text, localization_text_en').order('keyword'),
     adminClient.from('integrations').select('*, company:companies(company_name)').order('created_at', { ascending: false }),
     adminClient.from('companies').select('id, company_name').order('company_name'),
     adminClient.from('terms_content').select('language, content, updated_at'),
@@ -26,7 +26,12 @@ export default async function AdminPage() {
   const allLocalizations = Object.entries(DEFAULT_TRANSLATIONS)
     .map(([keyword, defaultText]) => {
       const db = dbMap.get(keyword);
-      return { id: db?.id ?? null as string | null, keyword, localization_text: db?.localization_text ?? defaultText };
+      return {
+        id: db?.id ?? null as string | null,
+        keyword,
+        localization_text: db?.localization_text ?? defaultText,
+        localization_text_en: (db as { localization_text_en?: string | null } | undefined)?.localization_text_en ?? DEFAULT_TRANSLATIONS_EN[keyword] ?? '',
+      };
     })
     .sort((a, b) => a.keyword.localeCompare(b.keyword));
 
