@@ -14,7 +14,7 @@ interface CubioLogoProps {
 }
 
 export function CubioLogo({ size = 40, className = '' }: CubioLogoProps) {
-  const padding = Math.round(size * 0.18);
+  const padding = Math.round(size * 0.06);
   const iconSize = size - padding * 2;
   return (
     <div
