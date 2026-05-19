@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import DashboardLayoutClient from './DashboardLayoutClient';
@@ -34,11 +35,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
       .eq('status', 'open'),
   ]);
 
+  const cookieStore = await cookies();
+  const lang = cookieStore.get('cubio_lang')?.value === 'en' ? 'en' : 'ka';
+
   return (
     <DashboardLayoutClient
       profile={profile}
       leadsCount={openLeads ?? 0}
       escalationsCount={openEscalations ?? 0}
+      currentLang={lang}
     >
       {children}
     </DashboardLayoutClient>

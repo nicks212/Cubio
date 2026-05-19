@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { logout } from '@/app/auth/actions';
 import { CubioLogo } from '@/components/CubioLogo';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import type { Profile } from '@/types/database';
 import { useT } from '@/components/TranslationsProvider';
 import { createClient } from '@/lib/supabase/client';
@@ -18,9 +19,10 @@ interface Props {
   children: React.ReactNode;
   leadsCount?: number;
   escalationsCount?: number;
+  currentLang?: 'ka' | 'en';
 }
 
-export default function DashboardLayoutClient({ profile, children, leadsCount = 0, escalationsCount = 0 }: Props) {
+export default function DashboardLayoutClient({ profile, children, leadsCount = 0, escalationsCount = 0, currentLang = 'ka' }: Props) {
   const t = useT();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -162,6 +164,9 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
               <p className="text-xs text-muted-foreground truncate">{profile.email}</p>
             </div>
           </div>
+          <div className="px-2 mb-1">
+            <LanguageSwitcher currentLang={currentLang} />
+          </div>
           <form action={logout}>
             <button
               type="submit"
@@ -206,6 +211,9 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
                   <p className="text-sm font-medium truncate">{profile.company?.company_name}</p>
                   <p className="text-xs text-muted-foreground truncate">{profile.email}</p>
                 </div>
+              </div>
+              <div className="px-2 mb-1">
+                <LanguageSwitcher currentLang={currentLang} />
               </div>
               <form action={logout}>
                 <button
