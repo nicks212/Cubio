@@ -171,6 +171,7 @@ export const DEFAULT_TRANSLATIONS: T = {
   'integrations.connected': 'დაკავშირებულია',
   'integrations.not_connected': 'არ არის დაკავშირებული',
   'integrations.inactive': 'არააქტიური',
+  'integrations.contact_notice': 'ინტეგრაციის დასაკონფიგურირებლად და AI აგენტის გამოყენების დასაწყებად, გთხოვთ მოგვმართოთ: cubio.ge@gmail.com',
 
   // === SETTINGS ===
   'settings.title': 'პარამეტრები',
@@ -356,6 +357,11 @@ export const DEFAULT_TRANSLATIONS: T = {
   'products.name': 'პროდუქტის სახელი',
   'products.price': 'ფასი',
   'products.category': 'კატეგორია',
+  'products.currency': 'ვალუტა',
+  'products.category_placeholder': 'კატეგორიის არჩევა',
+  'products.no_categories': 'კატეგორიები ჯერ არ არის',
+  'products.category_add': 'კატეგორიის დამატება',
+  'products.category_add_placeholder': 'კატეგორიის სახელი',
   'products.material': 'მასალა',
   'products.birthstones': 'ბირთსტოუნები',
   'products.zodiac': 'Zodiac თავსებადობა',
@@ -633,6 +639,7 @@ export const DEFAULT_TRANSLATIONS_EN: T = {
   'integrations.connected': 'Connected',
   'integrations.not_connected': 'Not Connected',
   'integrations.inactive': 'Inactive',
+  'integrations.contact_notice': 'To configure the integration and start using AI agent, please contact us: cubio.ge@gmail.com',
 
   // === SETTINGS ===
   'settings.title': 'Settings',
@@ -825,6 +832,11 @@ export const DEFAULT_TRANSLATIONS_EN: T = {
   'products.name': 'Product Name',
   'products.price': 'Price',
   'products.category': 'Category',
+  'products.currency': 'Currency',
+  'products.category_placeholder': 'Select category',
+  'products.no_categories': 'No categories yet',
+  'products.category_add': 'Add category',
+  'products.category_add_placeholder': 'Category name',
   'products.material': 'Material',
   'products.birthstones': 'Birthstones',
   'products.zodiac': 'Zodiac Compatibility',

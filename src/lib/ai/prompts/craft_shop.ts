@@ -27,7 +27,8 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   // Top 5 — full detail with photo URLs
   const detailedList = top5.length > 0
     ? top5.map(p => {
-        const parts: string[] = [`• ${p.name}: ₾${p.price}`];
+        const sym = p.currency === 'USD' ? '$' : '₾';
+        const parts: string[] = [`• ${p.name}: ${sym}${p.price}`];
         if (p.category) parts.push(p.category);
         if (p.material) parts.push(p.material);
         if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);
@@ -41,7 +42,8 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
 
   // Rest — ultra-compact, no photo URLs
   const compactRest = rest.slice(0, 15).map(p => {
-    const parts = [`${p.name}:₾${p.price}`];
+    const sym = p.currency === 'USD' ? '$' : '₾';
+    const parts = [`${p.name}:${sym}${p.price}`];
     if (p.category) parts.push(p.category);
     if (p.material) parts.push(p.material);
     return parts.join('/');

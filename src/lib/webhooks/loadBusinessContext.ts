@@ -24,7 +24,7 @@ export async function loadBusinessContext(
   if (businessType === 'real_estate') {
     const { data: apartments } = await supabase
       .from('apartments')
-      .select('apartment_number, size_sq_m, floor, rooms_quantity, price_per_sq_m, total_price, status, images, project:projects(name, location, description, completion_date, images)')
+      .select('apartment_number, size_sq_m, floor, rooms_quantity, price_per_sq_m, total_price, currency, status, images, project:projects(name, location, description, completion_date, images)')
       .eq('company_id', companyId)
       .eq('status', 'vacant')
       .is('deleted_at', null)
@@ -37,7 +37,7 @@ export async function loadBusinessContext(
 
   const { data: products } = await supabase
     .from('products')
-    .select('name, price, category, zodiac_compatibility, birthstones, material, in_stock, images')
+    .select('name, price, currency, category, zodiac_compatibility, birthstones, material, in_stock, images')
     .eq('company_id', companyId)
     .eq('in_stock', true)
     .is('deleted_at', null)

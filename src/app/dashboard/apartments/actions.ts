@@ -12,6 +12,7 @@ const aptSchema = z.object({
   rooms_quantity: z.coerce.number().int().min(1),
   price_per_sq_m: z.coerce.number().positive(),
   total_price: z.coerce.number().positive(),
+  currency: z.enum(['GEL', 'USD']).default('USD'),
   status: z.enum(['vacant', 'reserved', 'sold']),
   description: z.string().optional(),
 });

@@ -153,7 +153,8 @@ export default function OnboardingClient({ termsKa, termsEn }: Props) {
               placeholder={t['onboarding.business_description_placeholder']}
               className="w-full px-4 py-3 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground resize-none text-sm"
             />
-            <p className="text-xs text-muted-foreground mt-1">მაქს. 1000 სიმბოლო</p>
+            <p className="text-xs text-primary/70 mt-1 font-medium">{t['settings.business_description_hint']}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">მაქს. 1000 სიმბოლო</p>
           </div>
 
           {/* Step 4: Terms agreement */}

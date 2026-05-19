@@ -12,6 +12,7 @@ import ImageUploader from '@/components/ImageUploader';
 
 type ApartmentWithProject = Omit<Apartment, 'project'> & {
   project?: { name: string } | null;
+  currency?: 'GEL' | 'USD';
 };
 
 interface Props {
@@ -38,6 +39,7 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
   const [projectFilter, setProjectFilter] = useState('all');
   const [aptImages, setAptImages] = useState<string[]>([]);
   const [templateImages, setTemplateImages] = useState<string[]>([]);
+  const [currency, setCurrency] = useState<'GEL' | 'USD'>('USD');
 
   const [createState, createAction, createPending] = useActionState(createApartment, null);
   const [updateState, updateAction, updatePending] = useActionState(updateApartment, null);
@@ -56,9 +58,9 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
     return true;
   });
 
-  const openEdit = (a: ApartmentWithProject) => { setEditing(a); setAptImages(a.images ?? []); setModal('single'); };
+  const openEdit = (a: ApartmentWithProject) => { setEditing(a); setAptImages(a.images ?? []); setCurrency((a.currency as 'GEL' | 'USD') ?? 'USD'); setModal('single'); };
   const closeModal = () => { setModal(null); setEditing(null); setAptImages([]); setTemplateImages([]); };
-  const openCreateSingle = () => { setEditing(null); setAptImages([]); setModal('single'); };
+  const openCreateSingle = () => { setEditing(null); setAptImages([]); setCurrency('USD'); setModal('single'); };
 
   if ((editing ? updateState : createState)?.success && modal === 'single') closeModal();
   if (templateState?.success && modal === 'template') closeModal();
@@ -188,7 +190,7 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
                   <span>{apt.size_sq_m} m²</span>
                   <span>${apt.price_per_sq_m.toLocaleString()}/m²</span>
                 </div>
-                <p className="text-sm font-semibold text-foreground mb-3">${apt.total_price.toLocaleString()}</p>
+                <p className="text-sm font-semibold text-foreground mb-3">{apt.currency === 'GEL' ? '₾' : '$'}{apt.total_price.toLocaleString()}</p>
                 <div className="flex gap-2 pt-3 border-t border-slate-100">
                   <button onClick={() => openEdit(apt)} className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-slate-100 rounded-lg transition-colors">
                     <Edit className="w-3.5 h-3.5" />{t('common.edit')}
@@ -231,7 +233,7 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
                     <td className="py-3 px-4 text-sm">{apt.rooms_quantity}</td>
                     <td className="py-3 px-4 text-sm">{apt.size_sq_m}m²</td>
                     <td className="py-3 px-4 text-sm">${apt.price_per_sq_m.toLocaleString()}</td>
-                    <td className="py-3 px-4 text-sm font-semibold">${apt.total_price.toLocaleString()}</td>
+                    <td className="py-3 px-4 text-sm font-semibold">{apt.currency === 'GEL' ? '₾' : '$'}{apt.total_price.toLocaleString()}</td>
                     <td className="py-3 px-4">
                       <select value={apt.status} onChange={e => handleStatusChange(apt.id, e.target.value)} className={`text-xs px-2 py-1 rounded-full border font-medium focus:outline-none cursor-pointer ${statusColors[apt.status]}`}>
                         <option value="vacant">{t('apartments.status_vacant')}</option>
@@ -301,6 +303,22 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
                 <div>
                   <label className="block text-sm font-medium mb-2">{t('apartments.total_price')} *</label>
                   <input name="total_price" type="number" min="0" required defaultValue={df.total_price} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">{t('products.currency')}</label>
+                <input type="hidden" name="currency" value={currency} />
+                <div className="flex rounded-lg border border-border overflow-hidden h-[42px]">
+                  {([{ value: 'USD', label: 'USD $' }, { value: 'GEL', label: 'GEL ₾' }] as const).map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setCurrency(opt.value)}
+                      className={`flex-1 px-3 text-sm font-medium transition-colors ${currency === opt.value ? 'bg-primary text-white' : 'bg-[var(--input-background)] text-muted-foreground hover:text-foreground'}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
               </div>
               <div>

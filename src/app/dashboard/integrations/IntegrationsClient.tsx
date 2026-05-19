@@ -278,6 +278,20 @@ export default function IntegrationsClient({ integrations }: Props) {
         <p className="text-muted-foreground">Connect your messaging channels so the AI can respond to customers.</p>
       </div>
 
+      {/* Contact notice */}
+      <div className="mb-6 flex items-start gap-3 px-4 py-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
+        <span className="text-base leading-none mt-0.5">📧</span>
+        <span>
+          To configure the integration and start using AI agent, please contact us:{' '}
+          <a href="mailto:cubio.ge@gmail.com" className="font-semibold underline underline-offset-2 hover:text-amber-900">cubio.ge@gmail.com</a>
+          <br className="sm:hidden" />
+          <span className="sm:before:content-['_/_'] text-amber-700">
+            ინტეგრაციის დასაკონფიგურირებლად და AI აგენტის გამოყენების დასაწყებად, გთხოვთ მოგვმართოთ:{' '}
+            <a href="mailto:cubio.ge@gmail.com" className="font-semibold underline underline-offset-2 hover:text-amber-900">cubio.ge@gmail.com</a>
+          </span>
+        </span>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {visibleProviders.map(provider => {
           const row = byProvider.get(provider.id);

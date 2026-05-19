@@ -8,6 +8,7 @@ export interface ApartmentContext {
     rooms_quantity: number;
     price_per_sq_m: number;
     total_price: number;
+    currency?: string | null;
     status: string;
     images?: string[];
     project?: { name: string; location?: string | null; description?: string | null; completion_date?: string | null; images?: string[] } | null;
@@ -19,6 +20,7 @@ export interface ProductContext {
   products: Array<{
     name: string;
     price: number;
+    currency?: string | null;
     category?: string | null;
     zodiac_compatibility?: string[] | null;
     birthstones?: string | null;

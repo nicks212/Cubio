@@ -2,8 +2,9 @@ import type { ApartmentContext } from '../types';
 
 type ApartmentRow = ApartmentContext['apartments'][0];
 
-function shortPrice(price: number): string {
-  return price >= 1000 ? `₾${Math.round(price / 1000)}k` : `₾${price}`;
+function shortPrice(price: number, currency?: string | null): string {
+  const sym = currency === 'GEL' ? '₾' : '$';
+  return price >= 1000 ? `${sym}${Math.round(price / 1000)}k` : `${sym}${price}`;
 }
 
 function scoreApartment(a: ApartmentRow, wantRooms: number | null, maxPrice: number | null): number {
@@ -40,7 +41,8 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery
   const detailedList = top5.length > 0
     ? top5.map(a => {
         const proj = a.project as { name: string; location?: string | null; description?: string | null; completion_date?: string | null; images?: string[] } | null;
-        let line = `• Apt ${a.apartment_number}: ${a.rooms_quantity} rooms, ${a.size_sq_m}m², floor ${a.floor}, ₾${a.total_price.toLocaleString()}${proj?.name ? ` — ${proj.name}` : ''}`;
+        const sym = a.currency === 'GEL' ? '₾' : '$';
+        let line = `• Apt ${a.apartment_number}: ${a.rooms_quantity} rooms, ${a.size_sq_m}m², floor ${a.floor}, ${sym}${a.total_price.toLocaleString()}${proj?.name ? ` — ${proj.name}` : ''}`;
         if (proj?.location) line += ` | 📍 ${proj.location}`;
         if (proj?.completion_date) line += ` | completion: ${proj.completion_date}`;
         if (proj?.description) line += `\n  project info: ${proj.description}`;
@@ -57,7 +59,7 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery
   // Rest — ultra-compact, no photo URLs (saves ~60 tokens per apartment)
   const compactRest = rest.slice(0, 15).map(a => {
     const proj = a.project as { name: string; location?: string | null } | null;
-    return `A${a.apartment_number}:${a.rooms_quantity}br/${a.size_sq_m}m²/fl${a.floor}/${shortPrice(a.total_price)}${
+    return `A${a.apartment_number}:${a.rooms_quantity}br/${a.size_sq_m}m²/fl${a.floor}/${shortPrice(a.total_price, a.currency)}${
       proj?.name ? `/${proj.name}` : ''
     }${proj?.location ? `@${proj.location}` : ''}`;
   }).join(' | ');

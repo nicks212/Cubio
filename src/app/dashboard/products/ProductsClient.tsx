@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useActionState } from 'react';
-import { Package, Plus, Edit, Trash2, X, Star } from 'lucide-react';
-import { createProduct, updateProduct, deleteProduct } from './actions';
+import { useState, useActionState, useRef, useEffect } from 'react';
+import { Package, Plus, Edit, Trash2, X, Star, ChevronDown, Check } from 'lucide-react';
+import { createProduct, updateProduct, deleteProduct, createProductCategory } from './actions';
 import type { Product } from '@/types/database';
 import { useT } from '@/components/TranslationsProvider';
 import ImageUploader from '@/components/ImageUploader';
@@ -12,17 +12,177 @@ const ZODIAC_SIGNS = [
   'libra', 'scorpio', 'sagittarius', 'capricorn', 'aquarius', 'pisces',
 ] as const;
 
-export default function ProductsClient({ products }: { products: Product[] }) {
+type Currency = 'GEL' | 'USD';
+const CURRENCY_OPTIONS: { value: Currency; symbol: string; label: string }[] = [
+  { value: 'GEL', symbol: '₾', label: 'GEL ₾' },
+  { value: 'USD', symbol: '$', label: 'USD $' },
+];
+
+// ── CategoryDropdown ──────────────────────────────────────────────────────────
+function CategoryDropdown({
+  value,
+  onChange,
+  categories,
+  onAddCategory,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  categories: string[];
+  onAddCategory: (name: string) => Promise<void>;
+}) {
   const t = useT();
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setAdding(false);
+        setNewName('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleAdd = async () => {
+    if (!newName.trim() || saving) return;
+    setSaving(true);
+    await onAddCategory(newName.trim());
+    onChange(newName.trim());
+    setNewName('');
+    setAdding(false);
+    setSaving(false);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen(o => !o); setAdding(false); }}
+        className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-left flex items-center justify-between text-sm"
+      >
+        <span className={value ? 'text-foreground' : 'text-muted-foreground'}>
+          {value || t('products.category_placeholder')}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-20 top-full mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+          {categories.length === 0 && !adding ? (
+            <div className="px-4 py-3 text-sm text-muted-foreground">{t('products.no_categories')}</div>
+          ) : (
+            <div className="max-h-44 overflow-y-auto">
+              {categories.map(cat => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => { onChange(cat); setOpen(false); }}
+                  className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 flex items-center justify-between"
+                >
+                  {cat}
+                  {value === cat && <Check className="w-3.5 h-3.5 text-primary" />}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Add category row */}
+          {adding ? (
+            <div className="px-3 py-2 border-t border-slate-100 flex gap-2">
+              <input
+                autoFocus
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAdd(); } if (e.key === 'Escape') { setAdding(false); setNewName(''); } }}
+                placeholder={t('products.category_add_placeholder')}
+                className="flex-1 px-2 py-1 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+              <button
+                type="button"
+                onClick={handleAdd}
+                disabled={!newName.trim() || saving}
+                className="px-3 py-1 text-sm bg-primary text-white rounded-md hover:bg-primary/90 disabled:opacity-50"
+              >
+                {saving ? '…' : t('common.save')}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="w-full px-4 py-2.5 text-sm text-primary hover:bg-slate-50 flex items-center gap-2 border-t border-slate-100"
+            >
+              <Plus className="w-3.5 h-3.5" />{t('products.category_add')}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── CurrencyToggle ────────────────────────────────────────────────────────────
+function CurrencyToggle({ value, onChange }: { value: Currency; onChange: (v: Currency) => void }) {
+  return (
+    <div className="flex rounded-lg border border-border overflow-hidden h-[42px]">
+      {CURRENCY_OPTIONS.map(opt => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`flex-1 px-3 text-sm font-medium transition-colors ${value === opt.value ? 'bg-primary text-white' : 'bg-[var(--input-background)] text-muted-foreground hover:text-foreground'}`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+export default function ProductsClient({
+  products,
+  initialCategories,
+}: {
+  products: Product[];
+  initialCategories: string[];
+  companyId: string;
+}) {
+  const t = useT();
+  const [categories, setCategories] = useState<string[]>(initialCategories);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [selectedZodiacs, setSelectedZodiacs] = useState<string[]>([]);
   const [productImages, setProductImages] = useState<string[]>([]);
+  const [currency, setCurrency] = useState<Currency>('GEL');
+  const [selectedCategory, setSelectedCategory] = useState('');
   const [createState, createAction, createPending] = useActionState(createProduct, null);
   const [updateState, updateAction, updatePending] = useActionState(updateProduct, null);
 
-  const openCreate = () => { setEditing(null); setSelectedZodiacs([]); setProductImages([]); setModalOpen(true); };
-  const openEdit = (p: Product) => { setEditing(p); setSelectedZodiacs(p.zodiac_compatibility ?? []); setProductImages(p.images ?? []); setModalOpen(true); };
+  const openCreate = () => {
+    setEditing(null);
+    setSelectedZodiacs([]);
+    setProductImages([]);
+    setCurrency('GEL');
+    setSelectedCategory('');
+    setModalOpen(true);
+  };
+  const openEdit = (p: Product) => {
+    setEditing(p);
+    setSelectedZodiacs(p.zodiac_compatibility ?? []);
+    setProductImages(p.images ?? []);
+    setCurrency((p.currency as Currency) ?? 'GEL');
+    setSelectedCategory(p.category ?? '');
+    setModalOpen(true);
+  };
   const closeModal = () => { setModalOpen(false); setEditing(null); setProductImages([]); };
 
   const state = editing ? updateState : createState;
@@ -36,6 +196,13 @@ export default function ProductsClient({ products }: { products: Product[] }) {
     if (!confirm(t('products.delete_confirm'))) return;
     await deleteProduct(id);
   };
+
+  const handleAddCategory = async (name: string) => {
+    await createProductCategory(name);
+    setCategories(prev => prev.includes(name) ? prev : [...prev, name].sort());
+  };
+
+  const currencySymbol = (c?: string | null) => c === 'USD' ? '$' : '₾';
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
@@ -76,7 +243,7 @@ export default function ProductsClient({ products }: { products: Product[] }) {
                   </span>
                 </div>
                 {product.category && <p className="text-xs text-muted-foreground mb-2">{product.category}</p>}
-                <p className="text-base font-bold text-primary mb-3">${product.price.toLocaleString()}</p>
+                <p className="text-base font-bold text-primary mb-3">{currencySymbol(product.currency)}{product.price.toLocaleString()}</p>
                 {(product.zodiac_compatibility?.length ?? 0) > 0 && (
                   <div className="flex items-center gap-1 mb-3">
                     <Star className="w-3 h-3 text-amber-500" />
@@ -109,6 +276,8 @@ export default function ProductsClient({ products }: { products: Product[] }) {
               {editing && <input type="hidden" name="id" value={editing.id} />}
               <input type="hidden" name="zodiac_compatibility" value={selectedZodiacs.join(',')} />
               <input type="hidden" name="images" value={JSON.stringify(productImages)} />
+              <input type="hidden" name="currency" value={currency} />
+              <input type="hidden" name="category" value={selectedCategory} />
               {state?.error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{state.error}</div>}
               <div>
                 <label className="block text-sm font-medium mb-2">{t('products.name')} *</label>
@@ -120,9 +289,18 @@ export default function ProductsClient({ products }: { products: Product[] }) {
                   <input name="price" type="number" step="0.01" min="0" required defaultValue={editing?.price ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">{t('products.category')}</label>
-                  <input name="category" defaultValue={editing?.category ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  <label className="block text-sm font-medium mb-2">{t('products.currency')}</label>
+                  <CurrencyToggle value={currency} onChange={setCurrency} />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">{t('products.category')}</label>
+                <CategoryDropdown
+                  value={selectedCategory}
+                  onChange={setSelectedCategory}
+                  categories={categories}
+                  onAddCategory={handleAddCategory}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">{t('products.material')}</label>

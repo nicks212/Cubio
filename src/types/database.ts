@@ -67,6 +67,7 @@ export interface Apartment {
   rooms_quantity: number;
   price_per_sq_m: number;
   total_price: number;
+  currency: 'GEL' | 'USD';
   status: ApartmentStatus;
   description: string | null;
   images: string[];
@@ -94,6 +95,7 @@ export interface Product {
   birthstones: string | null;
   zodiac_compatibility: string[] | null;
   price: number;
+  currency: 'GEL' | 'USD';
   category: string | null;
   material: string | null;
   in_stock: boolean;

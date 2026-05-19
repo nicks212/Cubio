@@ -8,6 +8,7 @@ const productSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   price: z.coerce.number().positive(),
+  currency: z.enum(['GEL', 'USD']).default('GEL'),
   category: z.string().optional(),
   material: z.string().optional(),
   birthstones: z.string().optional(),
@@ -80,4 +81,19 @@ export async function deleteProduct(id: string) {
   if (error) return { error: error.message };
   revalidatePath('/dashboard/products');
   return { success: true };
+}
+
+export async function createProductCategory(name: string): Promise<{ name: string; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { name, error: 'Unauthorized' };
+  const company_id = await getCompanyId(supabase, user.id);
+  if (!company_id) return { name, error: 'No company' };
+
+  const trimmed = name.trim();
+  if (!trimmed) return { name, error: 'Name is empty' };
+
+  const { error } = await supabase.from('product_categories').insert({ company_id, name: trimmed });
+  if (error) return { name: trimmed, error: error.message };
+  return { name: trimmed };
 }
