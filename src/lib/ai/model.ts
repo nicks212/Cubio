@@ -9,4 +9,8 @@ export const model = genAI.getGenerativeModel({
     temperature: 0.7,
     maxOutputTokens: 600,
   },
+  // Sales assistant replies don't need chain-of-thought reasoning.
+  // Disabling thinking cuts ~95% of cost per interaction.
+  // @ts-expect-error — thinkingConfig is valid for gemini-2.5-flash but not yet in SDK types
+  thinkingConfig: { thinkingBudget: 0 },
 });
