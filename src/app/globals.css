@@ -63,3 +63,11 @@ body {
 .lang-flip {
   animation: lang-coin-flip 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
+
+@keyframes lang-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.lang-overlay {
+  animation: lang-overlay-in 0.12s ease forwards;
+}
