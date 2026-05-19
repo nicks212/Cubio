@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useActionState, useEffect } from 'react';
-import { Facebook, Mail, Send, MessageCircle, Phone, X, CheckCircle, AlertCircle, Loader2, Trash2, ExternalLink } from 'lucide-react';
-import { saveIntegration, deleteIntegration } from './actions';
+import { useState } from 'react';
+import { Facebook, Mail, Send, MessageCircle, Phone, Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useT } from '@/components/TranslationsProvider';
 
 type Provider = {
   id: string;
@@ -95,160 +95,9 @@ interface Props {
   integrations: IntegrationRow[];
 }
 
-// ── Connect Modal ─────────────────────────────────────────────────────────────
-function ConnectModal({ provider, onClose }: { provider: Provider; onClose: () => void }) {
-  const [state, action, pending] = useActionState(saveIntegration, null);
-
-  useEffect(() => {
-    if (state?.success) {
-      setTimeout(onClose, 1200);
-    }
-  }, [state, onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between p-6 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 ${provider.bgColor} rounded-xl flex items-center justify-center`}>
-              <provider.icon className={`w-5 h-5 ${provider.color}`} />
-            </div>
-            <h2 className="text-lg font-semibold">Connect {provider.name}</h2>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-            <X className="w-4 h-4 text-slate-500" />
-          </button>
-        </div>
-
-        <form action={action} className="p-6 space-y-4">
-          <input type="hidden" name="provider" value={provider.id} />
-
-          <div>
-            <label className="block text-sm font-medium mb-1.5">{provider.tokenLabel}</label>
-            <input
-              name="access_token"
-              required
-              placeholder={provider.tokenPlaceholder}
-              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-            <p className="text-xs text-slate-500 mt-1.5">{provider.tokenHint}</p>
-          </div>
-
-          {provider.needsManualAccountId && (
-            <div>
-              <label className="block text-sm font-medium mb-1.5">{provider.accountIdLabel}</label>
-              <input
-                name="provider_account_id"
-                required
-                placeholder={provider.accountIdPlaceholder}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Account Name <span className="text-slate-400 font-normal">(optional)</span></label>
-            <input
-              name="account_name"
-              placeholder="My Page / Bot name"
-              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-            <p className="text-xs text-slate-500 mt-1.5">Leave blank to auto-detect from the token</p>
-          </div>
-
-          {provider.helpUrl && (
-            <a
-              href={provider.helpUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-            >
-              <ExternalLink className="w-3 h-3" />
-              How to get a token
-            </a>
-          )}
-
-          {state?.error && (
-            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-lg">
-              <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-700">{state.error}</p>
-            </div>
-          )}
-
-          {state?.success && (
-            <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-100 rounded-lg">
-              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-              <p className="text-sm text-green-700">Connected successfully!</p>
-            </div>
-          )}
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-medium text-sm transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={pending || !!state?.success}
-              className="flex-1 px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {pending && <Loader2 className="w-4 h-4 animate-spin" />}
-              {pending ? 'Connecting...' : state?.success ? 'Connected!' : 'Connect'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ── Disconnect Confirm Modal ──────────────────────────────────────────────────
-function DisconnectModal({ provider, onClose }: { provider: Provider; onClose: () => void }) {
-  const [state, action, pending] = useActionState(deleteIntegration, null);
-
-  useEffect(() => {
-    if (state?.success) setTimeout(onClose, 800);
-  }, [state, onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center flex-shrink-0">
-            <Trash2 className="w-5 h-5 text-red-500" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold">Disconnect {provider.name}?</h2>
-            <p className="text-xs text-slate-500">The bot will stop responding on this channel.</p>
-          </div>
-        </div>
-
-        {state?.error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-lg text-sm text-red-700">{state.error}</div>
-        )}
-
-        <form action={action} className="flex gap-3">
-          <input type="hidden" name="provider" value={provider.id} />
-          <button type="button" onClick={onClose} className="flex-1 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-medium text-sm transition-colors">
-            Cancel
-          </button>
-          <button type="submit" disabled={pending} className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-1">
-            {pending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            {pending ? 'Disconnecting...' : 'Disconnect'}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function IntegrationsClient({ integrations }: Props) {
-  const [connectingProvider, setConnectingProvider] = useState<Provider | null>(null);
-  const [disconnectingProvider, setDisconnectingProvider] = useState<Provider | null>(null);
+  const t = useT();
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState<{ updated: number; failed: number; errors?: string[] } | null>(null);
 
@@ -281,15 +130,7 @@ export default function IntegrationsClient({ integrations }: Props) {
       {/* Contact notice */}
       <div className="mb-6 flex items-start gap-3 px-4 py-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
         <span className="text-base leading-none mt-0.5">📧</span>
-        <span>
-          To configure the integration and start using AI agent, please contact us:{' '}
-          <a href="mailto:cubio.ge@gmail.com" className="font-semibold underline underline-offset-2 hover:text-amber-900">cubio.ge@gmail.com</a>
-          <br className="sm:hidden" />
-          <span className="sm:before:content-['_/_'] text-amber-700">
-            ინტეგრაციის დასაკონფიგურირებლად და AI აგენტის გამოყენების დასაწყებად, გთხოვთ მოგვმართოთ:{' '}
-            <a href="mailto:cubio.ge@gmail.com" className="font-semibold underline underline-offset-2 hover:text-amber-900">cubio.ge@gmail.com</a>
-          </span>
-        </span>
+        <span>{t('integrations.contact_notice')}</span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -312,59 +153,23 @@ export default function IntegrationsClient({ integrations }: Props) {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between mt-auto">
+              <div className="mt-auto">
                 {connected ? (
                   <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-                    Connected
+                    {t('integrations.connected')}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
                     <span className="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block" />
-                    Not connected
+                    {t('integrations.not_connected')}
                   </span>
                 )}
-
-                <div className="flex gap-2">
-                  {connected && (
-                    <button
-                      onClick={() => setDisconnectingProvider(provider)}
-                      className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg transition-colors"
-                      title="Disconnect"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setConnectingProvider(provider)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      connected
-                        ? 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        : 'bg-primary text-white hover:bg-primary/90'
-                    }`}
-                  >
-                    {connected ? 'Reconnect' : 'Connect'}
-                  </button>
-                </div>
               </div>
             </div>
           );
         })}
       </div>
-
-      {connectingProvider && (
-        <ConnectModal
-          provider={connectingProvider}
-          onClose={() => setConnectingProvider(null)}
-        />
-      )}
-
-      {disconnectingProvider && (
-        <DisconnectModal
-          provider={disconnectingProvider}
-          onClose={() => setDisconnectingProvider(null)}
-        />
-      )}
 
       {/* Backfill contact names for existing conversations */}
       {hasMetaIntegration && (
