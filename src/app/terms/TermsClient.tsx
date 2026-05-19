@@ -39,7 +39,7 @@ export default function TermsClient({
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-2 flex-shrink-0">
-            <CubioLogo size={24} />
+            <CubioLogo size={36} />
             <span className="text-lg font-semibold text-foreground">Cubio</span>
           </Link>
 

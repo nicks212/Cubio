@@ -144,7 +144,7 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex lg:flex-col w-64 bg-white border-r border-slate-200 flex-shrink-0">
         <div className="h-16 flex items-center gap-3 px-6 border-b border-slate-200">
-          <CubioLogo size={32} />
+          <CubioLogo size={36} />
           <span className="text-lg font-semibold">Cubio</span>
         </div>
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -177,7 +177,7 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 z-50">
         <div className="flex items-center gap-2">
-          <CubioLogo size={24} />
+          <CubioLogo size={32} />
           <span className="font-semibold">Cubio</span>
         </div>
         <button

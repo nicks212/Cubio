@@ -12,7 +12,7 @@ export default async function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-2">
-              <CubioLogo size={24} />
+              <CubioLogo size={36} />
               <span className="text-xl font-semibold text-foreground">Cubio</span>
             </div>
             <div className="flex items-center gap-3">
@@ -177,7 +177,7 @@ export default async function LandingPage() {
       <footer className="border-t border-slate-200 py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2">
-            <CubioLogo size={20} />
+            <CubioLogo size={28} />
             <span className="font-semibold">Cubio</span>
           </div>
           <Link

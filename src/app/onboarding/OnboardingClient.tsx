@@ -56,11 +56,8 @@ export default function OnboardingClient({ termsKa, termsEn }: Props) {
       <div className="w-full max-w-3xl">
         {/* Logo + Title */}
         <div className="text-center mb-10">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center">
-          <CubioLogo size={28} className="text-white" />
-            </div>
-            <span className="text-2xl font-bold">Cubio</span>
+          <div className="flex items-center justify-center mb-4">
+            <CubioLogo size={64} />
           </div>
           <h1 className="text-3xl font-bold text-foreground mb-2">{t['onboarding.title']}</h1>
           <p className="text-muted-foreground">{t['onboarding.subtitle']}</p>

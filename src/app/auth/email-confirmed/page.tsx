@@ -10,7 +10,7 @@ export default async function EmailConfirmedPage() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
           <div className="flex flex-col items-center mb-6">
-            <CubioLogo size={32} />
+            <CubioLogo size={64} className="mb-2" />
             <div className="w-14 h-14 bg-green-50 rounded-full flex items-center justify-center mb-4">
               <CheckCircle className="w-7 h-7 text-green-500" />
             </div>
