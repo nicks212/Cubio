@@ -146,7 +146,7 @@ export async function processIncomingMessage(
   // 5. Typing debounce — wait 3 s so fragmented multi-message bursts can settle.
   //    After waiting, if a newer user message arrived in this conversation, skip;
   //    the handler for the last message in the burst will respond with full context.
-  await new Promise<void>(r => setTimeout(r, 3000));
+  await new Promise<void>(r => setTimeout(r, 5000));
 
   if (savedMessageId && savedMessageCreatedAt) {
     const { data: newerMsg } = await supabase

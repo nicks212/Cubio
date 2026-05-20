@@ -31,7 +31,7 @@ Return exactly:
   "meetingNotes": null or "specific requests about meeting/visit",
   "phone": null or "phone number if explicitly mentioned",
   "email": null or "email if explicitly mentioned",
-  "isEscalation": true if customer is angry/frustrated/uses offensive language/asks for human,
+  "isEscalation": true ONLY if customer is clearly angry, uses offensive/abusive language, or explicitly demands a human agent. Repeating a question, asking multiple times, or showing mild impatience does NOT count — return false in those cases,
   "escalationSummary": "Why upset and what they need. Empty string if not an escalation."
 }`;
 
