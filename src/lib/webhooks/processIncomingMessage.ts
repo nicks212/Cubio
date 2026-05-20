@@ -131,11 +131,10 @@ export async function processIncomingMessage(
       content: msg.messageText,
       provider_message_id: msg.messageId ?? null,
     })
-    .select('id, created_at')
+    .select('id')
     .single();
 
   const savedMessageId = (savedMsg?.id as string | undefined) ?? null;
-  const savedMessageCreatedAt = (savedMsg?.created_at as string | undefined) ?? null;
 
   // 5. Human takeover — message stored, AI skips response
   if (aiPaused) {
@@ -143,53 +142,61 @@ export async function processIncomingMessage(
     return { conversationId, reply: null };
   }
 
-  // 5. Typing debounce — wait 3 s so fragmented multi-message bursts can settle.
-  //    After waiting, if a newer user message arrived in this conversation, skip;
-  //    the handler for the last message in the burst will respond with full context.
+  // 5. Typing debounce — wait 5 s so fragmented multi-message bursts can settle.
+  //    After waiting, we check whether this message is STILL the latest user message
+  //    in the conversation by ordering on (created_at DESC, id DESC).
+  //    Using both columns ensures correctness even when multiple messages share the
+  //    same created_at second (the most common cause of duplicate replies).
   await new Promise<void>(r => setTimeout(r, 5000));
 
-  if (savedMessageId && savedMessageCreatedAt) {
-    const { data: newerMsg } = await supabase
+  if (savedMessageId) {
+    const { data: latestMsg } = await supabase
       .from('messages')
       .select('id')
       .eq('conversation_id', conversationId)
       .eq('role', 'user')
-      .neq('id', savedMessageId)
-      .gt('created_at', savedMessageCreatedAt)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (newerMsg) {
-      console.info(`${label} Newer message detected — skipping debounced reply (conversation ${conversationId})`);
+    if (latestMsg && (latestMsg.id as string) !== savedMessageId) {
+      console.info(`${label} Not the latest message — skipping debounced reply (conversation ${conversationId})`);
       return { conversationId, reply: null };
     }
   }
 
-  // 5b. Collect all user messages sent since the last AI reply (combines burst fragments)
+  // 5b. Collect all user messages sent since the last AI reply (combines burst fragments).
+  //     Using gte on created_at + role=user filter is reliable: AI messages are excluded
+  //     by the role filter, so gte safely captures user messages at the same second too.
   const { data: lastAiMsg } = await supabase
     .from('messages')
     .select('created_at')
     .eq('conversation_id', conversationId)
     .eq('role', 'ai')
     .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const bufferedSince = (lastAiMsg?.created_at as string | undefined) ?? '1970-01-01';
-
-  const { data: bufferedMsgs } = await supabase
+  const bufferedBaseQuery = supabase
     .from('messages')
     .select('content')
     .eq('conversation_id', conversationId)
     .eq('role', 'user')
-    .gt('created_at', bufferedSince)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true });
 
-  const combinedMessage = (bufferedMsgs && bufferedMsgs.length > 1)
-    ? (bufferedMsgs as Array<{ content: string }>).map(m => m.content).filter(Boolean).join('\n')
+  const { data: bufferedRaw } = lastAiMsg
+    ? await bufferedBaseQuery.gte('created_at', lastAiMsg.created_at as string)
+    : await bufferedBaseQuery;
+
+  const bufferedMsgs = (bufferedRaw ?? []) as Array<{ content: string }>;
+  const combinedMessage = bufferedMsgs.length > 0
+    ? bufferedMsgs.map(m => m.content).filter(Boolean).join('\n')
     : msg.messageText;
 
-  if (bufferedMsgs && bufferedMsgs.length > 1) {
+  if (bufferedMsgs.length > 1) {
     console.info(`${label} Combined ${bufferedMsgs.length} buffered messages for conversation ${conversationId}`);
   }
 
