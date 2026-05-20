@@ -131,11 +131,10 @@ export async function processIncomingMessage(
       content: msg.messageText,
       provider_message_id: msg.messageId ?? null,
     })
-    .select('id, created_at')
+    .select('id')
     .single();
 
   const savedMessageId = (savedMsg?.id as string | undefined) ?? null;
-  const savedMessageCreatedAt = (savedMsg?.created_at as string | undefined) ?? null;
 
   // 5. Human takeover — message stored, AI skips response
   if (aiPaused) {
@@ -143,25 +142,32 @@ export async function processIncomingMessage(
     return { conversationId, reply: null };
   }
 
-  // 5. Typing debounce — wait 5 s so fragmented multi-message bursts can settle.
-  //    After waiting, check whether ANY user message was saved AFTER this one.
-  //    We use gt('created_at', savedMessageCreatedAt) — Postgres timestamptz has
-  //    microsecond precision, so every separate HTTP webhook request gets a unique
-  //    timestamp. Only the LAST message in the burst will find no newer message
-  //    and proceed to generate a reply. All earlier handlers will skip.
+  // 5a. Claim the reply slot — write our message ID into conversations.pending_reply_message_id.
+  //     Every parallel handler does this immediately after saving its message.
+  //     Postgres serializes concurrent row-level UPDATEs, so the LAST handler
+  //     to write wins and its UUID stays. No timestamp math, no ordering assumptions.
+  if (savedMessageId) {
+    await supabase
+      .from('conversations')
+      .update({ pending_reply_message_id: savedMessageId })
+      .eq('id', conversationId);
+  }
+
+  // 5b. Typing debounce — wait 5 s for the user to finish sending messages.
   await new Promise<void>(r => setTimeout(r, 5000));
 
-  if (savedMessageCreatedAt) {
-    const { data: newerMsgs } = await supabase
-      .from('messages')
-      .select('id')
-      .eq('conversation_id', conversationId)
-      .eq('role', 'user')
-      .gt('created_at', savedMessageCreatedAt)
-      .limit(1);
+  // 5c. Check if we're still the designated responder.
+  //     If the user sent more messages after ours, those handlers overwrote our ID.
+  //     If our ID is no longer in the slot → a newer handler will respond → we skip.
+  if (savedMessageId) {
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('pending_reply_message_id')
+      .eq('id', conversationId)
+      .single();
 
-    if (newerMsgs && newerMsgs.length > 0) {
-      console.info(`${label} Newer message exists — skipping debounced reply (conversation ${conversationId})`);
+    if (!conv || (conv.pending_reply_message_id as string | null) !== savedMessageId) {
+      console.info(`${label} Reply slot claimed by newer message — skipping (conversation ${conversationId})`);
       return { conversationId, reply: null };
     }
   }
@@ -254,10 +260,10 @@ export async function processIncomingMessage(
     content: cleanReply,
   });
 
-  // Update conversation updated_at so it surfaces correctly in the dashboard
+  // Update conversation updated_at + release the reply slot so next turn starts clean
   await supabase
     .from('conversations')
-    .update({ updated_at: new Date().toISOString() })
+    .update({ updated_at: new Date().toISOString(), pending_reply_message_id: null })
     .eq('id', conversationId);
 
   // 10. Send reply back via provider
