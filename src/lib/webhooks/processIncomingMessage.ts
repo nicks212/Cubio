@@ -131,10 +131,11 @@ export async function processIncomingMessage(
       content: msg.messageText,
       provider_message_id: msg.messageId ?? null,
     })
-    .select('id')
+    .select('id, created_at')
     .single();
 
   const savedMessageId = (savedMsg?.id as string | undefined) ?? null;
+  const savedMessageCreatedAt = (savedMsg?.created_at as string | undefined) ?? null;
 
   // 5. Human takeover — message stored, AI skips response
   if (aiPaused) {
@@ -143,25 +144,24 @@ export async function processIncomingMessage(
   }
 
   // 5. Typing debounce — wait 5 s so fragmented multi-message bursts can settle.
-  //    After waiting, we check whether this message is STILL the latest user message
-  //    in the conversation by ordering on (created_at DESC, id DESC).
-  //    Using both columns ensures correctness even when multiple messages share the
-  //    same created_at second (the most common cause of duplicate replies).
+  //    After waiting, check whether ANY user message was saved AFTER this one.
+  //    We use gt('created_at', savedMessageCreatedAt) — Postgres timestamptz has
+  //    microsecond precision, so every separate HTTP webhook request gets a unique
+  //    timestamp. Only the LAST message in the burst will find no newer message
+  //    and proceed to generate a reply. All earlier handlers will skip.
   await new Promise<void>(r => setTimeout(r, 5000));
 
-  if (savedMessageId) {
-    const { data: latestMsg } = await supabase
+  if (savedMessageCreatedAt) {
+    const { data: newerMsgs } = await supabase
       .from('messages')
       .select('id')
       .eq('conversation_id', conversationId)
       .eq('role', 'user')
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .gt('created_at', savedMessageCreatedAt)
+      .limit(1);
 
-    if (latestMsg && (latestMsg.id as string) !== savedMessageId) {
-      console.info(`${label} Not the latest message — skipping debounced reply (conversation ${conversationId})`);
+    if (newerMsgs && newerMsgs.length > 0) {
+      console.info(`${label} Newer message exists — skipping debounced reply (conversation ${conversationId})`);
       return { conversationId, reply: null };
     }
   }
@@ -286,9 +286,11 @@ export async function processIncomingMessage(
   }
 
   // 11. Detect lead / escalation (fire-and-forget — runs after reply is delivered)
-  //     Requires at least 2 messages (1 user + 1 AI) to produce a meaningful signal.
+  //     Only run every 3rd user message to save API costs (~66% reduction).
+  //     Requires at least 4 messages total (2 user + 2 AI) to produce a meaningful signal.
   const fullHistory = [...history, { role: 'ai', content: cleanReply }];
-  if (fullHistory.length >= 2) {
+  const userMessageCount = fullHistory.filter(m => m.role === 'user').length;
+  if (fullHistory.length >= 4 && userMessageCount % 3 === 0) {
     void detectAndPersistLeadOrEscalation(
       supabase,
       fullHistory,
