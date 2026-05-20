@@ -143,10 +143,10 @@ export async function processIncomingMessage(
     return { conversationId, reply: null };
   }
 
-  // 5. Typing debounce — wait briefly so the user can finish a multi-message burst.
-  //    After waiting, if a newer user message arrived in this conversation, skip
-  //    responding here — the newer message's handler will respond with full context.
-  await new Promise<void>(r => setTimeout(r, 800));
+  // 5. Typing debounce — wait 3 s so fragmented multi-message bursts can settle.
+  //    After waiting, if a newer user message arrived in this conversation, skip;
+  //    the handler for the last message in the burst will respond with full context.
+  await new Promise<void>(r => setTimeout(r, 3000));
 
   if (savedMessageId && savedMessageCreatedAt) {
     const { data: newerMsg } = await supabase
@@ -155,7 +155,7 @@ export async function processIncomingMessage(
       .eq('conversation_id', conversationId)
       .eq('role', 'user')
       .neq('id', savedMessageId)
-      .gt('created_at', savedMessageCreatedAt)  // only messages strictly after this one
+      .gt('created_at', savedMessageCreatedAt)
       .limit(1)
       .maybeSingle();
 
@@ -163,6 +163,34 @@ export async function processIncomingMessage(
       console.info(`${label} Newer message detected — skipping debounced reply (conversation ${conversationId})`);
       return { conversationId, reply: null };
     }
+  }
+
+  // 5b. Collect all user messages sent since the last AI reply (combines burst fragments)
+  const { data: lastAiMsg } = await supabase
+    .from('messages')
+    .select('created_at')
+    .eq('conversation_id', conversationId)
+    .eq('role', 'ai')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const bufferedSince = (lastAiMsg?.created_at as string | undefined) ?? '1970-01-01';
+
+  const { data: bufferedMsgs } = await supabase
+    .from('messages')
+    .select('content')
+    .eq('conversation_id', conversationId)
+    .eq('role', 'user')
+    .gt('created_at', bufferedSince)
+    .order('created_at', { ascending: true });
+
+  const combinedMessage = (bufferedMsgs && bufferedMsgs.length > 1)
+    ? (bufferedMsgs as Array<{ content: string }>).map(m => m.content).filter(Boolean).join('\n')
+    : msg.messageText;
+
+  if (bufferedMsgs && bufferedMsgs.length > 1) {
+    console.info(`${label} Combined ${bufferedMsgs.length} buffered messages for conversation ${conversationId}`);
   }
 
   // 6. Load business context (apartments or products + business description)
@@ -183,7 +211,7 @@ export async function processIncomingMessage(
 
   // 8. Generate AI reply — Layer 1 (global) + Layer 2 (business-type) combined
   const reply = await generateReply(
-    msg.messageText,
+    combinedMessage,
     businessContext,
     integration.businessType,
     history,
@@ -198,7 +226,18 @@ export async function processIncomingMessage(
   const imageUrlsToSend: string[] = photosMatch
     ? photosMatch[1].trim().split(/\s+/).filter(u => u.startsWith('http')).slice(0, 5)
     : [];
-  const cleanReply = reply.replace(/\nPHOTOS:\s*.+$/m, '').trim();
+  let cleanReply = reply.replace(/\nPHOTOS:\s*.+$/m, '').trim();
+
+  // Strip any raw URLs that leaked into the reply body — send them as actual images instead.
+  // (AI sometimes copies photo metadata verbatim from context; we never want bare links in text.)
+  const leakedUrls = cleanReply.match(/https?:\/\/\S+/g);
+  if (leakedUrls) {
+    cleanReply = cleanReply.replace(/https?:\/\/\S+/g, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    for (const u of leakedUrls) {
+      if (!imageUrlsToSend.includes(u) && imageUrlsToSend.length < 5) imageUrlsToSend.push(u);
+    }
+    console.info(`${label} Stripped ${leakedUrls.length} leaked URL(s) from reply text`);
+  }
 
   // 9. Save AI reply
   await supabase.from('messages').insert({

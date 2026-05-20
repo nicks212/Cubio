@@ -37,7 +37,7 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery
   const top5 = sorted.slice(0, 5);
   const rest = sorted.slice(5);
 
-  // Top 5 — full detail with photo URLs
+  // Top 5 — full detail with [photos:...] metadata tag (not inline text)
   const detailedList = top5.length > 0
     ? top5.map(a => {
         const proj = a.project as { name: string; location?: string | null; description?: string | null; completion_date?: string | null; images?: string[] } | null;
@@ -45,13 +45,13 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery
         let line = `• Apt ${a.apartment_number}: ${a.rooms_quantity} rooms, ${a.size_sq_m}m², floor ${a.floor}, ${sym}${a.total_price.toLocaleString()}${proj?.name ? ` — ${proj.name}` : ''}`;
         if (proj?.location) line += ` | 📍 ${proj.location}`;
         if (proj?.completion_date) line += ` | completion: ${proj.completion_date}`;
-        if (proj?.description) line += `\n  project info: ${proj.description}`;
+        if (proj?.description) line += `\n  info: ${proj.description.slice(0, 80)}${proj.description.length > 80 ? '…' : ''}`;
         const photos = [
           ...(a.images?.filter(u => u.startsWith('http')) ?? []),
           ...(proj?.images?.filter(u => u.startsWith('http')) ?? []),
         ];
         const deduped = [...new Set(photos)].slice(0, 3);
-        if (deduped.length) line += `\n  photos: ${deduped.join(' ')}`;
+        if (deduped.length) line += `\n  [photos: ${deduped.join(' ')}]`;
         return line;
       }).join('\n')
     : '(No apartments currently available)';
@@ -72,12 +72,45 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery
     ? ' (sorted by your preferences)'
     : ' (tell me your preferences — rooms, budget, floor — for better matches)';
 
+  // Backend grouping: detect sets of highly-similar apartments to save AI tokens + avoid verbose lists
+  type GroupKey = string;
+  const groups = new Map<GroupKey, ApartmentRow[]>();
+  for (const a of sorted) {
+    const proj = a.project as { name?: string } | null;
+    const priceBucket = Math.round(a.total_price / 10000); // group within $10k buckets
+    const key: GroupKey = `${a.rooms_quantity}r|${priceBucket}|${proj?.name ?? ''}`;
+    const arr = groups.get(key) ?? [];
+    arr.push(a);
+    groups.set(key, arr);
+  }
+  // Build a compact group-summary line for groups with 3+ similar units
+  const groupSummaries: string[] = [];
+  for (const [, members] of groups) {
+    if (members.length >= 3) {
+      const first = members[0];
+      const proj = first.project as { name?: string; location?: string | null } | null;
+      const sym = first.currency === 'GEL' ? '₾' : '$';
+      const minPrice = Math.min(...members.map(a => a.total_price));
+      const maxPrice = Math.max(...members.map(a => a.total_price));
+      const priceStr = minPrice === maxPrice
+        ? `${sym}${minPrice.toLocaleString()}`
+        : `${sym}${minPrice.toLocaleString()}–${sym}${maxPrice.toLocaleString()}`;
+      groupSummaries.push(
+        `GROUP: ${members.length}× ${first.rooms_quantity}-room${proj?.name ? ` (${proj.name})` : ''}${proj?.location ? ` @${proj.location}` : ''} — ${priceStr} [apt numbers: ${members.map(a => a.apartment_number).join(', ')}]`
+      );
+    }
+  }
+
+  const groupSection = groupSummaries.length > 0
+    ? `\nSIMILAR GROUPS (summarize these; do NOT list each unit individually):\n${groupSummaries.join('\n')}\n`
+    : '';
+
   return `REAL ESTATE SALES ASSISTANT
 
 ${businessInfo}ROLE: Professional real estate sales agent. Recommend based on budget, room count, floor, size, project. Guide high-intent buyers toward scheduling a visit.
 
 LEAD FLOW: When customer wants to visit/schedule/reserve — collect one at a time: preferred date → phone number → which apartment(s). Confirm a sales rep will follow up.
-
+${groupSection}
 TOP APARTMENTS${filterNote}:
 ${detailedList}${
     compactRest ? `\n\nMORE AVAILABLE (compact — ask for details on any):\n${compactRest}` : ''

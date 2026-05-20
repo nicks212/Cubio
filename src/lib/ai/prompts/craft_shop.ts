@@ -24,7 +24,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const top5 = sorted.slice(0, 5);
   const rest = sorted.slice(5);
 
-  // Top 5 — full detail with photo URLs
+  // Top 5 — full detail with [photos:...] metadata tag
   const detailedList = top5.length > 0
     ? top5.map(p => {
         const sym = p.currency === 'USD' ? '$' : '₾';
@@ -35,7 +35,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
         if (p.birthstones) parts.push(`stones: ${p.birthstones}`);
         let line = parts.join(' | ');
         const photos = p.images?.filter(u => u.startsWith('http')).slice(0, 3) ?? [];
-        if (photos.length) line += `\n  photos: ${photos.join(' ')}`;
+        if (photos.length) line += `\n  [photos: ${photos.join(' ')}]`;
         return line;
       }).join('\n')
     : '(No products currently available)';
@@ -49,6 +49,33 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
     return parts.join('/');
   }).join(' | ');
 
+  // Backend grouping: group products sharing the same category + similar price to avoid verbose lists
+  type ProdGroupKey = string;
+  const prodGroups = new Map<ProdGroupKey, ProductRow[]>();
+  for (const p of available) {
+    const priceBucket = Math.round(p.price / 20); // group within ~20 unit buckets
+    const key: ProdGroupKey = `${p.category ?? 'misc'}|${p.material ?? ''}|${priceBucket}`;
+    const arr = prodGroups.get(key) ?? [];
+    arr.push(p);
+    prodGroups.set(key, arr);
+  }
+  const groupSummaries: string[] = [];
+  for (const [, members] of prodGroups) {
+    if (members.length >= 3) {
+      const first = members[0];
+      const sym = first.currency === 'USD' ? '$' : '₾';
+      const minP = Math.min(...members.map(p => p.price));
+      const maxP = Math.max(...members.map(p => p.price));
+      const priceStr = minP === maxP ? `${sym}${minP}` : `${sym}${minP}–${sym}${maxP}`;
+      groupSummaries.push(
+        `GROUP: ${members.length}× ${first.category ?? 'item'}${first.material ? ` (${first.material})` : ''} — ${priceStr} [${members.map(p => p.name).join(', ')}]`
+      );
+    }
+  }
+  const groupSection = groupSummaries.length > 0
+    ? `\nSIMILAR GROUPS (summarize these; do NOT list each item individually):\n${groupSummaries.join('\n')}\n`
+    : '';
+
   const businessInfo = context.businessDescription
     ? `COMPANY INFO: ${context.businessDescription}\n\n`
     : '';
@@ -60,7 +87,7 @@ ${businessInfo}ROLE: Warm, creative sales assistant for a craft jewelry shop. Re
 IMAGE RECOMMENDATIONS: If customer sends an image, match visual style, colors, and materials to available products.
 
 LEAD FLOW: When customer wants to buy — confirm product(s), provide shop contact/address, confirm inquiry received.
-
+${groupSection}
 TOP PRODUCTS${q ? ' (matched to your message)' : ''}:
 ${detailedList}${
     compactRest ? `\n\nMORE PRODUCTS (compact — ask for details on any):\n${compactRest}` : ''
