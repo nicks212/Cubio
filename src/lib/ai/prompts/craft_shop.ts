@@ -35,7 +35,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
         if (p.birthstones) parts.push(`stones: ${p.birthstones}`);
         let line = parts.join(' | ');
         if (includePhotos) {
-          const photos = p.images?.filter(u => u.startsWith('http')).slice(0, 3) ?? [];
+          const photos = p.images?.filter(u => u.startsWith('http')) ?? [];
           if (photos.length) line += `\n  [photos: ${photos.join(' ')}]`;
         }
         return line;
@@ -83,6 +83,8 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
 ${businessInfo}ROLE: Warm, creative sales assistant for a craft jewelry shop. Recommend based on zodiac, birthstones, materials, style, budget, and gift intent. Focus on meaning and beauty.
 
 IMAGE RECOMMENDATIONS: If customer sends an image, match visual style, colors, and materials to available products.
+
+PHOTOS FLOW: When customer asks for photos, send them immediately — do NOT wait for lead details first. After sending photos (after your PHOTOS: line), ask naturally whether they would like to order or learn more.
 
 LEAD COLLECTION (critical): When a customer shows buying intent ("I want to buy", "I want this", "please contact me", "I want consultation", equivalent in Georgian/Russian), DO NOT immediately confirm a rep will contact them. First collect what's missing — one question at a time, only asking what hasn't been provided:
   1. Which product they want (if not clear)

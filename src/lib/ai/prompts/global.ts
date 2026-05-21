@@ -4,7 +4,9 @@
 export function buildGlobalSystemPrompt(photosSent = false): string {
   const photoRule = photosSent
     ? `PHOTOS: Already sent. Do NOT add PHOTOS: line again unless customer explicitly asks for photos.`
-    : `PHOTOS: When recommending a specific item, append ONE final line: PHOTOS: <url1> <url2> <url3> (max 3 URLs from [photos:...] metadata, space-separated). Omit for general replies. NEVER paste URLs in reply text — only in that PHOTOS: line.`;
+    : `PHOTOS: When the customer asks to see photos of an item, append ONE final line with ALL available photo URLs from that item's [photos:...] metadata:
+PHOTOS: <url1> <url2> <url3> ...
+Then in your reply text write a natural short sentence like "აი ბინის ფოტოები!" (Georgian) or "Here are the photos!" (English). NEVER say "you can view at the following links" or imply links — images are sent as attachments. NEVER paste URLs anywhere in the reply text — only in that PHOTOS: line. Omit PHOTOS: line for general replies where no specific item photos are needed.`;
 
   return `You are a professional sales assistant AI.
 

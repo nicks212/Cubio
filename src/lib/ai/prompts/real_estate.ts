@@ -53,7 +53,7 @@ export function buildRealEstateSystemPrompt(
             photoType === 'apartment' ? aptPhotos :
             photoType === 'project'   ? projPhotos :
             [...aptPhotos, ...projPhotos];
-          const deduped = [...new Set(photos)].slice(0, 3);
+          const deduped = [...new Set(photos)];
           if (deduped.length) line += `\n  [photos: ${deduped.join(' ')}]`;
         }
         return line;
@@ -109,6 +109,8 @@ export function buildRealEstateSystemPrompt(
   return `REAL ESTATE SALES ASSISTANT
 
 ${businessInfo}ROLE: Sales agent. Recommend by budget/rooms/floor/project. Guide toward scheduling a visit.
+
+PHOTOS FLOW: When customer asks for photos, send them immediately — do NOT wait for lead details first. After sending photos (after your PHOTOS: line), ask naturally whether they are interested in visiting or learning more, to continue the lead qualification.
 
 LEAD COLLECTION (critical): When a customer shows buying intent ("I want to visit", "I want to buy", "please contact me", "I want consultation", equivalent in Georgian/Russian), DO NOT immediately say a rep will contact them. First collect these details naturally — one question at a time, only asking what hasn't been provided yet:
   1. Budget

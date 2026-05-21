@@ -219,8 +219,9 @@ export async function processIncomingMessage(
   // Strip PHOTOS: tag from the reply — parse image URLs before saving/sending text.
   // Regex handles PHOTOS: at any line position (start, after newline) with flexible spacing.
   const photosMatch = reply.match(/(?:^|\n)PHOTOS:\s*([^\n]+)/m);
+  // No cap — send ALL photo URLs the AI included; let the provider handle any limits
   const imageUrlsToSend: string[] = photosMatch
-    ? photosMatch[1].trim().split(/\s+/).filter(u => u.startsWith('http')).slice(0, 5)
+    ? photosMatch[1].trim().split(/\s+/).filter(u => u.startsWith('http'))
     : [];
   let cleanReply = reply.replace(/\nPHOTOS:\s*.+$/m, '').trim();
 
