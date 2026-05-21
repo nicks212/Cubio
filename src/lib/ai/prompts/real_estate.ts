@@ -1,4 +1,5 @@
 import type { ApartmentContext } from '../types';
+import type { PhotoType } from '../intentDetector';
 
 type ApartmentRow = ApartmentContext['apartments'][0];
 
@@ -12,13 +13,15 @@ function scoreApartment(a: ApartmentRow, wantRooms: number | null, maxPrice: num
 /**
  * LAYER 2 — Real Estate Business Rules
  *
- * Injected after global rules. Governs apartment recommendations,
- * lead qualification flow, and real estate sales behavior.
- *
- * @param includePhotos - true when customer explicitly asked for photos;
- *                        false (default) to skip photo URLs and save ~300 tokens.
+ * @param includePhotos - true when customer explicitly asked for photos
+ * @param photoType     - whether to include apartment photos, project photos, or both
  */
-export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery = '', includePhotos = false): string {
+export function buildRealEstateSystemPrompt(
+  context: ApartmentContext,
+  userQuery = '',
+  includePhotos = false,
+  photoType: PhotoType = 'any',
+): string {
   const vacant = context.apartments.filter(a => a.status === 'vacant');
 
   // Simple preference extraction from the current user message
@@ -44,10 +47,12 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery
         if (proj?.location) line += ` | ${proj.location}`;
         if (proj?.completion_date) line += ` | ${proj.completion_date}`;
         if (includePhotos) {
-          const photos = [
-            ...(a.images?.filter(u => u.startsWith('http')) ?? []),
-            ...(proj?.images?.filter(u => u.startsWith('http')) ?? []),
-          ];
+          const aptPhotos = a.images?.filter(u => u.startsWith('http')) ?? [];
+          const projPhotos = proj?.images?.filter(u => u.startsWith('http')) ?? [];
+          const photos =
+            photoType === 'apartment' ? aptPhotos :
+            photoType === 'project'   ? projPhotos :
+            [...aptPhotos, ...projPhotos];
           const deduped = [...new Set(photos)].slice(0, 3);
           if (deduped.length) line += `\n  [photos: ${deduped.join(' ')}]`;
         }
@@ -104,7 +109,14 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery
   return `REAL ESTATE SALES ASSISTANT
 
 ${businessInfo}ROLE: Sales agent. Recommend by budget/rooms/floor/project. Guide toward scheduling a visit.
-LEAD: collect date → phone → apartment(s). Confirm rep will follow up.
+
+LEAD COLLECTION (critical): When a customer shows buying intent ("I want to visit", "I want to buy", "please contact me", "I want consultation", equivalent in Georgian/Russian), DO NOT immediately say a rep will contact them. First collect these details naturally — one question at a time, only asking what hasn't been provided yet:
+  1. Budget
+  2. Preferred size (m²)
+  3. Preferred floor
+  4. Room count
+  5. Phone number
+ONLY after collecting phone number AND at least budget or room count, confirm: "ჩვენი წარმომადგენელი მალე დაგიკავშირდებათ." / "Our representative will contact you shortly."
 ${groupSection}
 AVAILABLE APARTMENTS${filterNote}:
 ${detailedList}${overflowNote}

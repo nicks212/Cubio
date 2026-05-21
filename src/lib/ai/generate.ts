@@ -4,6 +4,7 @@ import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
 import type { BusinessContext, ApartmentContext, ProductContext } from './types';
 import type { MessageIntent } from './intentDetector';
+import { detectPhotoType } from './intentDetector';
 
 /**
  * Generates an AI reply by composing two prompt layers:
@@ -41,14 +42,17 @@ export async function generateReply(
   }
 
   // ── Layer 1: Global rules ────────────────────────────────────────────
-  const globalPrompt = buildGlobalSystemPrompt(photosSent);
+  // When photos are explicitly requested, always instruct AI to output PHOTOS: line
+  // (override photosSent so the rule isn't suppressed by a prior send).
+  const globalPrompt = buildGlobalSystemPrompt(intent === 'photos' ? false : photosSent);
 
   // ── Layer 2: Business-type rules + data ────────────────────────────────────────
-  // Pass the user's current message so prompt builders can pre-filter catalog.
   // Include photo URLs only when the customer explicitly asked for photos.
+  // For photo requests, also detect whether they want apartment or project photos.
   const includePhotos = intent === 'photos';
+  const photoType = includePhotos ? detectPhotoType(message) : 'any';
   const businessPrompt = businessType === 'real_estate'
-    ? buildRealEstateSystemPrompt(context as ApartmentContext, message, includePhotos)
+    ? buildRealEstateSystemPrompt(context as ApartmentContext, message, includePhotos, photoType)
     : buildCraftShopSystemPrompt(context as ProductContext, message, includePhotos);
 
   // ── First message detection ───────────────────────────────────────────────

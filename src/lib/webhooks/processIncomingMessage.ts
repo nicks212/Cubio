@@ -216,8 +216,9 @@ export async function processIncomingMessage(
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);
 
-  // Strip PHOTOS: tag from the reply — parse image URLs before saving/sending text
-  const photosMatch = reply.match(/\nPHOTOS:\s*(.+)$/m);
+  // Strip PHOTOS: tag from the reply — parse image URLs before saving/sending text.
+  // Regex handles PHOTOS: at any line position (start, after newline) with flexible spacing.
+  const photosMatch = reply.match(/(?:^|\n)PHOTOS:\s*([^\n]+)/m);
   const imageUrlsToSend: string[] = photosMatch
     ? photosMatch[1].trim().split(/\s+/).filter(u => u.startsWith('http')).slice(0, 5)
     : [];
@@ -248,18 +249,9 @@ export async function processIncomingMessage(
     .update({ updated_at: new Date().toISOString() })
     .eq('id', conversationId);
 
-  // 10. Send reply back via provider
-  await sendProviderResponse(
-    msg.provider,
-    msg.senderId,
-    cleanReply,
-    integration.accessToken,
-    integration.providerAccountId,
-  );
-
-  // 10b. Send photo attachments if AI included any
+  // 10. Send photo attachments FIRST (before text) — better UX on Messenger/Instagram
   if (imageUrlsToSend.length > 0) {
-    console.info(`${label} Sending ${imageUrlsToSend.length} photo(s) for conversation ${conversationId}`);
+    console.info(`${label} Sending ${imageUrlsToSend.length} photo(s) before text reply for conversation ${conversationId}`);
     await sendImageUrls(
       msg.provider,
       msg.senderId,
@@ -267,11 +259,20 @@ export async function processIncomingMessage(
       integration.accessToken,
       integration.providerAccountId,
     );
-    // Mark photos as sent so AI won't auto-send again
+    // Mark photos as sent so AI won't auto-send again unless explicitly re-requested
     if (!photosSent) {
       await supabase.from('conversations').update({ photos_sent: true }).eq('id', conversationId);
     }
   }
+
+  // 10b. Send text reply after images
+  await sendProviderResponse(
+    msg.provider,
+    msg.senderId,
+    cleanReply,
+    integration.accessToken,
+    integration.providerAccountId,
+  );
 
   // Release the Redis lock — next burst from this user can now be processed
   await releaseLock(conversationId);
