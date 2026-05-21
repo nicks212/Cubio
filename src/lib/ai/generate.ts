@@ -1,4 +1,4 @@
-import { aiGenerateContent } from './model';
+import { model } from './model';
 import { buildGlobalSystemPrompt } from './prompts/global';
 import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
@@ -34,7 +34,7 @@ export async function generateReply(
   // ── Intent gate: for greetings/thanks/confirmations skip all business context ──
   if (intent === 'chat') {
     const microPrompt = `You are a warm sales assistant AI. Reply in Georgian if the customer writes Georgian, English otherwise. Keep your reply to 1–2 sentences max.\n\nCustomer: ${message}\n\nAssistant:`;
-    const result = await aiGenerateContent(microPrompt);
+    const result = await model.generateContent(microPrompt);
     const usage = result.response.usageMetadata;
     console.info(`[ai/generate] tokens (chat) — in:${usage?.promptTokenCount ?? '?'} out:${usage?.candidatesTokenCount ?? '?'} total:${usage?.totalTokenCount ?? '?'}`);
     return result.response.text().trim() || ((/[\u10D0-\u10FF]/.test(message)) ? 'კარგი!' : 'Got it!');
@@ -85,7 +85,7 @@ export async function generateReply(
 
   for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
     try {
-      const result = await aiGenerateContent(fullPrompt);
+      const result = await model.generateContent(fullPrompt);
       const usage = result.response.usageMetadata;
       console.info(`[ai/generate] tokens — in:${usage?.promptTokenCount ?? '?'} out:${usage?.candidatesTokenCount ?? '?'} total:${usage?.totalTokenCount ?? '?'}`);
       const text = result.response.text().trim();
