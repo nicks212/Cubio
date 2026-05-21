@@ -17,6 +17,10 @@ import { redis } from '@/lib/redis';
  *   6. drainBuffer()         — get all buffered messages, clear the list
  *   7. [generate AI reply]
  *   8. releaseLock()         — free the lock so the next burst can proceed
+ *
+ * FALLBACK: if Redis is unavailable (env vars missing / connection error),
+ * every function degrades gracefully so the pipeline still responds — just
+ * without multi-message buffering. Set UPSTASH_REDIS_REST_URL + TOKEN to enable.
  */
 
 // Redis key builders
@@ -36,6 +40,11 @@ const TTL = {
 /** How long to wait for the user to stop typing (milliseconds). */
 export const DEBOUNCE_MS = 5000;
 
+/** Returns false when Upstash env vars are not configured — skips all Redis ops. */
+function redisConfigured(): boolean {
+  return !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+}
+
 /**
  * Step 1 — Append message to the buffer list and claim the debounce stamp.
  * Every parallel handler calls this. The LAST one to write wins the stamp.
@@ -45,60 +54,79 @@ export async function bufferAndClaim(
   messageText: string,
   token: string,
 ): Promise<void> {
+  if (!redisConfigured()) {
+    console.warn('[buffer] Redis not configured — running without buffering');
+    return;
+  }
   console.info(`[buffer] append convId=${conversationId} token=${token} text="${messageText.slice(0, 60)}"`);
-  await Promise.all([
-    redis.rpush(K.buf(conversationId), messageText),
-    redis.expire(K.buf(conversationId), TTL.buf),
-    redis.set(K.stamp(conversationId), token, { ex: TTL.stamp }),
-  ]);
+  try {
+    await Promise.all([
+      redis.rpush(K.buf(conversationId), messageText),
+      redis.expire(K.buf(conversationId), TTL.buf),
+      redis.set(K.stamp(conversationId), token, { ex: TTL.stamp }),
+    ]);
+  } catch (err) {
+    console.error('[buffer] bufferAndClaim error (non-fatal):', err);
+  }
 }
 
-/**
- * Step 3 / Step 5 — Check if our token still owns the debounce stamp.
- * Returns false if a newer message arrived and claimed the stamp after us.
- */
+/** Step 3 / Step 5 — returns false when a newer handler has claimed the stamp. */
 export async function isStampHolder(conversationId: string, token: string): Promise<boolean> {
-  const current = await redis.get<string>(K.stamp(conversationId));
-  const holds = current === token;
-  if (!holds) {
-    console.info(`[buffer] stamp check MISS convId=${conversationId} expected=${token} got=${current}`);
+  if (!redisConfigured()) return true;
+  try {
+    const current = await redis.get<string>(K.stamp(conversationId));
+    const holds = current === token;
+    if (!holds) {
+      console.info(`[buffer] stamp MISS convId=${conversationId} expected=${token} got=${current}`);
+    }
+    return holds;
+  } catch (err) {
+    console.error('[buffer] isStampHolder error (fail-open):', err);
+    return true;
   }
-  return holds;
 }
 
-/**
- * Step 4 — Atomically acquire the processing lock (SET NX).
- * Only ONE handler wins — all others get false and exit.
- */
+/** Step 4 — atomic SET NX lock. Returns true only for the one winner. */
 export async function acquireLock(conversationId: string, token: string): Promise<boolean> {
-  const result = await redis.set(K.lock(conversationId), token, { nx: true, ex: TTL.lock });
-  const acquired = result === 'OK';
-  console.info(`[buffer] lock ${acquired ? 'ACQUIRED' : 'BUSY'} convId=${conversationId} token=${token}`);
-  return acquired;
-}
-
-/**
- * Step 6 — Read all buffered messages in order and atomically clear the list.
- * Returns the messages array. If empty, returns [].
- */
-export async function drainBuffer(conversationId: string): Promise<string[]> {
-  const messages = await redis.lrange<string>(K.buf(conversationId), 0, -1);
-  const texts = (messages ?? []) as string[];
-  if (texts.length > 0) {
-    await redis.del(K.buf(conversationId));
+  if (!redisConfigured()) return true;
+  try {
+    const result = await redis.set(K.lock(conversationId), token, { nx: true, ex: TTL.lock });
+    const acquired = result === 'OK';
+    console.info(`[buffer] lock ${acquired ? 'ACQUIRED' : 'BUSY'} convId=${conversationId} token=${token}`);
+    return acquired;
+  } catch (err) {
+    console.error('[buffer] acquireLock error (fail-open):', err);
+    return true;
   }
-  console.info(`[buffer] drained ${texts.length} messages convId=${conversationId}`);
-  return texts;
 }
 
-/**
- * Step 8 — Release the processing lock and clear the stamp.
- * Must be called after the reply is fully sent (or on any error path).
- */
+/** Step 6 — read all buffered messages in order and clear the list. */
+export async function drainBuffer(conversationId: string): Promise<string[]> {
+  if (!redisConfigured()) return [];
+  try {
+    const messages = await redis.lrange<string>(K.buf(conversationId), 0, -1);
+    const texts = (messages ?? []) as string[];
+    if (texts.length > 0) {
+      await redis.del(K.buf(conversationId));
+    }
+    console.info(`[buffer] drained ${texts.length} message(s) convId=${conversationId}`);
+    return texts;
+  } catch (err) {
+    console.error('[buffer] drainBuffer error (returning empty):', err);
+    return [];
+  }
+}
+
+/** Step 8 — release the lock and clear the stamp. */
 export async function releaseLock(conversationId: string): Promise<void> {
-  await Promise.all([
-    redis.del(K.lock(conversationId)),
-    redis.del(K.stamp(conversationId)),
-  ]);
-  console.info(`[buffer] lock released convId=${conversationId}`);
+  if (!redisConfigured()) return;
+  try {
+    await Promise.all([
+      redis.del(K.lock(conversationId)),
+      redis.del(K.stamp(conversationId)),
+    ]);
+    console.info(`[buffer] lock released convId=${conversationId}`);
+  } catch (err) {
+    console.error('[buffer] releaseLock error (non-fatal):', err);
+  }
 }
