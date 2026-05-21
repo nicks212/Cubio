@@ -3,6 +3,7 @@ import { generateReply, detectLeadAndEscalation } from '@/lib/ai';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
 import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
+import { bufferAndClaim, isStampHolder, acquireLock, drainBuffer, releaseLock, DEBOUNCE_MS } from './messageBuffer';
 import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './types';
 
 /**
@@ -142,69 +143,42 @@ export async function processIncomingMessage(
     return { conversationId, reply: null };
   }
 
-  // 5a. Claim the reply slot — write our message ID into conversations.pending_reply_message_id.
-  //     Every parallel handler does this immediately after saving its message.
-  //     Postgres serializes concurrent row-level UPDATEs, so the LAST handler
-  //     to write wins and its UUID stays. No timestamp math, no ordering assumptions.
-  if (savedMessageId) {
-    await supabase
-      .from('conversations')
-      .update({ pending_reply_message_id: savedMessageId })
-      .eq('id', conversationId);
+  // 5a. Append this message to the Redis buffer and claim the debounce stamp.
+  //     Every parallel webhook handler does this. The LAST one to write wins the stamp.
+  const myToken = savedMessageId ?? crypto.randomUUID();
+  await bufferAndClaim(conversationId, msg.messageText, myToken);
+  console.info(`${label} [debounce] message buffered, waiting ${DEBOUNCE_MS}ms for user to finish typing`);
+
+  // 5b. Wait for user to stop typing.
+  await new Promise<void>(r => setTimeout(r, DEBOUNCE_MS));
+
+  // 5c. Are we still the last message? If not, a newer handler will respond — we exit.
+  if (!(await isStampHolder(conversationId, myToken))) {
+    console.info(`${label} [debounce] newer message arrived — skipping (conversation ${conversationId})`);
+    return { conversationId, reply: null };
   }
 
-  // 5b. Typing debounce — wait 5 s for the user to finish sending messages.
-  await new Promise<void>(r => setTimeout(r, 5000));
-
-  // 5c. Check if we're still the designated responder.
-  //     If the user sent more messages after ours, those handlers overwrote our ID.
-  //     If our ID is no longer in the slot → a newer handler will respond → we skip.
-  if (savedMessageId) {
-    const { data: conv } = await supabase
-      .from('conversations')
-      .select('pending_reply_message_id')
-      .eq('id', conversationId)
-      .single();
-
-    if (!conv || (conv.pending_reply_message_id as string | null) !== savedMessageId) {
-      console.info(`${label} Reply slot claimed by newer message — skipping (conversation ${conversationId})`);
-      return { conversationId, reply: null };
-    }
+  // 5d. Acquire the processing lock — only ONE handler passes this per conversation.
+  //     If another handler already has the lock, exit (it will handle this burst).
+  if (!(await acquireLock(conversationId, myToken))) {
+    console.info(`${label} [debounce] lock busy — another handler is processing, skipping (conversation ${conversationId})`);
+    return { conversationId, reply: null };
   }
 
-  // 5b. Collect all user messages sent since the last AI reply (combines burst fragments).
-  //     Using gte on created_at + role=user filter is reliable: AI messages are excluded
-  //     by the role filter, so gte safely captures user messages at the same second too.
-  const { data: lastAiMsg } = await supabase
-    .from('messages')
-    .select('created_at')
-    .eq('conversation_id', conversationId)
-    .eq('role', 'ai')
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // 5e. Double-check stamp after acquiring lock — a new message may have arrived
+  //     between step 5c and 5d. If so, release lock and let that handler respond.
+  if (!(await isStampHolder(conversationId, myToken))) {
+    await releaseLock(conversationId);
+    console.info(`${label} [debounce] stamp changed after lock acquired — releasing, skipping (conversation ${conversationId})`);
+    return { conversationId, reply: null };
+  }
 
-  const bufferedBaseQuery = supabase
-    .from('messages')
-    .select('content')
-    .eq('conversation_id', conversationId)
-    .eq('role', 'user')
-    .order('created_at', { ascending: true })
-    .order('id', { ascending: true });
-
-  const { data: bufferedRaw } = lastAiMsg
-    ? await bufferedBaseQuery.gte('created_at', lastAiMsg.created_at as string)
-    : await bufferedBaseQuery;
-
-  const bufferedMsgs = (bufferedRaw ?? []) as Array<{ content: string }>;
-  const combinedMessage = bufferedMsgs.length > 0
-    ? bufferedMsgs.map(m => m.content).filter(Boolean).join('\n')
+  // 5f. Drain the buffer — all messages the user sent since the last AI reply.
+  const bufferedTexts = await drainBuffer(conversationId);
+  const combinedMessage = bufferedTexts.length > 0
+    ? bufferedTexts.join('\n')
     : msg.messageText;
-
-  if (bufferedMsgs.length > 1) {
-    console.info(`${label} Combined ${bufferedMsgs.length} buffered messages for conversation ${conversationId}`);
-  }
+  console.info(`${label} [debounce] processing ${bufferedTexts.length} buffered message(s) for conversation ${conversationId}`);
 
   // 6. Load business context (apartments or products + business description)
   const businessContext = await loadBusinessContext(
@@ -260,10 +234,10 @@ export async function processIncomingMessage(
     content: cleanReply,
   });
 
-  // Update conversation updated_at + release the reply slot so next turn starts clean
+  // Update conversation updated_at
   await supabase
     .from('conversations')
-    .update({ updated_at: new Date().toISOString(), pending_reply_message_id: null })
+    .update({ updated_at: new Date().toISOString() })
     .eq('id', conversationId);
 
   // 10. Send reply back via provider
@@ -290,6 +264,9 @@ export async function processIncomingMessage(
       await supabase.from('conversations').update({ photos_sent: true }).eq('id', conversationId);
     }
   }
+
+  // Release the Redis lock — next burst from this user can now be processed
+  await releaseLock(conversationId);
 
   // 11. Detect lead / escalation (fire-and-forget — runs after reply is delivered)
   //     Only run every 3rd user message to save API costs (~66% reduction).
