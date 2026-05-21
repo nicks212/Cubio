@@ -1,4 +1,4 @@
-import { model } from './model';
+import { aiGenerateContent } from './model';
 import type { LeadDetection, EscalationDetection } from './types';
 
 /**
@@ -36,7 +36,7 @@ Return exactly:
 }`;
 
   try {
-    const result = await model.generateContent(prompt);
+    const result = await aiGenerateContent(prompt);
     const raw = result.response.text().trim().replace(/```json\n?|\n?```/g, '');
     const p = JSON.parse(raw) as {
       isLead: boolean; summary: string; meetingDate: string | null;
