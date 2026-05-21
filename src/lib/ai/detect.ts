@@ -1,6 +1,11 @@
 import { model } from './model';
 import type { LeadDetection, EscalationDetection } from './types';
 
+const EMPTY_LEAD: LeadDetection = {
+  isLead: false, summary: '', meetingDate: null, meetingNotes: null, phone: null, email: null,
+};
+const EMPTY_ESCALATION: EscalationDetection = { isEscalation: false, summary: '' };
+
 /**
  * Detects both lead signals AND escalation signals in a single Gemini call.
  *
@@ -11,11 +16,21 @@ import type { LeadDetection, EscalationDetection } from './types';
  *
  * Only when all three are present does isLead become true and a lead ticket
  * gets created. This prevents spam leads from casual browsers.
+ *
+ * @param checkLead       Whether to evaluate lead conditions (pre-filtered by leadGate)
+ * @param checkEscalation Whether to evaluate escalation conditions
  */
 export async function detectLeadAndEscalation(
   conversationHistory: Array<{ role: string; content: string }>,
   businessType: 'real_estate' | 'craft_shop',
+  checkLead = true,
+  checkEscalation = true,
 ): Promise<{ lead: LeadDetection; escalation: EscalationDetection }> {
+  // Fast-path: nothing to check
+  if (!checkLead && !checkEscalation) {
+    return { lead: EMPTY_LEAD, escalation: EMPTY_ESCALATION };
+  }
+
   const historyStr = conversationHistory
     .map(m => `${m.role}: ${m.content}`)
     .join('\n');
@@ -24,6 +39,32 @@ export async function detectLeadAndEscalation(
     ? 'budget, preferred m², preferred floor, room count (at least budget OR room count must be present)'
     : 'desired product name (must be present)';
 
+  // ── Escalation-only prompt (shorter = fewer tokens when lead check skipped) ──
+  if (!checkLead && checkEscalation) {
+    const escalationPrompt = `Analyze this conversation for escalation signals only. Respond with JSON only, no markdown.
+
+Conversation:
+${historyStr}
+
+Return exactly:
+{
+  "isEscalation": true ONLY if customer is clearly angry, uses offensive/abusive language, or explicitly demands a human agent. Repeated questions or mild impatience do NOT count,
+  "escalationSummary": "Why upset and what they need. Empty string if not an escalation."
+}`;
+    try {
+      const result = await model.generateContent(escalationPrompt);
+      const raw = result.response.text().trim().replace(/```json\n?|\n?```/g, '');
+      const p = JSON.parse(raw) as { isEscalation: boolean; escalationSummary: string };
+      return {
+        lead: EMPTY_LEAD,
+        escalation: { isEscalation: p.isEscalation, summary: p.escalationSummary ?? '' },
+      };
+    } catch {
+      return { lead: EMPTY_LEAD, escalation: EMPTY_ESCALATION };
+    }
+  }
+
+  // ── Full combined prompt ──────────────────────────────────────────────────
   const prompt = `Analyze this conversation. Respond with JSON only, no markdown fences.
 
 Conversation:
@@ -78,10 +119,7 @@ Return exactly:
       },
     };
   } catch {
-    return {
-      lead: { isLead: false, summary: '', meetingDate: null, meetingNotes: null, phone: null, email: null },
-      escalation: { isEscalation: false, summary: '' },
-    };
+    return { lead: EMPTY_LEAD, escalation: EMPTY_ESCALATION };
   }
 }
 

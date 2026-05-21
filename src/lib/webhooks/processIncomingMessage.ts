@@ -5,6 +5,7 @@ import { loadBusinessContext } from './loadBusinessContext';
 import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
 import { bufferAndClaim, isStampHolder, acquireLock, drainBuffer, releaseLock, DEBOUNCE_MS } from './messageBuffer';
 import { detectIntent } from '@/lib/ai/intentDetector';
+import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
 import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './types';
 
 /**
@@ -278,12 +279,14 @@ export async function processIncomingMessage(
   // Release the Redis lock — next burst from this user can now be processed
   await releaseLock(conversationId);
 
-  // 11. Detect lead / escalation (fire-and-forget — runs after reply is delivered)
-  //     Only run every 3rd user message to save API costs (~66% reduction).
-  //     Requires at least 4 messages total (2 user + 2 AI) to produce a meaningful signal.
+  // 11. Deterministic gate decides whether to invoke Gemini lead/escalation analysis.
+  //     Skips Gemini entirely for greetings, browsing, photo requests, short replies,
+  //     and conversations without buying signals. Only fires when meaningful signals exist.
   const fullHistory = [...history, { role: 'ai', content: cleanReply }];
-  const userMessageCount = fullHistory.filter(m => m.role === 'user').length;
-  if (fullHistory.length >= 4 && userMessageCount % 3 === 0) {
+  const gate = shouldRunLeadAnalysis(fullHistory, combinedMessage, integration.businessType);
+
+  if (gate.lead || gate.escalation) {
+    console.info(`${label} [leadGate] Running analysis — lead:${gate.lead} escalation:${gate.escalation}`);
     void detectAndPersistLeadOrEscalation(
       supabase,
       fullHistory,
@@ -292,7 +295,11 @@ export async function processIncomingMessage(
       integration.businessType,
       resolvedName,
       msg.provider,
+      gate.lead,
+      gate.escalation,
     );
+  } else {
+    console.info(`${label} [leadGate] Skipped — no qualifying signals`);
   }
 
   return { conversationId, reply };
@@ -306,12 +313,16 @@ async function detectAndPersistLeadOrEscalation(
   businessType: 'real_estate' | 'craft_shop',
   senderName: string | null,
   provider: string,
+  checkLead = true,
+  checkEscalation = true,
 ) {
   try {
     // Run combined detection in one Gemini call (saves 1 API round-trip per message)
     const { lead: leadResult, escalation: escalationResult } = await detectLeadAndEscalation(
       history,
       businessType,
+      checkLead,
+      checkEscalation,
     );
 
     // Persist lead — update if an open lead exists (regenerate summary), create new if none/closed
