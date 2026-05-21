@@ -4,6 +4,7 @@ import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
 import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
 import { bufferAndClaim, isStampHolder, acquireLock, drainBuffer, releaseLock, DEBOUNCE_MS } from './messageBuffer';
+import { detectIntent } from '@/lib/ai/intentDetector';
 import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './types';
 
 /**
@@ -180,19 +181,25 @@ export async function processIncomingMessage(
     : msg.messageText;
   console.info(`${label} [debounce] processing ${bufferedTexts.length} buffered message(s) for conversation ${conversationId}`);
 
-  // 6. Load business context (apartments or products + business description)
-  const businessContext = await loadBusinessContext(
-    integration.companyId,
-    integration.businessType,
-  );
+  // 6. Detect intent — skip expensive DB context load for simple chat messages
+  const messageIntent = detectIntent(combinedMessage);
 
-  // 7. Load recent message history (last 8 turns)
+  // Load business context (apartments or products + business description)
+  // Skipped for 'chat' intent (greetings/thanks) to save DB round-trip + ~700 tokens.
+  const businessContext = messageIntent === 'chat'
+    ? { apartments: [], products: [], businessDescription: null }
+    : await loadBusinessContext(
+        integration.companyId,
+        integration.businessType,
+      );
+
+  // 7. Load recent message history (last 6 messages; generate.ts slices to 4 internally)
   const { data: historyRows } = await supabase
     .from('messages')
     .select('role, content')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
-    .limit(8);
+    .limit(6);
 
   const history: MessageHistoryEntry[] = ((historyRows ?? []) as MessageHistoryEntry[]).reverse();
 
@@ -204,6 +211,7 @@ export async function processIncomingMessage(
     history,
     msg.imageUrl ?? undefined,
     photosSent,
+    messageIntent,
   );
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);

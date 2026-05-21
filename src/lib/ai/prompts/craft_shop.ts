@@ -12,21 +12,21 @@ function scoreProduct(p: ProductRow, q: string): number {
  * LAYER 2 — Craft Shop Business Rules
  *
  * Token-efficient:
- * - Top 5 relevant products get full detail + photo URLs
- * - Remaining products shown in ultra-compact format (no URLs)
+ * - Top 3 relevant products get full detail
+ * - Photo URLs only included when customer explicitly asked for photos
  * - Accepts userQuery to pre-filter by keyword match
  */
-export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = ''): string {
+export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = '', includePhotos = false): string {
   const available = context.products.filter(p => p.in_stock);
   const q = userQuery.toLowerCase();
 
   const sorted = [...available].sort((a, b) => scoreProduct(b, q) - scoreProduct(a, q));
-  const top5 = sorted.slice(0, 5);
-  const rest = sorted.slice(5);
+  const top3 = sorted.slice(0, 3);
+  const rest = sorted.slice(3);
 
-  // Top 5 — full detail with [photos:...] metadata tag
-  const detailedList = top5.length > 0
-    ? top5.map(p => {
+  // Top 3 — full detail; photo URLs only when customer asked for them
+  const detailedList = top3.length > 0
+    ? top3.map(p => {
         const sym = p.currency === 'USD' ? '$' : '₾';
         const parts: string[] = [`• ${p.name}: ${sym}${p.price}`];
         if (p.category) parts.push(p.category);
@@ -34,20 +34,18 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
         if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);
         if (p.birthstones) parts.push(`stones: ${p.birthstones}`);
         let line = parts.join(' | ');
-        const photos = p.images?.filter(u => u.startsWith('http')).slice(0, 3) ?? [];
-        if (photos.length) line += `\n  [photos: ${photos.join(' ')}]`;
+        if (includePhotos) {
+          const photos = p.images?.filter(u => u.startsWith('http')).slice(0, 3) ?? [];
+          if (photos.length) line += `\n  [photos: ${photos.join(' ')}]`;
+        }
         return line;
       }).join('\n')
     : '(No products currently available)';
 
-  // Rest — ultra-compact, no photo URLs
-  const compactRest = rest.slice(0, 15).map(p => {
-    const sym = p.currency === 'USD' ? '$' : '₾';
-    const parts = [`${p.name}:${sym}${p.price}`];
-    if (p.category) parts.push(p.category);
-    if (p.material) parts.push(p.material);
-    return parts.join('/');
-  }).join(' | ');
+  // Overflow summary
+  const overflowNote = rest.length > 0
+    ? `\n+${rest.length} more available — ask for details or describe what you're looking for.`
+    : '';
 
   // Backend grouping: group products sharing the same category + similar price to avoid verbose lists
   type ProdGroupKey = string;
@@ -89,9 +87,7 @@ IMAGE RECOMMENDATIONS: If customer sends an image, match visual style, colors, a
 LEAD FLOW: When customer wants to buy — confirm product(s), provide shop contact/address, confirm inquiry received.
 ${groupSection}
 TOP PRODUCTS${q ? ' (matched to your message)' : ''}:
-${detailedList}${
-    compactRest ? `\n\nMORE PRODUCTS (compact — ask for details on any):\n${compactRest}` : ''
-  }
+${detailedList}${overflowNote}
 
 Only reference products listed here. Do not invent products, prices, or availability.`.trim();
 }

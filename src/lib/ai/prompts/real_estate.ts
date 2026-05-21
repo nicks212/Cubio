@@ -2,11 +2,6 @@ import type { ApartmentContext } from '../types';
 
 type ApartmentRow = ApartmentContext['apartments'][0];
 
-function shortPrice(price: number, currency?: string | null): string {
-  const sym = currency === 'GEL' ? '₾' : '$';
-  return price >= 1000 ? `${sym}${Math.round(price / 1000)}k` : `${sym}${price}`;
-}
-
 function scoreApartment(a: ApartmentRow, wantRooms: number | null, maxPrice: number | null): number {
   let s = 0;
   if (wantRooms !== null && a.rooms_quantity === wantRooms) s += 3;
@@ -19,8 +14,11 @@ function scoreApartment(a: ApartmentRow, wantRooms: number | null, maxPrice: num
  *
  * Injected after global rules. Governs apartment recommendations,
  * lead qualification flow, and real estate sales behavior.
+ *
+ * @param includePhotos - true when customer explicitly asked for photos;
+ *                        false (default) to skip photo URLs and save ~300 tokens.
  */
-export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery = ''): string {
+export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery = '', includePhotos = false): string {
   const vacant = context.apartments.filter(a => a.status === 'vacant');
 
   // Simple preference extraction from the current user message
@@ -34,35 +32,33 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery
   const sorted = [...vacant].sort(
     (a, b) => scoreApartment(b, wantRooms, maxPrice) - scoreApartment(a, wantRooms, maxPrice)
   );
-  const top5 = sorted.slice(0, 5);
-  const rest = sorted.slice(5);
+  const top3 = sorted.slice(0, 3);
+  const rest = sorted.slice(3);
 
-  // Top 5 — full detail with [photos:...] metadata tag (not inline text)
-  const detailedList = top5.length > 0
-    ? top5.map(a => {
+  // Top 3 — full detail; photo URLs only when customer asked for them
+  const detailedList = top3.length > 0
+    ? top3.map(a => {
         const proj = a.project as { name: string; location?: string | null; description?: string | null; completion_date?: string | null; images?: string[] } | null;
         const sym = a.currency === 'GEL' ? '₾' : '$';
-        let line = `• Apt ${a.apartment_number}: ${a.rooms_quantity} rooms, ${a.size_sq_m}m², floor ${a.floor}, ${sym}${a.total_price.toLocaleString()}${proj?.name ? ` — ${proj.name}` : ''}`;
-        if (proj?.location) line += ` | 📍 ${proj.location}`;
-        if (proj?.completion_date) line += ` | completion: ${proj.completion_date}`;
-        if (proj?.description) line += `\n  info: ${proj.description.slice(0, 80)}${proj.description.length > 80 ? '…' : ''}`;
-        const photos = [
-          ...(a.images?.filter(u => u.startsWith('http')) ?? []),
-          ...(proj?.images?.filter(u => u.startsWith('http')) ?? []),
-        ];
-        const deduped = [...new Set(photos)].slice(0, 3);
-        if (deduped.length) line += `\n  [photos: ${deduped.join(' ')}]`;
+        let line = `• Apt ${a.apartment_number}: ${a.rooms_quantity}rm, ${a.size_sq_m}m², fl.${a.floor}, ${sym}${a.total_price.toLocaleString()}${proj?.name ? ` — ${proj.name}` : ''}`;
+        if (proj?.location) line += ` | ${proj.location}`;
+        if (proj?.completion_date) line += ` | ${proj.completion_date}`;
+        if (includePhotos) {
+          const photos = [
+            ...(a.images?.filter(u => u.startsWith('http')) ?? []),
+            ...(proj?.images?.filter(u => u.startsWith('http')) ?? []),
+          ];
+          const deduped = [...new Set(photos)].slice(0, 3);
+          if (deduped.length) line += `\n  [photos: ${deduped.join(' ')}]`;
+        }
         return line;
       }).join('\n')
     : '(No apartments currently available)';
 
-  // Rest — ultra-compact, no photo URLs (saves ~60 tokens per apartment)
-  const compactRest = rest.slice(0, 15).map(a => {
-    const proj = a.project as { name: string; location?: string | null } | null;
-    return `A${a.apartment_number}:${a.rooms_quantity}br/${a.size_sq_m}m²/fl${a.floor}/${shortPrice(a.total_price, a.currency)}${
-      proj?.name ? `/${proj.name}` : ''
-    }${proj?.location ? `@${proj.location}` : ''}`;
-  }).join(' | ');
+  // Overflow summary — save tokens vs listing individually
+  const overflowNote = rest.length > 0
+    ? `\n+${rest.length} more available — ask for details or share preferences (rooms/budget) to narrow down.`
+    : '';
 
   const businessInfo = context.businessDescription
     ? `COMPANY INFO: ${context.businessDescription}\n\n`
@@ -107,14 +103,11 @@ export function buildRealEstateSystemPrompt(context: ApartmentContext, userQuery
 
   return `REAL ESTATE SALES ASSISTANT
 
-${businessInfo}ROLE: Professional real estate sales agent. Recommend based on budget, room count, floor, size, project. Guide high-intent buyers toward scheduling a visit.
-
-LEAD FLOW: When customer wants to visit/schedule/reserve — collect one at a time: preferred date → phone number → which apartment(s). Confirm a sales rep will follow up.
+${businessInfo}ROLE: Sales agent. Recommend by budget/rooms/floor/project. Guide toward scheduling a visit.
+LEAD: collect date → phone → apartment(s). Confirm rep will follow up.
 ${groupSection}
-TOP APARTMENTS${filterNote}:
-${detailedList}${
-    compactRest ? `\n\nMORE AVAILABLE (compact — ask for details on any):\n${compactRest}` : ''
-  }
+AVAILABLE APARTMENTS${filterNote}:
+${detailedList}${overflowNote}
 
-Only reference apartments listed here. For anything not listed, say you will check and follow up.`.trim();
+Only reference apartments listed here. For unlisted info, say you will check and follow up.`.trim();
 }

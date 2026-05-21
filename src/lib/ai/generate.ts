@@ -3,6 +3,7 @@ import { buildGlobalSystemPrompt } from './prompts/global';
 import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
 import type { BusinessContext, ApartmentContext, ProductContext } from './types';
+import type { MessageIntent } from './intentDetector';
 
 /**
  * Generates an AI reply by composing two prompt layers:
@@ -10,13 +11,16 @@ import type { BusinessContext, ApartmentContext, ProductContext } from './types'
  *   Layer 1 — Global rules (language, tone, accuracy, escalation, human takeover)
  *   Layer 2 — Business-type rules (recommendations, lead flow, data context)
  *
- * The final prompt is: [global] + [business] + [conversation history] + [current message]
+ * For 'chat' intents (greetings/thanks/confirmations) the full business context
+ * is skipped and a micro-prompt is used, saving ~600–900 tokens per call.
  *
  * @param message             - Current customer message text
  * @param context             - Business data (apartments or products + description)
  * @param businessType        - 'real_estate' | 'craft_shop'
  * @param conversationHistory - Recent message history (role + content pairs)
  * @param imageUrl            - Optional image URL sent by the customer (for multimodal use)
+ * @param photosSent          - Whether photos have already been sent this conversation
+ * @param intent              - Pre-detected message intent from intentDetector
  */
 export async function generateReply(
   message: string,
@@ -25,24 +29,36 @@ export async function generateReply(
   conversationHistory: Array<{ role: string; content: string }> = [],
   imageUrl?: string,
   photosSent = false,
+  intent: MessageIntent = 'search',
 ): Promise<string> {
+  // ── Intent gate: for greetings/thanks/confirmations skip all business context ──
+  if (intent === 'chat') {
+    const microPrompt = `You are a warm sales assistant AI. Reply in Georgian if the customer writes Georgian, English otherwise. Keep your reply to 1–2 sentences max.\n\nCustomer: ${message}\n\nAssistant:`;
+    const result = await model.generateContent(microPrompt);
+    const usage = result.response.usageMetadata;
+    console.info(`[ai/generate] tokens (chat) — in:${usage?.promptTokenCount ?? '?'} out:${usage?.candidatesTokenCount ?? '?'} total:${usage?.totalTokenCount ?? '?'}`);
+    return result.response.text().trim() || ((/[\u10D0-\u10FF]/.test(message)) ? 'კარგი!' : 'Got it!');
+  }
+
   // ── Layer 1: Global rules ────────────────────────────────────────────
   const globalPrompt = buildGlobalSystemPrompt(photosSent);
 
   // ── Layer 2: Business-type rules + data ────────────────────────────────────────
-  // Pass the user's current message so prompt builders can pre-filter catalog
+  // Pass the user's current message so prompt builders can pre-filter catalog.
+  // Include photo URLs only when the customer explicitly asked for photos.
+  const includePhotos = intent === 'photos';
   const businessPrompt = businessType === 'real_estate'
-    ? buildRealEstateSystemPrompt(context as ApartmentContext, message)
-    : buildCraftShopSystemPrompt(context as ProductContext, message);
+    ? buildRealEstateSystemPrompt(context as ApartmentContext, message, includePhotos)
+    : buildCraftShopSystemPrompt(context as ProductContext, message, includePhotos);
 
   // ── First message detection ───────────────────────────────────────────────
   // History contains only user messages fetched before this turn, so
   // an empty (or single-entry) history means this is the opening message.
   const isFirstMessage = conversationHistory.filter(m => m.role === 'user').length === 0;
 
-  // ── Conversation history (last 6 turns) ────────────────────────────────────
+  // ── Conversation history (last 4 turns = 2 exchanges) ─────────────────────────
   const historyStr = conversationHistory
-    .slice(-6)
+    .slice(-4)
     .map(m => `${m.role === 'ai' ? 'Assistant' : 'Customer'}: ${m.content}`)
     .join('\n');
 
@@ -70,6 +86,8 @@ export async function generateReply(
   for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
     try {
       const result = await model.generateContent(fullPrompt);
+      const usage = result.response.usageMetadata;
+      console.info(`[ai/generate] tokens — in:${usage?.promptTokenCount ?? '?'} out:${usage?.candidatesTokenCount ?? '?'} total:${usage?.totalTokenCount ?? '?'}`);
       const text = result.response.text().trim();
       if (text) return text;
       // Gemini returned an empty string — treat as transient and retry
