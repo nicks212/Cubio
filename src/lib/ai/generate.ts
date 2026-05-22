@@ -38,10 +38,20 @@ export async function generateReply(
   // ── Chat intent: micro-prompt, skip all business context ─────────────────────
   if (intent === 'chat') {
     const microPrompt = `You are a warm sales assistant AI. Reply in Georgian if the customer writes Georgian, English otherwise. Keep your reply to 1–2 sentences max.\n\nCustomer: ${message}\n\nAssistant:`;
-    const result = await model.generateContent(microPrompt);
-    const usage = result.response.usageMetadata;
-    console.info(`[ai/generate] tokens (chat) — in:${usage?.promptTokenCount ?? '?'} out:${usage?.candidatesTokenCount ?? '?'} total:${usage?.totalTokenCount ?? '?'}`);
-    return result.response.text().trim() || ((/[\u10D0-\u10FF]/.test(message)) ? 'კარგი!' : 'Got it!');
+    const isGeo = /[\u10D0-\u10FF]/.test(message);
+    for (let attempt = 0; attempt <= 1; attempt++) {
+      try {
+        const result = await model.generateContent(microPrompt);
+        const usage = result.response.usageMetadata;
+        console.info(`[ai/generate] tokens (chat) — in:${usage?.promptTokenCount ?? '?'} out:${usage?.candidatesTokenCount ?? '?'} total:${usage?.totalTokenCount ?? '?'}`);
+        const text = result.response.text().trim();
+        if (text) return text;
+      } catch (err) {
+        console.error(`[ai/generate] chat attempt ${attempt + 1} error:`, err);
+      }
+      if (attempt === 0) await new Promise<void>(r => setTimeout(r, 1000));
+    }
+    return isGeo ? 'კარგი!' : 'Got it!';
   }
 
   // ── Layer 1: Global rules ──────────────────────────────────────────────────
@@ -130,7 +140,8 @@ export async function generateReply(
     } catch (err) {
       lastErr = err;
       const status = (err as { status?: number }).status;
-      const isTransient = status === 503 || status === 429;
+      // Retry on: rate-limit (429), overload (503), any 5xx, or unknown network error (status undefined)
+      const isTransient = !status || status === 429 || status >= 500;
       if (!isTransient || attempt === retryDelays.length) break;
       const delay = retryDelays[attempt];
       console.warn(`[ai/generate] Attempt ${attempt + 1} failed (${status}) — retrying in ${delay}ms`);
