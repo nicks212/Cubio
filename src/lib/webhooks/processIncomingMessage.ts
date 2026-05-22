@@ -4,7 +4,7 @@ import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
 import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
 import { bufferAndClaim, isStampHolder, acquireLock, drainBuffer, releaseLock, DEBOUNCE_MS } from './messageBuffer';
-import { detectIntent, detectPhotoType } from '@/lib/ai/intentDetector';
+import { detectIntent, detectPhotoType, classifyIntentAI } from '@/lib/ai/intentDetector';
 import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
 import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts } from '@/lib/ai/embeddings';
 import { redis } from '@/lib/redis';
@@ -205,13 +205,15 @@ export async function processIncomingMessage(
     : msg.messageText;
   console.info(`${label} [debounce] processing ${bufferedTexts.length} buffered message(s) for conversation ${conversationId}`);
 
-  // 6. Detect intent — skip expensive DB context load for simple chat messages
-  const messageIntent = detectIntent(combinedMessage);
+  // 6. Detect intent — fast regex first; AI classifier fallback for ambiguous short messages
+  //    (romanized Georgian like "fotoebs", "suratebi", "vnaxo" can't be caught by keywords alone).
+  //    When regex returns null (ambiguous), run AI classifier IN PARALLEL with DB queries
+  //    so it adds zero wall-clock latency.
+  const regexIntent = detectIntent(combinedMessage);
+  const needsAIClassify = regexIntent === null;
 
-  // 6a. Process customer-uploaded image (if any) — multimodal path:
-  //     1. Download image for inline Gemini vision (true multimodal)
-  //     2. Generate a text description optimized for inventory search
-  //     3. Run vector similarity search to surface the most relevant items
+  // 6a. Process customer-uploaded image (if any) — must happen before Promise.all
+  //     so similarity results are available for context loading.
   let imageBase64: string | null = null;
   let imageMimeType: string | null = null;
   let imageSearchQuery: string | null = null;
@@ -231,11 +233,9 @@ export async function processIncomingMessage(
       console.warn(`${label} Failed to download customer image (non-fatal):`, err);
     }
 
-    // Describe the image as a search query (separate fast Gemini call)
     imageSearchQuery = await describeImageForSearch(msg.imageUrl, integration.businessType);
     if (imageSearchQuery) {
       console.info(`${label} Image search query: "${imageSearchQuery.slice(0, 80)}"`);
-      // Run vector similarity search (falls back silently if pgvector not deployed)
       if (integration.businessType === 'real_estate') {
         similarApartmentNumbers = await searchSimilarApartments(integration.companyId, imageSearchQuery);
         if (similarApartmentNumbers.length > 0) {
@@ -250,23 +250,37 @@ export async function processIncomingMessage(
     }
   }
 
-  // Load business context — skipped for pure chat intents to save DB round-trip + tokens.
-  // Pass similarity results so the context loader can surface the most relevant items first.
-  const businessContext: BusinessContext = messageIntent === 'chat'
-    ? { apartments: [], products: [], businessDescription: null } as ApartmentContext
-    : await loadBusinessContext(integration.companyId, integration.businessType, {
-        priorityApartmentNumbers: similarApartmentNumbers,
-        priorityProductNames: similarProductNames,
-        imageSearchQuery: imageSearchQuery ?? undefined,
-      });
+  // 6b. Kick off AI classifier and DB queries in parallel (classifier only when needed)
+  const [aiIntent, businessContext, historyRows] = await Promise.all([
+    needsAIClassify
+      ? classifyIntentAI(combinedMessage).then(i => {
+          console.info(`${label} AI intent classifier: '${i}' for: "${combinedMessage.slice(0, 60)}"`);
+          return i;
+        })
+      : Promise.resolve(null),
 
-  // 7. Load recent message history (last 6 messages; generate.ts slices to 4 internally)
-  const { data: historyRows } = await supabase
-    .from('messages')
-    .select('role, content')
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: false })
-    .limit(6);
+    // Business context — loaded unconditionally; discarded if intent turns out to be 'chat'
+    loadBusinessContext(integration.companyId, integration.businessType, {
+      priorityApartmentNumbers: similarApartmentNumbers,
+      priorityProductNames: similarProductNames,
+      imageSearchQuery: imageSearchQuery ?? undefined,
+    }),
+
+    // Message history — always needed
+    supabase
+      .from('messages')
+      .select('role, content')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(6)
+      .then(r => r.data),
+  ]);
+
+  const messageIntent = regexIntent ?? (aiIntent as import('@/lib/ai/intentDetector').MessageIntent);
+  // For pure chat intent, replace context with empty stub (saves token budget)
+  const finalBusinessContext: BusinessContext = messageIntent === 'chat'
+    ? ({ apartments: [], products: [], businessDescription: null } as ApartmentContext)
+    : businessContext;
 
   const history: MessageHistoryEntry[] = ((historyRows ?? []) as MessageHistoryEntry[]).reverse();
 
@@ -288,7 +302,7 @@ export async function processIncomingMessage(
   // 8. Generate AI reply — Layer 1 (global) + Layer 2 (business-type) combined
   const reply = await generateReply(
     combinedMessage,
-    businessContext,
+    finalBusinessContext,
     integration.businessType,
     history,
     msg.imageUrl ?? undefined,
@@ -315,7 +329,7 @@ export async function processIncomingMessage(
   const photoType = detectPhotoType(combinedMessage);
 
   const imageUrlsToSend: string[] = showPhotosMatch
-    ? resolvePhotoUrls(businessContext, showPhotosMatch[1].trim(), photoType, label)
+    ? resolvePhotoUrls(finalBusinessContext, showPhotosMatch[1].trim(), photoType, label)
     : [];
 
   // Always strip ALL SHOW_PHOTOS occurrences from text regardless of whether we acted on it.
