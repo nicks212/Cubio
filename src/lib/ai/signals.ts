@@ -23,7 +23,7 @@ export const CHAT_ONLY_RE =
 /** Message contains a photo/image request anywhere.
  *  Covers Georgian script, romanized Georgian (latin chars), English, Russian. */
 export const PHOTO_RE =
-  /photo|picture|image|სურათ|ფოტო|show\s*me|send\s*(me\s*)?image|can\s*i\s*see|let\s*me\s*see|ნახე|ნახვა|ნახეთ|surat|manaxe|manax|chamiyar|vnaxo|vnax|фото|покажи/i;
+  /photo|picture|image|სურათ|ფოტო|show\s*me|send\s*(me\s*)?image|can\s*i\s*see|let\s*me\s*see|ნახე|ნახვა|ნახეთ|surat|manaxe|manax|chamiyar|vnaxo|vnax|foto|фото|покажи/i;
 
 /** Apartment-unit specific photo request (not project/building). */
 export const APT_PHOTO_RE =

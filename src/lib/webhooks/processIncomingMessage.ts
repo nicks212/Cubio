@@ -270,6 +270,21 @@ export async function processIncomingMessage(
 
   const history: MessageHistoryEntry[] = ((historyRows ?? []) as MessageHistoryEntry[]).reverse();
 
+  // 7b. Photo follow-up detection:
+  //     If the last AI message asked "which apartment?" in response to a photo request,
+  //     and the current message answers with specs (floor/rooms/size), upgrade to 'photos'.
+  //     Without this, the follow-up turn has no photo keywords → intent='search' → AI writes
+  //     "I'll show you" but strict SHOW_PHOTOS rule blocks emitting the marker.
+  const lastAiMsg = history.filter(m => m.role === 'ai').slice(-1)[0]?.content ?? '';
+  const lastAiAskedWhichApt = /ფოტო|სურათ|photo|picture/i.test(lastAiMsg)
+    && /რომელ|which|specify|მიმიტ|გთხოვ|floor|სართ|room|ოთახ|budget|ბიუჯ/i.test(lastAiMsg);
+  const effectiveIntent = (messageIntent !== 'photos' && lastAiAskedWhichApt)
+    ? 'photos' as const
+    : messageIntent;
+  if (effectiveIntent !== messageIntent) {
+    console.info(`${label} Photo follow-up detected — upgrading intent '${messageIntent}' -> 'photos'`);
+  }
+
   // 8. Generate AI reply — Layer 1 (global) + Layer 2 (business-type) combined
   const reply = await generateReply(
     combinedMessage,
@@ -278,7 +293,7 @@ export async function processIncomingMessage(
     history,
     msg.imageUrl ?? undefined,
     photosSent,
-    messageIntent,
+    effectiveIntent,
     imageBase64,
     imageMimeType,
   );
