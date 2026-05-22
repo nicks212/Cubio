@@ -288,8 +288,11 @@ export async function processIncomingMessage(
   // Parse SHOW_PHOTOS: marker ONLY when customer explicitly asked for photos.
   // If intent is 'search' or 'chat', AI may proactively emit SHOW_PHOTOS — we IGNORE it.
   // This prevents unsolicited photo bursts during normal browsing/discovery turns.
+  //
+  // AI should always emit: SHOW_PHOTOS: <identifier>  (with colon + id)
+  // But defensively handle variants: no colon, no id, wrong case.
   const showPhotosMatch = messageIntent === 'photos'
-    ? reply.match(/(?:^|\n)SHOW_PHOTOS:\s*(\S+)/m)
+    ? reply.match(/SHOW_PHOTOS[:\s]+([A-Za-z0-9_]+)/i)
     : null;
 
   // photoType: apartment | project | any — determined by what the customer actually said.
@@ -299,8 +302,15 @@ export async function processIncomingMessage(
     ? resolvePhotoUrls(businessContext, showPhotosMatch[1].trim(), photoType, label)
     : [];
 
-  // Always strip SHOW_PHOTOS line from text regardless of whether we acted on it.
-  let cleanReply = reply.replace(/(?:^|\n)SHOW_PHOTOS:\s*\S+/m, '').trim();
+  // Always strip ALL SHOW_PHOTOS occurrences from text regardless of whether we acted on it.
+  // Regex is intentionally broad: catches SHOW_PHOTOS with/without colon, with/without identifier.
+  let cleanReply = reply.replace(/\n?SHOW_PHOTOS[^\n]*/gi, '').trim();
+
+  // Safety check: if SHOW_PHOTOS still present after strip, something is very wrong — log and abort.
+  if (/SHOW_PHOTOS/i.test(cleanReply)) {
+    console.error(`${label} SHOW_PHOTOS still present in cleanReply after strip — truncating reply`);
+    cleanReply = cleanReply.replace(/SHOW_PHOTOS/gi, '').trim();
+  }
 
   // Safety net: strip any raw URLs that leaked into the reply body despite the prompt rules.
   // URLs are STRIPPED ONLY — never forwarded as images. Sending hallucinated URLs would deliver

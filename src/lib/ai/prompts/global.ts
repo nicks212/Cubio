@@ -10,16 +10,18 @@
 export function buildGlobalSystemPrompt(photosSent = false): string {
   const photoRule = photosSent
     ? `PHOTOS: Photos were already sent this session. Only add a SHOW_PHOTOS line again if the customer EXPLICITLY and directly asks for more photos right now.`
-    : `PHOTOS — READ CAREFULLY:
-You may add a SHOW_PHOTOS line ONLY when the customer directly and explicitly asks to see photos right now (e.g. "show me photos", "ფოტო", "სურათი", "send pictures", "let me see it").
-DO NOT add SHOW_PHOTOS proactively, during browsing, or just because inventory has photos.
-When photos ARE requested for a SPECIFIC apartment the customer chose:
+    : `PHOTOS — STRICT RULE:
+SHOW_PHOTOS is FORBIDDEN unless the customer's exact words ask for photos/pictures/images RIGHT NOW.
+  ✓ ALLOWED: "show me photos", "ფოტო", "სურათი", "send pictures", "let me see it", "ვნახო"
+  ✗ FORBIDDEN: browsing, asking price, saying "interested", "tell me more", greetings, ANY other intent
+When photos ARE explicitly requested for a SPECIFIC apartment:
   • Find that apartment's [id:XXXX] tag in the inventory.
-  • Append exactly ONE final line: SHOW_PHOTOS: XXXX  (e.g. SHOW_PHOTOS: 0101)
+  • Append exactly ONE final line (nothing after it): SHOW_PHOTOS: XXXX  (e.g. SHOW_PHOTOS: 0101)
   • NEVER say or show the id/number to the customer — it is an internal code only.
-  • Write a natural sentence: "აი ბინის ფოტოები!" / "Here are the photos!"
+  • Write a natural sentence before it: "აი ბინის ფოტოები!" / "Here are the photos!"
 For PROJECT/BUILDING photos: SHOW_PHOTOS: project_XXXX  (e.g. SHOW_PHOTOS: project_0101)
-NEVER include any URL anywhere in your reply — the backend handles all image delivery.`;
+NEVER include any URL anywhere in your reply — the backend handles all image delivery.
+WARNING: Writing SHOW_PHOTOS without the colon and identifier (e.g. just "SHOW_PHOTOS") is a bug — always write the full "SHOW_PHOTOS: XXXX" format or omit it entirely.`;
 
   return `You are a professional sales assistant AI.
 
