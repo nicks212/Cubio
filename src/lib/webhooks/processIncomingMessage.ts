@@ -62,10 +62,11 @@ export async function processIncomingMessage(
   let conversationId: string;
   let aiPaused = false;
   let photosSent = false;
+  let lastShownApt: string | null = null;
 
   const { data: existing } = await supabase
     .from('conversations')
-    .select('id, ai_paused, contact_name, photos_sent')
+    .select('id, ai_paused, contact_name, photos_sent, last_shown_apt')
     .eq('company_id', integration.companyId)
     .eq('provider', msg.provider)
     .eq('provider_conversation_id', msg.senderId)
@@ -76,6 +77,7 @@ export async function processIncomingMessage(
     conversationId = existing.id as string;
     aiPaused = (existing.ai_paused as boolean | null) ?? false;
     photosSent = (existing.photos_sent as boolean | null) ?? false;
+    lastShownApt = (existing.last_shown_apt as string | null) ?? null;
     // Back-fill contact_name if we resolved a name but the record was created without one
     if (resolvedName && !(existing.contact_name as string | null)) {
       await supabase.from('conversations').update({ contact_name: resolvedName }).eq('id', conversationId);
@@ -284,6 +286,13 @@ export async function processIncomingMessage(
 
   const history: MessageHistoryEntry[] = ((historyRows ?? []) as MessageHistoryEntry[]).reverse();
 
+  // If the DB has a last_shown_apt but it's not yet visible in the recent history slice,
+  // inject a synthetic AI marker so extractConversationState() can detect the shown apartment.
+  const hasShownAptInHistory = history.some(m => m.role === 'ai' && /SHOW_PHOTOS/i.test(m.content));
+  if (lastShownApt && !hasShownAptInHistory) {
+    history.unshift({ role: 'ai', content: `SHOW_PHOTOS: ${lastShownApt}` });
+  }
+
   // 7b. Photo follow-up detection:
   //     If the last AI message asked "which apartment?" in response to a photo request,
   //     and the current message answers with specs (floor/rooms/size), upgrade to 'photos'.
@@ -389,10 +398,11 @@ export async function processIncomingMessage(
       integration.accessToken,
       integration.providerAccountId,
     );
-    // Mark photos as sent so AI won't auto-send again unless explicitly re-requested
-    if (!photosSent) {
-      await supabase.from('conversations').update({ photos_sent: true }).eq('id', conversationId);
-    }
+    // Persist which apartment was shown + mark photos_sent for next turn's state
+    await supabase.from('conversations').update({
+      photos_sent: true,
+      last_shown_apt: showPhotosMatch![1].trim(),
+    }).eq('id', conversationId);
   }
 
   // 10b. Send text reply after images
