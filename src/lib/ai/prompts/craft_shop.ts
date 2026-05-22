@@ -16,7 +16,7 @@ function scoreProduct(p: ProductRow, q: string): number {
  * - Photo URLs only included when customer explicitly asked for photos
  * - Accepts userQuery to pre-filter by keyword match
  */
-export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = '', includePhotos = false): string {
+export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = ''): string {
   const available = context.products.filter(p => p.in_stock);
   const q = userQuery.toLowerCase();
 
@@ -24,7 +24,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const top3 = sorted.slice(0, 3);
   const rest = sorted.slice(3);
 
-  // Top 3 — full detail; photo URLs only when customer asked for them
+  // Top 3 — full detail; compact photo metadata (no raw URLs)
   const detailedList = top3.length > 0
     ? top3.map(p => {
         const sym = p.currency === 'USD' ? '$' : '₾';
@@ -34,9 +34,11 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
         if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);
         if (p.birthstones) parts.push(`stones: ${p.birthstones}`);
         let line = parts.join(' | ');
-        if (includePhotos) {
-          const photos = p.images?.filter(u => u.startsWith('http')) ?? [];
-          if (photos.length) line += `\n  [photos: ${photos.join(' ')}]`;
+        // Compact photo metadata — no URLs in Gemini prompt.
+        // Backend resolves real URLs when AI emits SHOW_PHOTOS: <product_slug>.
+        const photoCount = p.images?.filter(u => u.startsWith('http')).length ?? 0;
+        if (photoCount > 0) {
+          line += ` [has_photos:true count:${photoCount}]`;
         }
         return line;
       }).join('\n')
@@ -84,7 +86,7 @@ ${businessInfo}ROLE: Warm, creative sales assistant for a craft jewelry shop. Re
 
 IMAGE RECOMMENDATIONS: If customer sends an image, match visual style, colors, and materials to available products.
 
-PHOTOS FLOW: When customer asks for photos, send them immediately — do NOT wait for lead details first. After sending photos (after your PHOTOS: line), ask naturally whether they would like to order or learn more.
+PHOTOS FLOW: When customer asks for photos, append SHOW_PHOTOS: <product_slug> on a final line (e.g. SHOW_PHOTOS: silver_ring). The backend fetches and sends actual images automatically. After requesting photos, ask naturally about ordering or interest.
 
 LEAD COLLECTION (critical): When a customer shows buying intent ("I want to buy", "I want this", "please contact me", "I want consultation", equivalent in Georgian/Russian), DO NOT immediately confirm a rep will contact them. First collect what's missing — one question at a time, only asking what hasn't been provided:
   1. Which product they want (if not clear)

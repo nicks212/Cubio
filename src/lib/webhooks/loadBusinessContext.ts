@@ -1,14 +1,29 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import type { BusinessContext } from '@/lib/ai';
 
+/** Options for context loading — used when vector similarity search pre-filtered results. */
+export interface LoadContextOptions {
+  /** Apartment numbers from vector search — these will be sorted to the top. */
+  priorityApartmentNumbers?: string[];
+  /** Product names from vector search — these will be sorted to the top. */
+  priorityProductNames?: string[];
+  /** Text query from image description — used for tighter text-based pre-filter fallback. */
+  imageSearchQuery?: string;
+}
+
 /**
  * Loads the appropriate business context data for the AI
  * based on the company's business type, including the optional
  * business_description the company owner wrote during onboarding/settings.
+ *
+ * When vector similarity results are provided via `options`, those items
+ * are placed at the front of the list so the prompt builder surfaces them
+ * as the top-3 recommendations.
  */
 export async function loadBusinessContext(
   companyId: string,
   businessType: 'real_estate' | 'craft_shop',
+  options: LoadContextOptions = {},
 ): Promise<BusinessContext> {
   const supabase = createAdminClient();
 
@@ -48,7 +63,19 @@ export async function loadBusinessContext(
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return { apartments: (finalApartments ?? []) as any, businessDescription };
+    let allApartments: any[] = (finalApartments ?? []) as any[];
+
+    // If vector search found similar apartments, bubble them to the front.
+    // The prompt builder picks top-3 from the array — so these appear first.
+    if (options.priorityApartmentNumbers && options.priorityApartmentNumbers.length > 0) {
+      const prioritySet = new Set(options.priorityApartmentNumbers);
+      const prioritized = allApartments.filter((a: { apartment_number: string }) => prioritySet.has(a.apartment_number));
+      const rest        = allApartments.filter((a: { apartment_number: string }) => !prioritySet.has(a.apartment_number));
+      allApartments = [...prioritized, ...rest];
+      console.info(`[loadBusinessContext] ${prioritized.length} priority apartments from vector search surfaced to top`);
+    }
+
+    return { apartments: allApartments, businessDescription };
   }
 
   const { data: products, error: prodError } = await supabase
@@ -74,5 +101,17 @@ export async function loadBusinessContext(
     finalProducts = prodFallback as any;
   }
 
-  return { products: finalProducts ?? [], businessDescription };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let allProducts: any[] = (finalProducts ?? []) as any[];
+
+  // If vector search found similar products, bubble them to the front.
+  if (options.priorityProductNames && options.priorityProductNames.length > 0) {
+    const prioritySet = new Set(options.priorityProductNames.map(n => n.toLowerCase()));
+    const prioritized = allProducts.filter((p: { name: string }) => prioritySet.has(p.name.toLowerCase()));
+    const rest        = allProducts.filter((p: { name: string }) => !prioritySet.has(p.name.toLowerCase()));
+    allProducts = [...prioritized, ...rest];
+    console.info(`[loadBusinessContext] ${prioritized.length} priority products from vector search surfaced to top`);
+  }
+
+  return { products: allProducts, businessDescription };
 }

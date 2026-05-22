@@ -1,5 +1,4 @@
 import type { ApartmentContext } from '../types';
-import type { PhotoType } from '../intentDetector';
 
 type ApartmentRow = ApartmentContext['apartments'][0];
 
@@ -13,14 +12,12 @@ function scoreApartment(a: ApartmentRow, wantRooms: number | null, maxPrice: num
 /**
  * LAYER 2 — Real Estate Business Rules
  *
- * @param includePhotos - true when customer explicitly asked for photos
- * @param photoType     - whether to include apartment photos, project photos, or both
+ * Photos are represented as compact metadata only — no URLs in prompt.
+ * AI emits SHOW_PHOTOS: <apartment_number> and backend resolves + sends images.
  */
 export function buildRealEstateSystemPrompt(
   context: ApartmentContext,
   userQuery = '',
-  includePhotos = false,
-  photoType: PhotoType = 'any',
 ): string {
   const vacant = context.apartments.filter(a => a.status === 'vacant');
 
@@ -38,7 +35,7 @@ export function buildRealEstateSystemPrompt(
   const top3 = sorted.slice(0, 3);
   const rest = sorted.slice(3);
 
-  // Top 3 — full detail; photo URLs only when customer asked for them
+  // Top 3 — full detail; compact photo metadata (no raw URLs)
   const detailedList = top3.length > 0
     ? top3.map(a => {
         const proj = a.project as { name: string; location?: string | null; description?: string | null; completion_date?: string | null; images?: string[] } | null;
@@ -46,15 +43,13 @@ export function buildRealEstateSystemPrompt(
         let line = `• Apt ${a.apartment_number}: ${a.rooms_quantity}rm, ${a.size_sq_m}m², fl.${a.floor}, ${sym}${a.total_price.toLocaleString()}${proj?.name ? ` — ${proj.name}` : ''}`;
         if (proj?.location) line += ` | ${proj.location}`;
         if (proj?.completion_date) line += ` | ${proj.completion_date}`;
-        if (includePhotos) {
-          const aptPhotos = a.images?.filter(u => u.startsWith('http')) ?? [];
-          const projPhotos = proj?.images?.filter(u => u.startsWith('http')) ?? [];
-          const photos =
-            photoType === 'apartment' ? aptPhotos :
-            photoType === 'project'   ? projPhotos :
-            [...aptPhotos, ...projPhotos];
-          const deduped = [...new Set(photos)];
-          if (deduped.length) line += `\n  [photos: ${deduped.join(' ')}]`;
+        // Compact photo metadata — no URLs in Gemini prompt.
+        // Backend resolves real URLs when AI emits SHOW_PHOTOS: <apartment_number>.
+        const aptPhotoCount  = a.images?.filter(u => u.startsWith('http')).length ?? 0;
+        const projPhotoCount = (proj?.images?.filter(u => u.startsWith('http')) ?? []).length;
+        const totalPhotos    = aptPhotoCount + projPhotoCount;
+        if (totalPhotos > 0) {
+          line += ` [has_photos:true count:${totalPhotos}]`;
         }
         return line;
       }).join('\n')
@@ -110,7 +105,7 @@ export function buildRealEstateSystemPrompt(
 
 ${businessInfo}ROLE: Sales agent. Recommend by budget/rooms/floor/project. Guide toward scheduling a visit.
 
-PHOTOS FLOW: When customer asks for photos, send them immediately — do NOT wait for lead details first. After sending photos (after your PHOTOS: line), ask naturally whether they are interested in visiting or learning more, to continue the lead qualification.
+PHOTOS FLOW: When customer asks for photos, append SHOW_PHOTOS: <apartment_number> on a final line (e.g. SHOW_PHOTOS: 0101). The backend fetches and sends actual images automatically. After requesting photos, ask naturally about visiting or interest to continue lead qualification.
 
 LEAD COLLECTION (critical): When a customer shows buying intent ("I want to visit", "I want to buy", "please contact me", "I want consultation", equivalent in Georgian/Russian), DO NOT immediately say a rep will contact them. First collect these details naturally — one question at a time, only asking what hasn't been provided yet:
   1. Budget

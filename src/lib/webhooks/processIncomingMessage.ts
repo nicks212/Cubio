@@ -4,9 +4,14 @@ import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
 import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
 import { bufferAndClaim, isStampHolder, acquireLock, drainBuffer, releaseLock, DEBOUNCE_MS } from './messageBuffer';
-import { detectIntent } from '@/lib/ai/intentDetector';
+import { detectIntent, detectPhotoType } from '@/lib/ai/intentDetector';
 import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
+import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts } from '@/lib/ai/embeddings';
+import { redis } from '@/lib/redis';
+import { createHash } from 'crypto';
 import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './types';
+import type { ApartmentContext, ProductContext, BusinessContext } from '@/lib/ai/types';
+import type { PhotoType } from '@/lib/ai/intentDetector';
 
 /**
  * Core processing pipeline — shared across all providers.
@@ -124,6 +129,24 @@ export async function processIncomingMessage(
     }
   }
 
+  // 3b. Content-hash dedup — catches webhook retries without a message ID,
+  //     and race-condition duplicates within a 30-second window.
+  //     Uses Redis SET NX (non-blocking) so it never blocks the pipeline.
+  try {
+    const msgHash = createHash('sha256')
+      .update(`${conversationId}:${msg.messageText}:${msg.imageUrl ?? ''}`)
+      .digest('hex')
+      .slice(0, 20);
+    const hashKey = `cubio:msgdedupe:${msgHash}`;
+    const wasNew = await redis.set(hashKey, '1', { ex: 30, nx: true });
+    if (wasNew === null) {
+      console.info(`${label} Duplicate content fingerprint — skipping`);
+      return null;
+    }
+  } catch {
+    // Redis unavailable — continue without hash dedup (idempotency guard above still applies)
+  }
+
   // 4. Save incoming message — capture ID + created_at for debounce check
   const { data: savedMsg } = await supabase
     .from('messages')
@@ -185,14 +208,57 @@ export async function processIncomingMessage(
   // 6. Detect intent — skip expensive DB context load for simple chat messages
   const messageIntent = detectIntent(combinedMessage);
 
-  // Load business context (apartments or products + business description)
-  // Skipped for 'chat' intent (greetings/thanks) to save DB round-trip + ~700 tokens.
-  const businessContext = messageIntent === 'chat'
-    ? { apartments: [], products: [], businessDescription: null }
-    : await loadBusinessContext(
-        integration.companyId,
-        integration.businessType,
-      );
+  // 6a. Process customer-uploaded image (if any) — multimodal path:
+  //     1. Download image for inline Gemini vision (true multimodal)
+  //     2. Generate a text description optimized for inventory search
+  //     3. Run vector similarity search to surface the most relevant items
+  let imageBase64: string | null = null;
+  let imageMimeType: string | null = null;
+  let imageSearchQuery: string | null = null;
+  let similarApartmentNumbers: string[] = [];
+  let similarProductNames: string[] = [];
+
+  if (msg.imageUrl) {
+    try {
+      const imgRes = await fetch(msg.imageUrl, { signal: AbortSignal.timeout(8000) });
+      if (imgRes.ok) {
+        const buf = await imgRes.arrayBuffer();
+        imageBase64 = Buffer.from(buf).toString('base64');
+        imageMimeType = (imgRes.headers.get('content-type') ?? 'image/jpeg').split(';')[0];
+        console.info(`${label} Downloaded customer image (${(buf.byteLength / 1024).toFixed(0)}KB, ${imageMimeType})`);
+      }
+    } catch (err) {
+      console.warn(`${label} Failed to download customer image (non-fatal):`, err);
+    }
+
+    // Describe the image as a search query (separate fast Gemini call)
+    imageSearchQuery = await describeImageForSearch(msg.imageUrl, integration.businessType);
+    if (imageSearchQuery) {
+      console.info(`${label} Image search query: "${imageSearchQuery.slice(0, 80)}"`);
+      // Run vector similarity search (falls back silently if pgvector not deployed)
+      if (integration.businessType === 'real_estate') {
+        similarApartmentNumbers = await searchSimilarApartments(integration.companyId, imageSearchQuery);
+        if (similarApartmentNumbers.length > 0) {
+          console.info(`${label} Vector search: ${similarApartmentNumbers.length} similar apartments found`);
+        }
+      } else {
+        similarProductNames = await searchSimilarProducts(integration.companyId, imageSearchQuery);
+        if (similarProductNames.length > 0) {
+          console.info(`${label} Vector search: ${similarProductNames.length} similar products found`);
+        }
+      }
+    }
+  }
+
+  // Load business context — skipped for pure chat intents to save DB round-trip + tokens.
+  // Pass similarity results so the context loader can surface the most relevant items first.
+  const businessContext: BusinessContext = messageIntent === 'chat'
+    ? { apartments: [], products: [], businessDescription: null } as ApartmentContext
+    : await loadBusinessContext(integration.companyId, integration.businessType, {
+        priorityApartmentNumbers: similarApartmentNumbers,
+        priorityProductNames: similarProductNames,
+        imageSearchQuery: imageSearchQuery ?? undefined,
+      });
 
   // 7. Load recent message history (last 6 messages; generate.ts slices to 4 internally)
   const { data: historyRows } = await supabase
@@ -213,26 +279,34 @@ export async function processIncomingMessage(
     msg.imageUrl ?? undefined,
     photosSent,
     messageIntent,
+    imageBase64,
+    imageMimeType,
   );
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);
 
-  // Strip PHOTOS: tag from the reply — parse image URLs before saving/sending text.
-  // Regex handles PHOTOS: at any line position (start, after newline) with flexible spacing.
-  const photosMatch = reply.match(/(?:^|\n)PHOTOS:\s*([^\n]+)/m);
-  // No cap — send ALL photo URLs the AI included; let the provider handle any limits
-  const imageUrlsToSend: string[] = photosMatch
-    ? photosMatch[1].trim().split(/\s+/).filter(u => u.startsWith('http'))
+  // Parse SHOW_PHOTOS: marker — backend resolves real image URLs from loaded context.
+  // AI only emits a compact identifier (apartment number or product slug); never raw URLs.
+  // Backend then fetches and sends actual attachments, keeping Gemini prompts URL-free.
+  const showPhotosMatch = reply.match(/(?:^|\n)SHOW_PHOTOS:\s*(\S+)/m);
+  const photoType = detectPhotoType(combinedMessage); // apartment | project | any
+  const imageUrlsToSend: string[] = showPhotosMatch
+    ? resolvePhotoUrls(businessContext, showPhotosMatch[1].trim(), photoType)
     : [];
-  let cleanReply = reply.replace(/\nPHOTOS:\s*.+$/m, '').trim();
 
-  // Strip any raw URLs that leaked into the reply body — send them as actual images instead.
-  // (AI sometimes copies photo metadata verbatim from context; we never want bare links in text.)
+  let cleanReply = reply.replace(/(?:^|\n)SHOW_PHOTOS:\s*\S+/m, '').trim();
+
+  // Safety net: strip any raw URLs that leaked into the reply body despite the prompt rules.
+  // Leaked URLs are captured and sent as actual image attachments instead.
   const leakedUrls = cleanReply.match(/https?:\/\/\S+/g);
   if (leakedUrls) {
-    cleanReply = cleanReply.replace(/https?:\/\/\S+/g, '').replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    cleanReply = cleanReply
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
     for (const u of leakedUrls) {
-      if (!imageUrlsToSend.includes(u) && imageUrlsToSend.length < 5) imageUrlsToSend.push(u);
+      if (!imageUrlsToSend.includes(u)) imageUrlsToSend.push(u);
     }
     console.info(`${label} Stripped ${leakedUrls.length} leaked URL(s) from reply text`);
   }
@@ -304,6 +378,69 @@ export async function processIncomingMessage(
 
   return { conversationId, reply };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHOW_PHOTOS backend resolution
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolves real image URLs for a SHOW_PHOTOS identifier emitted by the AI.
+ *
+ * Real estate: identifier = apartment_number (e.g. "0101")
+ * Craft shop:  identifier = product name slug (e.g. "silver_ring")
+ *
+ * photoType controls which photo set to return (apartment vs project vs both).
+ * Returns all matched URLs — no cap; let the provider handle pagination.
+ */
+function resolvePhotoUrls(
+  context: BusinessContext,
+  identifier: string,
+  photoType: PhotoType,
+): string[] {
+  const aptCtx = context as ApartmentContext;
+  const prodCtx = context as ProductContext;
+
+  if (aptCtx.apartments?.length > 0) {
+    const apt = aptCtx.apartments.find(a => a.apartment_number === identifier);
+    if (!apt) {
+      // Partial match fallback — AI sometimes adds "apt_" prefix
+      const stripped = identifier.replace(/^apt_?/i, '');
+      const fallback = aptCtx.apartments.find(a => a.apartment_number === stripped);
+      if (!fallback) return [];
+      return extractApartmentPhotos(fallback, photoType);
+    }
+    return extractApartmentPhotos(apt, photoType);
+  }
+
+  if (prodCtx.products?.length > 0) {
+    const slug = (name: string) => name.toLowerCase().replace(/\s+/g, '_').slice(0, 40);
+    const id = identifier.replace(/^prod_?/i, '').toLowerCase();
+    const prod = prodCtx.products.find(p =>
+      slug(p.name) === id || p.name.toLowerCase() === id.replace(/_/g, ' ')
+    );
+    if (!prod) return [];
+    return prod.images?.filter(u => u.startsWith('http')) ?? [];
+  }
+
+  return [];
+}
+
+function extractApartmentPhotos(
+  apt: ApartmentContext['apartments'][0],
+  photoType: PhotoType,
+): string[] {
+  const proj = apt.project as { images?: string[] } | null;
+  const aptImgs  = apt.images?.filter(u => u.startsWith('http')) ?? [];
+  const projImgs = proj?.images?.filter(u => u.startsWith('http')) ?? [];
+
+  if (photoType === 'apartment') return aptImgs;
+  if (photoType === 'project')   return projImgs;
+  return [...new Set([...aptImgs, ...projImgs])];  // 'any' = both, deduped
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lead & escalation detection
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function detectAndPersistLeadOrEscalation(
   supabase: ReturnType<typeof createAdminClient>,

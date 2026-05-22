@@ -1,40 +1,20 @@
 /**
- * Lightweight regex-based intent classifier.
+ * Lightweight intent classifier — runs in <1ms before any DB or AI work.
  *
- * Runs in <1ms before any DB or context loading so we can skip expensive
- * business-context fetches for messages that don't need them.
+ * All regex patterns are centralized in signals.ts.
  *
- *   'chat'   — greeting / thanks / confirmation / one-word reply
- *              → skip loadBusinessContext entirely; use micro-prompt
+ *   'chat'   — greeting / thanks / confirmation
+ *              → skip loadBusinessContext; use micro-prompt
  *   'photos' — customer wants to see images
- *              → include [photos:...] URLs in context
+ *              → AI will emit SHOW_PHOTOS: identifier; backend sends attachments
  *   'search' — apartment/product queries, pricing, availability, etc.
- *              → normal flow, no photos in context
+ *              → normal full-context flow
  */
+
+import { CHAT_ONLY_RE, PHOTO_RE, APT_PHOTO_RE, PROJ_PHOTO_RE } from './signals';
+
 export type MessageIntent = 'chat' | 'photos' | 'search';
-
-/**
- * For photo requests, whether they want apartment-specific photos,
- * project/building photos, or either.
- */
 export type PhotoType = 'apartment' | 'project' | 'any';
-
-// Matches messages that are ONLY a greeting/farewell/acknowledgement
-// with optional punctuation/emoji — nothing of business value.
-const CHAT_ONLY_RE =
-  /^[\s!.,?👍👋🙏💙❤️✅]*(?:hello|hi|hey|ok|okay|good|great|perfect|sure|yes|no|yep|nope|got\s*it|understood|thanks|thank\s*you|thx|ty|bye|goodbye|see\s*you|take\s*care|good\s*morning|good\s*afternoon|good\s*evening|good\s*night|გამარჯობა|მოგესალმებით|გამარჯობა!|სალამი|ბოდიში|კარგი|მადლობა|გმადლობ|ნახვამდის|ნახვამდის!|კი|არა|კარგი|მიხვდი|მიხვდა|გასაგებია|გასაგები|ალბათ|ok!)[\s!.,?👍👋🙏💙❤️✅]*$/i;
-
-// Matches messages that contain a photo/image request anywhere
-const PHOTO_RE =
-  /photo|picture|image|სურათ|ფოტო|show\s*me|send\s*(me\s*)?image|can\s*i\s*see|let\s*me\s*see|ნახე|ნახვა|ნახეთ/i;
-
-// Apartment-specific photo request (flat/unit photos, not project/building)
-const APT_PHOTO_RE =
-  /apartment\s*photo|flat\s*photo|unit\s*photo|this\s*apartment.*photo|photo.*this\s*apartment|ბინის\s*ფოტო|ბინის\s*სურათ|ამ\s*ბინ.*ფოტო|ამ\s*ბინ.*სურათ|квартир.*фото|фото.*квартир/i;
-
-// Project/building/complex photo request
-const PROJ_PHOTO_RE =
-  /project\s*photo|complex\s*photo|building\s*photo|project.*image|exterior|common\s*area|პროექტის\s*ფოტო|პროექტის\s*სურათ|კომპლექს.*ფოტო|კომპლექს.*სურათ|проект.*фото|фото.*проект|здани.*фото/i;
 
 export function detectIntent(message: string): MessageIntent {
   const text = message.trim();

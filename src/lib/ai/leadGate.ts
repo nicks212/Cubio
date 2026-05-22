@@ -5,52 +5,23 @@
  * Returns a `ShouldAnalyse` decision that tells the pipeline
  * whether to fire the expensive Gemini detectLeadAndEscalation call.
  *
- * Design goals:
- *  - Aggressively skip obvious non-leads (greetings, casual browsing,
- *    image requests, short replies, pure question messages)
- *  - ALWAYS allow escalation analysis when anger/abuse signals present
- *  - Allow lead analysis ONLY when meaningful positive signals exist
- *  - Minimum message threshold prevents premature analysis
+ * All regex patterns imported from signals.ts (single source of truth).
  */
+
+import {
+  BUYING_INTENT_RE,
+  PHONE_RE,
+  ANGER_RE,
+  QUALIFICATION_RE,
+  SKIP_INTENTS_RE,
+  BROWSE_ONLY_RE,
+  PHOTO_ONLY_RE,
+} from './signals';
 
 export type ShouldAnalyse =
   | { lead: false; escalation: false }
   | { lead: true;  escalation: boolean }
   | { lead: false; escalation: true };
-
-// ── Buying intent phrases ──────────────────────────────────────────────────
-// Must match at least one to qualify for lead Gemini call.
-const BUYING_INTENT_RE =
-  /\b(?:want\s+to\s+(?:buy|visit|see|reserve|purchase)|i(?:'m|\s+am)\s+interested\s+in\s+(?:buy|purchas|reserv)|how\s+(?:can|do)\s+i\s+(?:buy|purchase|reserve|order)|please\s+contact|call\s+me|i\s+want\s+(?:this|consultation|a\s+consult)|can\s+(?:i|your|the)\s+(?:visit|see\s+it|operator|agent|rep))|(?:მინდა\s*(?:ვნახო|შევიძინო|ვიზიტი|შეძენ|დაჯავშნ|კონსულტ)|გთხოვ\s*(?:დამიკავშირდ|დარეკ|შეგ(?:ატყობინ|ახსენ))|კონსულტაცია\s*მინდა|ოპერატორ(?:ი|მა)\s*დამიკავშირდ|ვიყიდი|დაჯავშნ|ვიზიტ(?:ი|ზე)|შეძენ(?:ა|ას)|(?:შე)?ვნახ(?:ავ|ო)\s*(?:ბინ|ბუნ)|хочу\s*(?:купить|посмотреть|записаться|эту|этот)|позвоните\s*мне|как\s*(?:купить|приобрести|заказать)|хочу\s*консультацию)/i;
-
-// ── Phone number patterns ───────────────────────────────────────────────────
-// Georgian (+995 / 5xx / 0xx), international (+X...) or bare digit runs 9-15 digits
-const PHONE_RE =
-  /(?:\+995[\s-]?)?(?:\(?\d{3}\)?[\s-]?)?\d{2,3}[\s-]?\d{2,3}[\s-]?\d{2,4}|\+\d{7,15}|\b\d{9,12}\b/;
-
-// ── Escalation anger signals ───────────────────────────────────────────────
-// We ALWAYS run escalation check when these fire, regardless of lead state.
-const ANGER_RE =
-  /\b(?:ridiculous|unacceptable|terrible|disgusting|useless|awful|horrible|scam|fraud|furious|angry|worst|never\s+again|talk\s+to\s+(?:a\s+)?human|speak\s+to\s+(?:a\s+)?(?:person|human|manager|supervisor|agent)|get\s+me\s+(?:a\s+)?(?:manager|supervisor|human)|real\s+person\s+please)|(?:სასაცილოა|სამარცხვინოა|კატასტროფა|თაღლითი|გაბრაზებ|ადამიანი\s*მინდა|ოპერატორი\s*(?:გამომიძახ|დამიკავშირ)|менеджер|жалоба|мошенничество|обман|ужасно|отвратительно|поговорить\s+с\s+человеком)/i;
-
-// ── Qualification detail indicators ───────────────────────────────────────
-// Real estate: price/budget mention, room count, floor, m²
-// Craft shop: product name reference, price mention
-const QUALIFICATION_RE =
-  /\b(?:\d[\d\s,]*(?:₾|\$|usd|gel|lari|ლარ|dollar|k\b)|(?:\d+)\s*(?:room|bed|ოთახ(?:ი|იანი)?|комнат)|(?:\d+)\s*(?:floor|სართ(?:ულ|ული)?|этаж)|\d+\s*m[²2]|\d+\s*(?:sq|sqm|square))/i;
-
-// ── Skip patterns — guaranteed non-lead signals ───────────────────────────
-// Messages that match ANY of these will never trigger Gemini (unless anger).
-const SKIP_INTENTS_RE =
-  /^[\s!.,?👍👋🙏💙❤️✅]*(?:hello|hi|hey|ok|okay|good|great|perfect|sure|yes|no|yep|nope|got\s*it|understood|thanks|thank\s*you|thx|ty|bye|goodbye|see\s*you|გამარჯობა|სალამი|კარგი|მადლობა|გმადლობ|ნახვამდის|კი|არა|გასაგებია|ok)[\s!.,?👍👋🙏💙❤️✅]*$/i;
-
-// Pure question about availability/price without intent — still just browsing
-const BROWSE_ONLY_RE =
-  /^(?:(?:what|which|how\s+(?:much|many)|do\s+you|is\s+there|are\s+there|can\s+you\s+(?:tell|show|give)|რამდენი|რა\s*ფასი|გაქვთ|გაქვს|გვაქვს|შეგიძლიათ\s*(?:მომცეთ|გამომიგზავნ|მითხრ)|есть\s+ли|сколько\s+стоит|какая\s+цена|можете\s+(?:сказать|показать))\b.{0,120})$/i;
-
-// Photo / image request — already handled by photo pipeline
-const PHOTO_ONLY_RE =
-  /^(?:[^.!?]*(?:photo|picture|image|სურათ|ფოტო|ნახე|ნახეთ)[^.!?]*)$/i;
 
 /**
  * Decides whether to invoke Gemini lead+escalation analysis.
