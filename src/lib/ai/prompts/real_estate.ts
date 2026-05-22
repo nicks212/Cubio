@@ -35,22 +35,21 @@ export function buildRealEstateSystemPrompt(
   const top3 = sorted.slice(0, 3);
   const rest = sorted.slice(3);
 
-  // Top 3 — full detail; compact photo metadata (no raw URLs)
+  // Top 3 — full detail; apartment_number hidden as internal [id:] tag at end of line.
+  // AI uses [id:XXXX] only for SHOW_PHOTOS marker — never mentions it to customers.
   const detailedList = top3.length > 0
     ? top3.map(a => {
         const proj = a.project as { name: string; location?: string | null; description?: string | null; completion_date?: string | null; images?: string[] } | null;
         const sym = a.currency === 'GEL' ? '₾' : '$';
-        let line = `• Apt ${a.apartment_number}: ${a.rooms_quantity}rm, ${a.size_sq_m}m², fl.${a.floor}, ${sym}${a.total_price.toLocaleString()}${proj?.name ? ` — ${proj.name}` : ''}`;
+        let line = `• ${a.rooms_quantity}rm, ${a.size_sq_m}m², fl.${a.floor}, ${sym}${a.total_price.toLocaleString()}${proj?.name ? ` — ${proj.name}` : ''}`;
         if (proj?.location) line += ` | ${proj.location}`;
         if (proj?.completion_date) line += ` | ${proj.completion_date}`;
-        // Compact photo metadata — no URLs in Gemini prompt.
-        // Backend resolves real URLs when AI emits SHOW_PHOTOS: <apartment_number>.
         const aptPhotoCount  = a.images?.filter(u => u.startsWith('http')).length ?? 0;
         const projPhotoCount = (proj?.images?.filter(u => u.startsWith('http')) ?? []).length;
         const totalPhotos    = aptPhotoCount + projPhotoCount;
-        if (totalPhotos > 0) {
-          line += ` [has_photos:true count:${totalPhotos}]`;
-        }
+        if (totalPhotos > 0) line += ` [has_photos:true count:${totalPhotos}]`;
+        // Internal tag — backend uses this; AI must NEVER say this to customers
+        line += ` [id:${a.apartment_number}]`;
         return line;
       }).join('\n')
     : '(No apartments currently available)';
@@ -92,7 +91,7 @@ export function buildRealEstateSystemPrompt(
         ? `${sym}${minPrice.toLocaleString()}`
         : `${sym}${minPrice.toLocaleString()}–${sym}${maxPrice.toLocaleString()}`;
       groupSummaries.push(
-        `GROUP: ${members.length}× ${first.rooms_quantity}-room${proj?.name ? ` (${proj.name})` : ''}${proj?.location ? ` @${proj.location}` : ''} — ${priceStr} [apt numbers: ${members.map(a => a.apartment_number).join(', ')}]`
+        `GROUP: ${members.length}× ${first.rooms_quantity}-room${proj?.name ? ` (${proj.name})` : ''}${proj?.location ? ` @${proj.location}` : ''} — ${priceStr} [ids:${members.map(a => a.apartment_number).join(',')}]`
       );
     }
   }
@@ -104,6 +103,7 @@ export function buildRealEstateSystemPrompt(
   return `REAL ESTATE SALES ASSISTANT
 
 ${businessInfo}ROLE: Sales agent. Recommend by budget/rooms/floor/project. Guide toward scheduling a visit.
+NEVER mention internal codes like [id:...] or [ids:...] to customers — they are machine tags only.
 
 LEAD (buying intent): Collect missing info one question at a time — budget → rooms → floor → phone. Confirm "ჩვენი წარმომადგენელი მალე დაგიკავშირდებათ." only after phone + at least budget or rooms are known.
 ${groupSection}

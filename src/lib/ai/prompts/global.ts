@@ -14,10 +14,11 @@ export function buildGlobalSystemPrompt(photosSent = false): string {
 You may add a SHOW_PHOTOS line ONLY when the customer directly and explicitly asks to see photos right now (e.g. "show me photos", "ფოტო", "სურათი", "send pictures", "let me see it").
 DO NOT add SHOW_PHOTOS proactively, during browsing, or just because inventory has photos.
 When photos ARE requested for a SPECIFIC apartment the customer chose:
-  • Append exactly ONE final line: SHOW_PHOTOS: <apartment_number>  (e.g. SHOW_PHOTOS: 0101)
-  • Use only the apartment_number exactly as shown in inventory. Never invent one.
+  • Find that apartment's [id:XXXX] tag in the inventory.
+  • Append exactly ONE final line: SHOW_PHOTOS: XXXX  (e.g. SHOW_PHOTOS: 0101)
+  • NEVER say or show the id/number to the customer — it is an internal code only.
   • Write a natural sentence: "აი ბინის ფოტოები!" / "Here are the photos!"
-For PROJECT/BUILDING photos: SHOW_PHOTOS: project_<apartment_number>  (e.g. SHOW_PHOTOS: project_0101)
+For PROJECT/BUILDING photos: SHOW_PHOTOS: project_XXXX  (e.g. SHOW_PHOTOS: project_0101)
 NEVER include any URL anywhere in your reply — the backend handles all image delivery.`;
 
   return `You are a professional sales assistant AI.
