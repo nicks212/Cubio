@@ -297,7 +297,9 @@ export async function processIncomingMessage(
   let cleanReply = reply.replace(/(?:^|\n)SHOW_PHOTOS:\s*\S+/m, '').trim();
 
   // Safety net: strip any raw URLs that leaked into the reply body despite the prompt rules.
-  // Leaked URLs are captured and sent as actual image attachments instead.
+  // URLs are STRIPPED ONLY — never forwarded as images. Sending hallucinated URLs would deliver
+  // wrong or non-existent photos. All legitimate images come exclusively from resolvePhotoUrls()
+  // which reads verified records from the DB.
   const leakedUrls = cleanReply.match(/https?:\/\/\S+/g);
   if (leakedUrls) {
     cleanReply = cleanReply
@@ -305,10 +307,7 @@ export async function processIncomingMessage(
       .replace(/[ \t]{2,}/g, ' ')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
-    for (const u of leakedUrls) {
-      if (!imageUrlsToSend.includes(u)) imageUrlsToSend.push(u);
-    }
-    console.info(`${label} Stripped ${leakedUrls.length} leaked URL(s) from reply text`);
+    console.warn(`${label} Stripped ${leakedUrls.length} hallucinated URL(s) from AI reply — NOT forwarding as images`);
   }
 
   // 9. Save AI reply

@@ -37,8 +37,12 @@ const TTL = {
   lock:  120,   // 2 min — auto-release if handler crashes mid-flight
 };
 
-/** How long to wait for the user to stop typing (milliseconds). */
-export const DEBOUNCE_MS = 5000;
+/**
+ * How long to wait after the LAST message before generating a reply.
+ * Timer resets on every new message — so if user sends 4 messages 3s apart,
+ * the AI responds 7s after the FOURTH message, with all 4 combined.
+ */
+export const DEBOUNCE_MS = 7000;
 
 /** Returns false when Upstash env vars are not configured — skips all Redis ops. */
 function redisConfigured(): boolean {
@@ -60,11 +64,12 @@ export async function bufferAndClaim(
   }
   console.info(`[buffer] append convId=${conversationId} token=${token} text="${messageText.slice(0, 60)}"`);
   try {
-    await Promise.all([
-      redis.rpush(K.buf(conversationId), messageText),
-      redis.expire(K.buf(conversationId), TTL.buf),
-      redis.set(K.stamp(conversationId), token, { ex: TTL.stamp }),
-    ]);
+    // Pipeline: 3 commands → 1 HTTP round-trip to Upstash
+    const pipe = redis.pipeline();
+    pipe.rpush(K.buf(conversationId), messageText);
+    pipe.expire(K.buf(conversationId), TTL.buf);
+    pipe.set(K.stamp(conversationId), token, { ex: TTL.stamp });
+    await pipe.exec();
   } catch (err) {
     console.error('[buffer] bufferAndClaim error (non-fatal):', err);
   }
@@ -104,11 +109,12 @@ export async function acquireLock(conversationId: string, token: string): Promis
 export async function drainBuffer(conversationId: string): Promise<string[]> {
   if (!redisConfigured()) return [];
   try {
-    const messages = await redis.lrange<string>(K.buf(conversationId), 0, -1);
-    const texts = (messages ?? []) as string[];
-    if (texts.length > 0) {
-      await redis.del(K.buf(conversationId));
-    }
+    // Pipeline: lrange + del in 1 HTTP round-trip
+    const pipe = redis.pipeline();
+    pipe.lrange(K.buf(conversationId), 0, -1);
+    pipe.del(K.buf(conversationId));
+    const results = await pipe.exec();
+    const texts = ((results?.[0] ?? []) as string[]);
     console.info(`[buffer] drained ${texts.length} message(s) convId=${conversationId}`);
     return texts;
   } catch (err) {
@@ -121,10 +127,11 @@ export async function drainBuffer(conversationId: string): Promise<string[]> {
 export async function releaseLock(conversationId: string): Promise<void> {
   if (!redisConfigured()) return;
   try {
-    await Promise.all([
-      redis.del(K.lock(conversationId)),
-      redis.del(K.stamp(conversationId)),
-    ]);
+    // Pipeline: 2 DELs in 1 HTTP round-trip
+    const pipe = redis.pipeline();
+    pipe.del(K.lock(conversationId));
+    pipe.del(K.stamp(conversationId));
+    await pipe.exec();
     console.info(`[buffer] lock released convId=${conversationId}`);
   } catch (err) {
     console.error('[buffer] releaseLock error (non-fatal):', err);

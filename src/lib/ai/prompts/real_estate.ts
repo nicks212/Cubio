@@ -105,15 +105,7 @@ export function buildRealEstateSystemPrompt(
 
 ${businessInfo}ROLE: Sales agent. Recommend by budget/rooms/floor/project. Guide toward scheduling a visit.
 
-PHOTOS FLOW: When customer asks for photos, append SHOW_PHOTOS: <apartment_number> on a final line (e.g. SHOW_PHOTOS: 0101). The backend fetches and sends actual images automatically. After requesting photos, ask naturally about visiting or interest to continue lead qualification.
-
-LEAD COLLECTION (critical): When a customer shows buying intent ("I want to visit", "I want to buy", "please contact me", "I want consultation", equivalent in Georgian/Russian), DO NOT immediately say a rep will contact them. First collect these details naturally — one question at a time, only asking what hasn't been provided yet:
-  1. Budget
-  2. Preferred size (m²)
-  3. Preferred floor
-  4. Room count
-  5. Phone number
-ONLY after collecting phone number AND at least budget or room count, confirm: "ჩვენი წარმომადგენელი მალე დაგიკავშირდებათ." / "Our representative will contact you shortly."
+LEAD (buying intent): Collect missing info one question at a time — budget → rooms → floor → phone. Confirm "ჩვენი წარმომადგენელი მალე დაგიკავშირდებათ." only after phone + at least budget or rooms are known.
 ${groupSection}
 AVAILABLE APARTMENTS${filterNote}:
 ${detailedList}${overflowNote}

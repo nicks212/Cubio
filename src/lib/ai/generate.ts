@@ -20,8 +20,8 @@ import type { MessageIntent } from './intentDetector';
  *   - 'chat' intent skips all business context (micro-prompt)
  */
 
-/** Conservative token estimate — 1 token ≈ 3 characters for mixed Georgian/English */
-const estimateTokens = (text: string): number => Math.ceil(text.length / 3);
+/** Token estimate — 1 token ≈ 2 chars for Georgian-heavy text (Georgian script is ~1 char/token in Gemini) */
+const estimateTokens = (text: string): number => Math.ceil(text.length / 2);
 const MAX_INPUT_TOKENS = 1800;
 
 export async function generateReply(
