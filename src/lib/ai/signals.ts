@@ -20,9 +20,10 @@
 export const CHAT_ONLY_RE =
   /^[\s!.,?👍👋🙏💙❤️✅]*(?:hello|hi|hey|ok|okay|good|great|perfect|sure|yes|no|yep|nope|got\s*it|understood|thanks|thank\s*you|thx|ty|bye|goodbye|see\s*you|take\s*care|good\s*morning|good\s*afternoon|good\s*evening|good\s*night|გამარჯობა|მოგესალმებით|სალამი|ბოდიში|კარგი|მადლობა|გმადლობ|ნახვამდის|კი|არა|მიხვდი|მიხვდა|გასაგებია|გასაგები|ალბათ|ok!)[\s!.,?👍👋🙏💙❤️✅]*$/i;
 
-/** Message contains a photo/image request anywhere. */
+/** Message contains a photo/image request anywhere.
+ *  Covers Georgian script, romanized Georgian (latin chars), English, Russian. */
 export const PHOTO_RE =
-  /photo|picture|image|სურათ|ფოტო|show\s*me|send\s*(me\s*)?image|can\s*i\s*see|let\s*me\s*see|ნახე|ნახვა|ნახეთ/i;
+  /photo|picture|image|სურათ|ფოტო|show\s*me|send\s*(me\s*)?image|can\s*i\s*see|let\s*me\s*see|ნახე|ნახვა|ნახეთ|surat|manaxe|manax|chamiyar|vnaxo|vnax|фото|покажи/i;
 
 /** Apartment-unit specific photo request (not project/building). */
 export const APT_PHOTO_RE =

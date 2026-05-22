@@ -285,15 +285,16 @@ export async function processIncomingMessage(
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);
 
-  // Parse SHOW_PHOTOS: marker ONLY when customer explicitly asked for photos.
-  // If intent is 'search' or 'chat', AI may proactively emit SHOW_PHOTOS — we IGNORE it.
-  // This prevents unsolicited photo bursts during normal browsing/discovery turns.
-  //
-  // AI should always emit: SHOW_PHOTOS: <identifier>  (with colon + id)
-  // But defensively handle variants: no colon, no id, wrong case.
-  const showPhotosMatch = messageIntent === 'photos'
-    ? reply.match(/SHOW_PHOTOS[:\s]+([A-Za-z0-9_]+)/i)
-    : null;
+  // Parse SHOW_PHOTOS: identifier from AI reply.
+  // The prompt rules are strict — AI only emits SHOW_PHOTOS when customer explicitly asks.
+  // We always process a valid SHOW_PHOTOS: ID regardless of our own intent classification,
+  // because intent detection can miss romanized Georgian photo requests ("Suratebi" etc).
+  // Guard: only process if there is a valid identifier (prevents bare SHOW_PHOTOS with no id).
+  const showPhotosRaw = reply.match(/SHOW_PHOTOS[:\s]+([A-Za-z0-9_]+)/i);
+  if (showPhotosRaw && messageIntent !== 'photos') {
+    console.info(`${label} SHOW_PHOTOS detected with intent='${messageIntent}' — processing (intent may have been misclassified)`);
+  }
+  const showPhotosMatch = showPhotosRaw ?? null;
 
   // photoType: apartment | project | any — determined by what the customer actually said.
   const photoType = detectPhotoType(combinedMessage);
@@ -310,6 +311,15 @@ export async function processIncomingMessage(
   if (/SHOW_PHOTOS/i.test(cleanReply)) {
     console.error(`${label} SHOW_PHOTOS still present in cleanReply after strip — truncating reply`);
     cleanReply = cleanReply.replace(/SHOW_PHOTOS/gi, '').trim();
+  }
+
+  // Fallback: when AI's entire reply was just the SHOW_PHOTOS marker (AI wrote no text),
+  // provide a natural default sentence so the customer gets a text message with their photos.
+  if (cleanReply.length === 0 && imageUrlsToSend.length > 0) {
+    cleanReply = messageIntent === 'photos' || /ფოტო|სურათ|surat|manax/i.test(combinedMessage)
+      ? 'აი ბინის ფოტოები! 📸'
+      : 'Here are the photos! 📸';
+    console.info(`${label} Empty reply after SHOW_PHOTOS strip — using fallback text`);
   }
 
   // Safety net: strip any raw URLs that leaked into the reply body despite the prompt rules.

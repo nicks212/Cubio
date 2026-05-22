@@ -14,8 +14,7 @@ export function buildGlobalSystemPrompt(photosSent = false): string {
 SHOW_PHOTOS is FORBIDDEN unless the customer's exact words ask for photos/pictures/images RIGHT NOW.
   ✓ ALLOWED: "show me photos", "ფოტო", "სურათი", "send pictures", "let me see it", "ვნახო"
   ✗ FORBIDDEN: browsing, asking price, saying "interested", "tell me more", greetings, ANY other intent
-When photos ARE explicitly requested for a SPECIFIC apartment:
-  • Find that apartment's [id:XXXX] tag in the inventory.
+When photos ARE explicitly requested for a SPECIFIC apartment:  • Check conversation history first — if floor/rooms/price were already chosen, use that to pick the right apartment. Do NOT ask the customer to repeat what they already told you.  • Find that apartment's [id:XXXX] tag in the inventory.
   • Append exactly ONE final line (nothing after it): SHOW_PHOTOS: XXXX  (e.g. SHOW_PHOTOS: 0101)
   • NEVER say or show the id/number to the customer — it is an internal code only.
   • Write a natural sentence before it: "აი ბინის ფოტოები!" / "Here are the photos!"
