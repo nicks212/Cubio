@@ -285,15 +285,21 @@ export async function processIncomingMessage(
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);
 
-  // Parse SHOW_PHOTOS: marker — backend resolves real image URLs from loaded context.
-  // AI only emits a compact identifier (apartment number or product slug); never raw URLs.
-  // Backend then fetches and sends actual attachments, keeping Gemini prompts URL-free.
-  const showPhotosMatch = reply.match(/(?:^|\n)SHOW_PHOTOS:\s*(\S+)/m);
-  const photoType = detectPhotoType(combinedMessage); // apartment | project | any
+  // Parse SHOW_PHOTOS: marker ONLY when customer explicitly asked for photos.
+  // If intent is 'search' or 'chat', AI may proactively emit SHOW_PHOTOS — we IGNORE it.
+  // This prevents unsolicited photo bursts during normal browsing/discovery turns.
+  const showPhotosMatch = messageIntent === 'photos'
+    ? reply.match(/(?:^|\n)SHOW_PHOTOS:\s*(\S+)/m)
+    : null;
+
+  // photoType: apartment | project | any — determined by what the customer actually said.
+  const photoType = detectPhotoType(combinedMessage);
+
   const imageUrlsToSend: string[] = showPhotosMatch
-    ? resolvePhotoUrls(businessContext, showPhotosMatch[1].trim(), photoType)
+    ? resolvePhotoUrls(businessContext, showPhotosMatch[1].trim(), photoType, label)
     : [];
 
+  // Always strip SHOW_PHOTOS line from text regardless of whether we acted on it.
   let cleanReply = reply.replace(/(?:^|\n)SHOW_PHOTOS:\s*\S+/m, '').trim();
 
   // Safety net: strip any raw URLs that leaked into the reply body despite the prompt rules.
@@ -395,20 +401,32 @@ function resolvePhotoUrls(
   context: BusinessContext,
   identifier: string,
   photoType: PhotoType,
+  label = '',
 ): string[] {
   const aptCtx = context as ApartmentContext;
   const prodCtx = context as ProductContext;
 
   if (aptCtx.apartments?.length > 0) {
-    const apt = aptCtx.apartments.find(a => a.apartment_number === identifier);
+    // AI uses "project_<apt_number>" when the customer asked for project/building photos.
+    // Plain "<apt_number>" or "apt_<apt_number>" means apartment-unit photos.
+    const isProjectRequest = /^project_/i.test(identifier);
+    const resolvedPhotoType: PhotoType = isProjectRequest ? 'project' : photoType;
+    // Strip any prefix to get the bare apartment_number used in the DB.
+    const norm = identifier.replace(/^(?:project_|apt_?)/i, '');
+
+    const apt = aptCtx.apartments.find(a => a.apartment_number === norm)
+             ?? aptCtx.apartments.find(a => a.apartment_number === identifier);
     if (!apt) {
-      // Partial match fallback — AI sometimes adds "apt_" prefix
-      const stripped = identifier.replace(/^apt_?/i, '');
-      const fallback = aptCtx.apartments.find(a => a.apartment_number === stripped);
-      if (!fallback) return [];
-      return extractApartmentPhotos(fallback, photoType);
+      console.warn(`${label} SHOW_PHOTOS: identifier "${identifier}" (norm: "${norm}") not found in loaded context — sending nothing`);
+      return [];
     }
-    return extractApartmentPhotos(apt, photoType);
+    const photos = extractApartmentPhotos(apt, resolvedPhotoType);
+    if (photos.length === 0) {
+      console.warn(`${label} SHOW_PHOTOS: apt ${norm} found but has no ${resolvedPhotoType} images in DB`);
+    } else {
+      console.info(`${label} SHOW_PHOTOS: resolved ${photos.length} ${resolvedPhotoType} image(s) for apt ${norm}`);
+    }
+    return photos;
   }
 
   if (prodCtx.products?.length > 0) {
@@ -417,9 +435,14 @@ function resolvePhotoUrls(
     const prod = prodCtx.products.find(p =>
       slug(p.name) === id || p.name.toLowerCase() === id.replace(/_/g, ' ')
     );
-    if (!prod) return [];
+    if (!prod) {
+      console.warn(`${label} SHOW_PHOTOS: product "${identifier}" not found in loaded context — sending nothing`);
+      return [];
+    }
     const isImg = (u: string) => /\.(webp|jpg|jpeg|png)/i.test(u);
-    return prod.images?.filter(u => u.startsWith('http') && isImg(u)) ?? [];
+    const photos = prod.images?.filter(u => u.startsWith('http') && isImg(u)) ?? [];
+    console.info(`${label} SHOW_PHOTOS: resolved ${photos.length} image(s) for product ${prod.name}`);
+    return photos;
   }
 
   return [];

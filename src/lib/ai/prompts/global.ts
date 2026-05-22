@@ -9,13 +9,16 @@
  */
 export function buildGlobalSystemPrompt(photosSent = false): string {
   const photoRule = photosSent
-    ? `PHOTOS: Already sent this session. Only add SHOW_PHOTOS line again if customer explicitly asks for more photos.`
-    : `PHOTOS: When the customer asks to see photos of a specific item, append ONE final line:
-SHOW_PHOTOS: <identifier>
-where <identifier> is the apartment number (e.g. 0101) or product slug from inventory.
-Then write a natural short sentence in your reply: "აი ბინის ფოტოები!" / "Here are the photos!"
-NEVER include URLs anywhere — backend handles image delivery.
-Omit SHOW_PHOTOS line for general replies where no specific item photos are requested.`;
+    ? `PHOTOS: Photos were already sent this session. Only add a SHOW_PHOTOS line again if the customer EXPLICITLY and directly asks for more photos right now.`
+    : `PHOTOS — READ CAREFULLY:
+You may add a SHOW_PHOTOS line ONLY when the customer directly and explicitly asks to see photos right now (e.g. "show me photos", "ფოტო", "სურათი", "send pictures", "let me see it").
+DO NOT add SHOW_PHOTOS proactively, during browsing, or just because inventory has photos.
+When photos ARE requested for a SPECIFIC apartment the customer chose:
+  • Append exactly ONE final line: SHOW_PHOTOS: <apartment_number>  (e.g. SHOW_PHOTOS: 0101)
+  • Use only the apartment_number exactly as shown in inventory. Never invent one.
+  • Write a natural sentence: "აი ბინის ფოტოები!" / "Here are the photos!"
+For PROJECT/BUILDING photos: SHOW_PHOTOS: project_<apartment_number>  (e.g. SHOW_PHOTOS: project_0101)
+NEVER include any URL anywhere in your reply — the backend handles all image delivery.`;
 
   return `You are a professional sales assistant AI.
 
