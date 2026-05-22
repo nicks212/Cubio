@@ -279,10 +279,6 @@ export async function processIncomingMessage(
   ]);
 
   const messageIntent = regexIntent ?? (aiIntent as import('@/lib/ai/intentDetector').MessageIntent);
-  // For pure chat intent, replace context with empty stub (saves token budget)
-  const finalBusinessContext: BusinessContext = messageIntent === 'chat'
-    ? ({ apartments: [], products: [], businessDescription: null } as ApartmentContext)
-    : businessContext;
 
   const history: MessageHistoryEntry[] = ((historyRows ?? []) as MessageHistoryEntry[]).reverse();
 
@@ -301,12 +297,27 @@ export async function processIncomingMessage(
   const lastAiMsg = history.filter(m => m.role === 'ai').slice(-1)[0]?.content ?? '';
   const lastAiAskedWhichApt = /ფოტო|სურათ|photo|picture/i.test(lastAiMsg)
     && /რომელ|which|specify|მიმიტ|გთხოვ|floor|სართ|room|ოთახ|budget|ბიუჯ/i.test(lastAiMsg);
-  const effectiveIntent = (messageIntent !== 'photos' && lastAiAskedWhichApt)
-    ? 'photos' as const
-    : messageIntent;
+  let effectiveIntent: import('@/lib/ai/intentDetector').MessageIntent =
+    (messageIntent !== 'photos' && lastAiAskedWhichApt) ? 'photos' : messageIntent;
   if (effectiveIntent !== messageIntent) {
     console.info(`${label} Photo follow-up detected — upgrading intent '${messageIntent}' -> 'photos'`);
   }
+
+  // 7c. Post-photo intent override — CRITICAL:
+  //     NEVER use the 'chat' micro-prompt after photos have been shown.
+  //     Short reactions after photos ("Mindaa", "viqidi", "👍", "magaria") are buying signals —
+  //     not greetings. The 'chat' path has zero state/history context and returns a generic
+  //     greeting instead of continuing the lead collection flow (name → phone → confirm).
+  if (effectiveIntent === 'chat' && (lastShownApt || photosSent)) {
+    console.info(`${label} Post-photo response — overriding 'chat' to 'search' (full lead context needed)`);
+    effectiveIntent = 'search';
+  }
+
+  // For pure chat intent, replace context with empty stub (saves token budget).
+  // Must be computed AFTER all intent overrides above.
+  const finalBusinessContext: BusinessContext = effectiveIntent === 'chat'
+    ? ({ apartments: [], products: [], businessDescription: null } as ApartmentContext)
+    : businessContext;
 
   // 8. Generate AI reply — Layer 1 (global) + Layer 2 (business-type) combined
   const reply = await generateReply(
@@ -563,7 +574,7 @@ async function detectAndPersistLeadOrEscalation(
       if (latestLead && latestLead.status !== 'closed') {
         // Existing open/active lead — regenerate with latest info
         await supabase.from('leads').update({
-          name: senderName ?? undefined,
+          name: senderName ?? leadResult.name ?? undefined,
           provider_nickname: senderName ?? undefined,
           phone: leadResult.phone ?? undefined,
           email: leadResult.email ?? undefined,
@@ -578,7 +589,7 @@ async function detectAndPersistLeadOrEscalation(
         await supabase.from('leads').insert({
           company_id: companyId,
           conversation_id: conversationId,
-          name: senderName,
+          name: senderName ?? leadResult.name,
           provider_nickname: senderName,
           phone: leadResult.phone,
           email: leadResult.email,

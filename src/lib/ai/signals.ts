@@ -39,7 +39,7 @@ export const PROJ_PHOTO_RE =
 
 /** Explicit buying-intent phrases. Must match at least one to qualify. */
 export const BUYING_INTENT_RE =
-  /\b(?:want\s+to\s+(?:buy|visit|see|reserve|purchase)|i(?:'m|\s+am)\s+interested\s+in\s+(?:buy|purchas|reserv)|how\s+(?:can|do)\s+i\s+(?:buy|purchase|reserve|order)|please\s+contact|call\s+me|i\s+want\s+(?:this|consultation|a\s+consult)|can\s+(?:i|your|the)\s+(?:visit|see\s+it|operator|agent|rep))|(?:მინდა\s*(?:ვნახო|შევიძინო|ვიზიტი|შეძენ|დაჯავშნ|კონსულტ)|გთხოვ\s*(?:დამიკავშირდ|დარეკ|შეგ(?:ატყობინ|ახსენ))|კონსულტაცია\s*მინდა|ოპერატორ(?:ი|მა)\s*დამიკავშირდ|ვიყიდი|დაჯავშნ|ვიზიტ(?:ი|ზე)|შეძენ(?:ა|ას)|(?:შე)?ვნახ(?:ავ|ო)\s*(?:ბინ|ბუნ)|хочу\s*(?:купить|посмотреть|записаться|эту|этот)|позвоните\s*мне|как\s*(?:купить|приобрести|заказать)|хочу\s*консультацию)/i;
+  /\b(?:want\s+to\s+(?:buy|visit|see|reserve|purchase)|i(?:'m|\s+am)\s+interested\s+in\s+(?:buy|purchas|reserv)|how\s+(?:can|do)\s+i\s+(?:buy|purchase|reserve|order)|please\s+contact|call\s+me|i\s+want\s+(?:this|consultation|a\s+consult)|can\s+(?:i|your|the)\s+(?:visit|see\s+it|operator|agent|rep))|(?:მინდა(?:\s*(?:ვნახო|შევიძინო|ვიზიტი|შეძენ|დაჯავშნ|კონსულტ))?|გთხოვ\s*(?:დამიკავშირდ|დარეკ|შეგ(?:ატყობინ|ახსენ))|კონსულტაცია\s*მინდა|ოპერატორ(?:ი|მა)\s*დამიკავშირდ|ვიყიდი|დაჯავშნ|ვიზიტ(?:ი|ზე)|შეძენ(?:ა|ას)|(?:შე)?ვნახ(?:ავ|ო)\s*(?:ბინ|ბუნ)|хочу\s*(?:купить|посмотреть|записаться|эту|этот)|позвоните\s*мне|как\s*(?:купить|приобрести|заказать)|хочу\s*консультацию|\bminda(?:a)?\b|\bviqidi?\b)/i;
 
 /** Phone number — Georgian mobile, international, or bare 9–12 digit run. */
 export const PHONE_RE =

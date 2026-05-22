@@ -40,6 +40,7 @@ export interface LeadDetection {
   summary: string;
   meetingDate: string | null;
   meetingNotes: string | null;
+  name: string | null;
   phone: string | null;
   email: string | null;
 }

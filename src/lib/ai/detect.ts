@@ -2,7 +2,7 @@ import { model } from './model';
 import type { LeadDetection, EscalationDetection } from './types';
 
 const EMPTY_LEAD: LeadDetection = {
-  isLead: false, summary: '', meetingDate: null, meetingNotes: null, phone: null, email: null,
+  isLead: false, summary: '', meetingDate: null, meetingNotes: null, name: null, phone: null, email: null,
 };
 const EMPTY_ESCALATION: EscalationDetection = { isEscalation: false, summary: '' };
 
@@ -73,12 +73,15 @@ ${historyStr}
 TASK: Determine if this is a QUALIFIED LEAD. ALL THREE conditions must be true:
 
 1. BUYING INTENT — customer uses an explicit purchase/inquiry phrase (NOT just browsing, asking prices, or general curiosity):
-   English: "I want", "I'm interested in buying", "I would like to buy/visit/reserve", "Can I visit?", "Can I see it in real life?", "How can I buy?", "How do I reserve?", "I want this apartment/product", "Please contact me", "I want a consultation", "Can your operator/agent call me?"
-   Georgian: "მინდა" (want to buy/visit), "მინდა ვნახო" (want to see it), "მინდა შევიძინო" (want to purchase), "დაჯავშნა" (reservation), "ვიზიტი" (visit), "გთხოვ დამიკავშირდეს" (please contact me), "კონსულტაცია მინდა" (want consultation), "ოპერატორი დამიკავშირდეს" (operator contact me), "ვიყიდი" (I will buy), "შეძენა" (purchase)
-   Russian: "хочу купить" (want to buy), "хочу посмотреть" (want to see), "как купить?" (how to buy?), "хочу записаться" (want to schedule), "позвоните мне" (call me), "хочу эту квартиру/товар" (want this)
-   NOT qualifying: asking prices, asking what's available, general curiosity, exploratory questions
+   English: "I want", "I'm interested in buying", "I would like to buy/visit/reserve", "Can I visit?", "How can I buy?", "I want this apartment", "Please contact me", "I want a consultation"
+   Georgian: "მინდა" (I want), "ვიყიდი" (I will buy), "შეძენა" (purchase), "დაჯავშნა" (reservation), "ვიზიტი" (visit), "გთხოვ დამიკავშირდეს" (please contact me)
+   Romanized Georgian: "minda", "mindaa", "viqidi" — these mean "I want" / "I will buy"
+   Russian: "хочу купить", "хочу посмотреть", "позвоните мне"
+   NOT qualifying: asking prices, general curiosity, exploratory questions
 
-2. QUALIFICATION DETAILS — customer has provided: ${qualificationFields}
+2. QUALIFICATION — EITHER of these satisfies condition 2:
+   (a) Customer stated at least one preference: ${qualificationFields}
+   (b) OR a specific apartment was shown to the customer — look for a line like "SHOW_PHOTOS: <id>" in the AI messages, AND the customer reacted positively to it (any of: minda, mindaa, magaria, I want, I like, 👍, ✅, that one, perfect, etc.)
 
 3. PHONE NUMBER — customer explicitly shared their phone number somewhere in the conversation
 
@@ -90,6 +93,7 @@ Return exactly:
   "summary": "2-3 sentence Georgian (ქართული) summary of customer needs + contact info. Empty string if not a lead.",
   "meetingDate": null or "date/time mentioned by customer",
   "meetingNotes": null or "specific requests about meeting/visit",
+  "name": null or "customer's full name if they explicitly shared it in conversation",
   "phone": null or "phone number if explicitly mentioned anywhere",
   "email": null or "email if explicitly mentioned",
   "isEscalation": true ONLY if customer is clearly angry, uses offensive/abusive language, or explicitly demands a human agent. Repeated questions, mild impatience, or asking multiple times do NOT count,
@@ -101,7 +105,7 @@ Return exactly:
     const raw = result.response.text().trim().replace(/```json\n?|\n?```/g, '');
     const p = JSON.parse(raw) as {
       isLead: boolean; summary: string; meetingDate: string | null;
-      meetingNotes: string | null; phone: string | null; email: string | null;
+      meetingNotes: string | null; name: string | null; phone: string | null; email: string | null;
       isEscalation: boolean; escalationSummary: string;
     };
     return {
@@ -110,6 +114,7 @@ Return exactly:
         summary: p.summary ?? '',
         meetingDate: p.meetingDate ?? null,
         meetingNotes: p.meetingNotes ?? null,
+        name: p.name ?? null,
         phone: p.phone ?? null,
         email: p.email ?? null,
       },
