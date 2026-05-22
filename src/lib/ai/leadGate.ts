@@ -53,9 +53,13 @@ export function shouldRunLeadAnalysis(
   }
 
   // ── Minimum conversation depth ─────────────────────────────────────────
-  // Need at least 3 user messages before a lead can realistically be qualified.
+  // Need at least 2 user messages unless a phone number is already present
+  // (fast flows: photos → confirm → name → phone can qualify in fewer turns).
   const userMessages = history.filter(m => m.role === 'user');
-  if (userMessages.length < 3) {
+  const userText2 = userMessages.map(m => m.content).join('\n');
+  const hasPhoneEarly = PHONE_RE.test(userText2);
+  const minDepth = hasPhoneEarly ? 2 : 3;
+  if (userMessages.length < minDepth) {
     return hasAnger
       ? { lead: false, escalation: true }
       : { lead: false, escalation: false };

@@ -304,12 +304,15 @@ export async function processIncomingMessage(
   }
 
   // 7c. Post-photo intent override — CRITICAL:
-  //     NEVER use the 'chat' micro-prompt after photos have been shown.
-  //     Short reactions after photos ("Mindaa", "viqidi", "👍", "magaria") are buying signals —
-  //     not greetings. The 'chat' path has zero state/history context and returns a generic
-  //     greeting instead of continuing the lead collection flow (name → phone → confirm).
-  if (effectiveIntent === 'chat' && (lastShownApt || photosSent)) {
-    console.info(`${label} Post-photo response — overriding 'chat' to 'search' (full lead context needed)`);
+  //     NEVER use the 'chat' micro-prompt after photos have been shown for buying-signal
+  //     reactions like "Mindaa", "viqidi", "👍", "magaria" — these need full state context.
+  //     BUT: genuine social closings ("madloba", "goodbye", "ok") should stay as 'chat'
+  //     so the AI responds naturally instead of robotically firing the rep-contact line.
+  //     Rule: only override 'chat'→'search' when the regex classifier returned null
+  //     (ambiguous short message sent to AI classifier) AND photos are active.
+  //     When the regex itself returned 'chat', it matched CHAT_ONLY_RE — definitely social.
+  if (effectiveIntent === 'chat' && regexIntent === null && (lastShownApt || photosSent)) {
+    console.info(`${label} Post-photo ambiguous short message — overriding 'chat' to 'search' (full lead context needed)`);
     effectiveIntent = 'search';
   }
 
@@ -355,6 +358,10 @@ export async function processIncomingMessage(
   // Always strip ALL SHOW_PHOTOS occurrences from text regardless of whether we acted on it.
   // Regex is intentionally broad: catches SHOW_PHOTOS with/without colon, with/without identifier.
   let cleanReply = reply.replace(/\n?SHOW_PHOTOS[^\n]*/gi, '').trim();
+
+  // Strip any role-label prefixes the AI may have mirrored from the history format.
+  cleanReply = cleanReply.replace(/^\s*\[(AI|USER|ASSISTANT|CUSTOMER)\]\s*/i, '').trim();
+  cleanReply = cleanReply.replace(/^\s*(?:Assistant|AI)\s*:\s*/i, '').trim();
 
   // Safety check: if SHOW_PHOTOS still present after strip, something is very wrong — log and abort.
   if (/SHOW_PHOTOS/i.test(cleanReply)) {

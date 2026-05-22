@@ -37,7 +37,7 @@ export async function generateReply(
 ): Promise<string> {
   // ── Chat intent: micro-prompt, skip all business context ─────────────────────
   if (intent === 'chat') {
-    const microPrompt = `You are a warm sales assistant AI. Reply in Georgian if the customer writes Georgian, English otherwise. Keep your reply to 1–2 sentences max.\n\nCustomer: ${message}\n\nAssistant:`;
+    const microPrompt = `You are a warm, natural sales assistant. Reply in Georgian if the customer writes Georgian, English otherwise. 1–2 sentences max. Be conversational — if they say thanks, say you're welcome. If they say goodbye, wish them well.\n\nMessage: ${message}\n\nReply:`;
     const isGeo = /[\u10D0-\u10FF]/.test(message);
     for (let attempt = 0; attempt <= 1; attempt++) {
       try {
@@ -92,22 +92,25 @@ export async function generateReply(
 
   const historyStr = conversationHistory
     .slice(-historyTurns)
-    .map(m => `${m.role === 'ai' ? 'Assistant' : 'Customer'}: ${m.content}`)
+    .map(m => `[${m.role === 'ai' ? 'AI' : 'USER'}] ${m.content}`)
     .join('\n');
 
   // ── Assemble prompt parts ──────────────────────────────────────────────────
   const userTurnParts: string[] = [];
-  if (isFirstMessage) {
-    userTurnParts.push('[SYSTEM NOTE: FIRST message. Begin reply with a natural greeting.]');
-  }
   if (historyStr) {
     userTurnParts.push(`${stateLine}\n\nRECENT TURNS:\n${historyStr}`);
   } else {
     userTurnParts.push(stateLine);
   }
-  userTurnParts.push(`Customer: ${message}`);
+  // isFirstMessage tells the AI this is the opening message so it greets.
+  // GLOBAL rule says "FIRST TURN: Greet briefly" — this note reinforces it without
+  // adding a label prefix that the model might mirror in its reply.
+  const customerLine = isFirstMessage
+    ? `[First message] ${message}`
+    : message;
+  userTurnParts.push(`CUSTOMER MESSAGE: ${customerLine}`);
 
-  const textPrompt = `${systemPrompt}\n\n${userTurnParts.join('\n')}\n\nAssistant:`;
+  const textPrompt = `${systemPrompt}\n\n${userTurnParts.join('\n')}\n\nREPLY:`;
 
   // ── Build Gemini content parts (multimodal when image supplied) ────────────
   type ContentPart = { text: string } | { inlineData: { data: string; mimeType: string } };
