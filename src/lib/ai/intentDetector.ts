@@ -20,13 +20,10 @@ import { model } from './model';
 export type MessageIntent = 'chat' | 'photos' | 'search';
 export type PhotoType = 'apartment' | 'project' | 'any';
 
-/** Purely Georgian script characters */
-const GEORGIAN_SCRIPT_RE = /[\u10D0-\u10FF]/;
-
 /**
  * Fast synchronous intent detection via regex.
- * Returns null when the message is ambiguous (short, no Georgian script, no clear English keywords).
- * In that case callers should follow up with classifyIntentAI().
+ * Returns null when the message is short and not a confident regex match,
+ * signalling callers to run classifyIntentAI() in parallel with DB queries.
  */
 export function detectIntent(message: string): MessageIntent | null {
   const text = message.trim();
@@ -34,13 +31,13 @@ export function detectIntent(message: string): MessageIntent | null {
   if (CHAT_ONLY_RE.test(text)) return 'chat';
   if (PHOTO_RE.test(text)) return 'photos';
 
-  // If message is short AND contains no Georgian script AND no obvious English content,
-  // it may be romanized Georgian — return null to signal AI classification is needed.
-  const isShort = text.length < 120;
-  const hasGeorgianScript = GEORGIAN_SCRIPT_RE.test(text);
-  const hasEnglish = /\b(?:apartment|price|floor|room|bed|buy|cost|available|location|size|area|budget|visit|schedule|book|reserve|info|detail|tell\s+me|how\s+much|what\s+is)\b/i.test(text);
-  if (isShort && !hasGeorgianScript && !hasEnglish) {
-    return null; // ambiguous — let caller run AI classification
+  // Any short message that didn't confidently match chat or photo is ambiguous —
+  // could be a photo request in Georgian script ("ვნახოთ ბინა"), romanized Georgian
+  // ("fotoebs chamiyaret"), or English ("let me see that one"), etc.
+  // Return null so the caller runs classifyIntentAI() in parallel with DB queries.
+  // Long messages (detailed search queries) are confident enough to skip AI classify.
+  if (text.length < 150) {
+    return null;
   }
 
   return 'search';
