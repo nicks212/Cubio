@@ -54,9 +54,15 @@ export function buildRealEstateSystemPrompt(
       }).join('\n')
     : '(No apartments currently available)';
 
-  // Overflow summary — save tokens vs listing individually
-  const overflowNote = rest.length > 0
-    ? `\n+${rest.length} more available — ask for details or share preferences (rooms/budget) to narrow down.`
+  // Remaining apartments — compact but COMPLETE so AI can answer floor/rooms/price questions.
+  // CRITICAL: AI must know about ALL available apartments, not just top 3.
+  // Each line: fl.X, Nrm, $price — ProjectName [id:XXXX]
+  const compactRest = rest.length > 0
+    ? `\nALSO AVAILABLE (compact — full detail on request):\n` + rest.map(a => {
+        const proj = a.project as { name?: string } | null;
+        const sym = a.currency === 'GEL' ? '₾' : '$';
+        return `  fl.${a.floor}, ${a.rooms_quantity}rm, ${sym}${a.total_price.toLocaleString()}${proj?.name ? ` — ${proj.name}` : ''} [id:${a.apartment_number}]`;
+      }).join('\n')
     : '';
 
   const businessInfo = context.businessDescription
@@ -67,48 +73,16 @@ export function buildRealEstateSystemPrompt(
     ? ' (sorted by your preferences)'
     : ' (tell me your preferences — rooms, budget, floor — for better matches)';
 
-  // Backend grouping: detect sets of highly-similar apartments to save AI tokens + avoid verbose lists
-  type GroupKey = string;
-  const groups = new Map<GroupKey, ApartmentRow[]>();
-  for (const a of sorted) {
-    const proj = a.project as { name?: string } | null;
-    const priceBucket = Math.round(a.total_price / 10000); // group within $10k buckets
-    const key: GroupKey = `${a.rooms_quantity}r|${priceBucket}|${proj?.name ?? ''}`;
-    const arr = groups.get(key) ?? [];
-    arr.push(a);
-    groups.set(key, arr);
-  }
-  // Build a compact group-summary line for groups with 3+ similar units
-  const groupSummaries: string[] = [];
-  for (const [, members] of groups) {
-    if (members.length >= 3) {
-      const first = members[0];
-      const proj = first.project as { name?: string; location?: string | null } | null;
-      const sym = first.currency === 'GEL' ? '₾' : '$';
-      const minPrice = Math.min(...members.map(a => a.total_price));
-      const maxPrice = Math.max(...members.map(a => a.total_price));
-      const priceStr = minPrice === maxPrice
-        ? `${sym}${minPrice.toLocaleString()}`
-        : `${sym}${minPrice.toLocaleString()}–${sym}${maxPrice.toLocaleString()}`;
-      groupSummaries.push(
-        `GROUP: ${members.length}× ${first.rooms_quantity}-room${proj?.name ? ` (${proj.name})` : ''}${proj?.location ? ` @${proj.location}` : ''} — ${priceStr} [ids:${members.map(a => a.apartment_number).join(',')}]`
-      );
-    }
-  }
-
-  const groupSection = groupSummaries.length > 0
-    ? `\nSIMILAR GROUPS (summarize these; do NOT list each unit individually):\n${groupSummaries.join('\n')}\n`
-    : '';
-
   return `REAL ESTATE SALES ASSISTANT
 
 ${businessInfo}ROLE: Sales agent. Recommend by budget/rooms/floor/project. Guide toward scheduling a visit.
 NEVER mention internal codes like [id:...] or [ids:...] to customers — they are machine tags only.
 
 LEAD (buying intent): Collect missing info one question at a time — budget → rooms → floor → phone. Confirm "ჩვენი წარმომადგენელი მალე დაგიკავშირდებათ." only after phone + at least budget or rooms are known.
-${groupSection}
-AVAILABLE APARTMENTS${filterNote}:
-${detailedList}${overflowNote}
 
+AVAILABLE APARTMENTS${filterNote}:
+${detailedList}${compactRest}
+
+IMPORTANT: The lists above contain ALL available apartments. Never say there are no options on a specific floor or rooms count without checking every line above.
 Only reference apartments listed here. For unlisted info, say you will check and follow up.`.trim();
 }
