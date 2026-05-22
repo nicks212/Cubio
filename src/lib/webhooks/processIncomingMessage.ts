@@ -418,7 +418,8 @@ function resolvePhotoUrls(
       slug(p.name) === id || p.name.toLowerCase() === id.replace(/_/g, ' ')
     );
     if (!prod) return [];
-    return prod.images?.filter(u => u.startsWith('http')) ?? [];
+    const isImg = (u: string) => /\.(webp|jpg|jpeg|png)/i.test(u);
+    return prod.images?.filter(u => u.startsWith('http') && isImg(u)) ?? [];
   }
 
   return [];
@@ -429,12 +430,18 @@ function extractApartmentPhotos(
   photoType: PhotoType,
 ): string[] {
   const proj = apt.project as { images?: string[] } | null;
-  const aptImgs  = apt.images?.filter(u => u.startsWith('http')) ?? [];
-  const projImgs = proj?.images?.filter(u => u.startsWith('http')) ?? [];
+  // Only pass URLs that are real image files — prevents GIFs or other non-image
+  // content from leaking through even if accidentally stored in the DB.
+  const isImg = (u: string) => /\.(webp|jpg|jpeg|png)/i.test(u);
+  const aptImgs  = apt.images?.filter(u => u.startsWith('http') && isImg(u)) ?? [];
+  const projImgs = proj?.images?.filter(u => u.startsWith('http') && isImg(u)) ?? [];
 
   if (photoType === 'apartment') return aptImgs;
   if (photoType === 'project')   return projImgs;
-  return [...new Set([...aptImgs, ...projImgs])];  // 'any' = both, deduped
+  // 'any' (user said "show me photos" without specifying type):
+  // Prefer apartment-unit photos since AI is pointing at a specific apartment.
+  // Only fall back to project/building photos if this unit has none.
+  return aptImgs.length > 0 ? aptImgs : projImgs;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

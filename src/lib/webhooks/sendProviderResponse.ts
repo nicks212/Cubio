@@ -172,7 +172,13 @@ export async function sendImageUrls(
   accessToken: string,
   providerAccountId?: string,
 ): Promise<void> {
-  for (const url of urls) {
+  // Final safety net: only send verified image formats.
+  // All DB-stored images are .webp — reject anything else (gifs, unknown URLs, etc.)
+  const safeUrls = urls.filter(u => /\.(webp|jpg|jpeg|png)/i.test(u));
+  if (safeUrls.length !== urls.length) {
+    console.warn(`[sendImageUrls] Blocked ${urls.length - safeUrls.length} non-image URL(s) from being sent`);
+  }
+  for (const url of safeUrls) {
     try {
       switch (provider) {
         case 'facebook':
