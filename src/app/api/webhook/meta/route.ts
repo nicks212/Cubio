@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { adaptMetaPayload, verifyMetaWebhook, type MetaWebhookPayload } from '@/lib/webhooks/providerAdapters/metaAdapter';
 import { processIncomingMessage } from '@/lib/webhooks/processIncomingMessage';
 import { verifyMetaSignature } from '@/lib/webhooks/security';
@@ -53,10 +53,10 @@ export async function POST(request: NextRequest) {
   const messages = adaptMetaPayload(body);
   console.info(`[webhook/meta] Received ${messages.length} message(s) from ${body.object}`);
 
-  // Process concurrently — each message is independent
-  await Promise.allSettled(messages.map(msg => processIncomingMessage(msg)));
+  // Respond 200 immediately — Meta requires it within 20s.
+  // Processing (which includes the debounce sleep) runs AFTER the response is sent.
+  after(() => Promise.allSettled(messages.map(msg => processIncomingMessage(msg))));
 
-  // Meta requires a 200 OK response within 20s
   return NextResponse.json({ status: 'ok' });
 }
 

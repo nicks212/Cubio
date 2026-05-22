@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { adaptWhatsAppPayload, verifyWhatsAppWebhook, type WhatsAppWebhookPayload } from '@/lib/webhooks/providerAdapters/whatsappAdapter';
 import { processIncomingMessage } from '@/lib/webhooks/processIncomingMessage';
 import { verifyMetaSignature } from '@/lib/webhooks/security';
@@ -65,7 +65,9 @@ export async function POST(request: NextRequest) {
   const messages = adaptWhatsAppPayload(body);
   console.info(`[webhook/whatsapp] Received ${messages.length} message(s)`);
 
-  await Promise.allSettled(messages.map(msg => processIncomingMessage(msg)));
+  // Respond 200 immediately — WhatsApp requires a response within 5s.
+  // Processing (which includes the debounce sleep) runs AFTER the response is sent.
+  after(() => Promise.allSettled(messages.map(msg => processIncomingMessage(msg))));
 
   return NextResponse.json({ status: 'ok' });
 }

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { adaptTelegramPayload, type TelegramWebhookPayload } from '@/lib/webhooks/providerAdapters/telegramAdapter';
 import { processIncomingMessage } from '@/lib/webhooks/processIncomingMessage';
 
@@ -36,7 +36,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'ok' });
   }
 
-  await processIncomingMessage(msg);
+  // Respond 200 immediately — Telegram requires ack within 5s.
+  after(() => processIncomingMessage(msg));
 
   return NextResponse.json({ status: 'ok' });
 }

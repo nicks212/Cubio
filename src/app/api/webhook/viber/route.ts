@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { adaptViberPayload, verifyViberSignature, type ViberWebhookPayload } from '@/lib/webhooks/providerAdapters/viberAdapter';
 import { processIncomingMessage } from '@/lib/webhooks/processIncomingMessage';
 import { createAdminClient } from '@/lib/supabase/server';
@@ -61,7 +61,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'ok' });
   }
 
-  await processIncomingMessage(msg);
+  // Respond 200 immediately — Viber expects quick ack.
+  after(() => processIncomingMessage(msg));
 
   return NextResponse.json({ status: 'ok' });
 }
