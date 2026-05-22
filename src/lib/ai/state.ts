@@ -38,6 +38,10 @@ export interface ConversationState {
 const APT_CONFIRMED_RE =
   /magari|minda|m[ai]nd[ao]|v[i]?q[i]?d[i]?|viq[i]?d|შემიწვილ|მინდა|ჩემ[ი]შვილ|ვიყიდ|ვიყიდი|ვიყ[დ]|აიღო|საჩქა|i want|i like|i'?ll take|that one|this one|let'?s proceed|how (do|can) (i|we) (buy|purchase)|rogor shevizen|rogor\s*v?iy?id|რო[გ] ვიყ|რო[გ] შევ[ი]ძ|გაკეთი|გაკეთება|cool|perfect|great|exactly|yes please|i'?m interested|dainteresebul|daintereseb/i;
 
+/** Customer changed mind after confirming — wants to see a different apartment. Resets aptConfirmed. */
+const BROWSE_AGAIN_RE =
+  /სხვა\s*ბინ|კიდ(?:ე|ევ)?\s*(?:ბინ|სურათ|ნახ)|show\s*(?:me\s*)?another|another\s*(?:apartment|option|one)|different\s*(?:apartment|floor|room|option)|other\s*(?:apartment|option|one)|more\s*(?:apartment|option)|meore|sxva\s*(?:bina|variant|sartu)|სხვა\s*(?:ვარი|სართ|ოთახ|პრო)|სხვ(?:ა|ებ).*(?:ბინ|სართ|ოთახ|ვარ)|can\s*i\s*see\s*(?:another|more|other)|მაჩვენ(?:ე|ეთ)\s*სხვ|ვნახ(?:ო|ავ)\s*სხვ/i;
+
 /**
  * Extracts structured state from full conversation history.
  * Scans USER messages for preferences, AI messages for last shown apartment.
@@ -62,14 +66,27 @@ export function extractConversationState(
     }
   }
 
-  // Check if customer expressed positive intent AFTER photos were shown
+  // Check if customer expressed positive intent AFTER photos were shown.
+  // Reset if customer later asked to browse a different apartment.
   let aptConfirmed = false;
   if (lastShownAptId) {
     let seenPhotoMsg = false;
-    for (const msg of history) {
+    let confirmedAtIndex = -1;
+    for (let i = 0; i < history.length; i++) {
+      const msg = history[i];
       if (msg.role === 'ai' && /SHOW_PHOTOS/i.test(msg.content)) seenPhotoMsg = true;
       if (seenPhotoMsg && msg.role === 'user' && APT_CONFIRMED_RE.test(msg.content)) {
         aptConfirmed = true;
+        confirmedAtIndex = i;
+      }
+    }
+    // Reset if the customer later asked to see a different apartment
+    if (aptConfirmed && confirmedAtIndex >= 0) {
+      for (let i = confirmedAtIndex + 1; i < history.length; i++) {
+        if (history[i].role === 'user' && BROWSE_AGAIN_RE.test(history[i].content)) {
+          aptConfirmed = false;
+          break;
+        }
       }
     }
   }

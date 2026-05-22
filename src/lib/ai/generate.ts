@@ -70,7 +70,11 @@ export async function generateReply(
   const stateLine = formatStateForPrompt(state);
 
   // ── First-message detection ────────────────────────────────────────────────
-  const isFirstMessage = conversationHistory.filter(m => m.role === 'user').length === 0;
+  // photosSent=true means we're definitely not on the first turn.
+  // Also guards against history that only contains the synthetic SHOW_PHOTOS AI
+  // entry (no real user messages) being mistaken for a fresh conversation,
+  // which would inject a mid-conversation greeting.
+  const isFirstMessage = !photosSent && conversationHistory.filter(m => m.role === 'user').length === 0;
 
   // ── Token-guarded history slice ────────────────────────────────────────────
   // Start with last 4 turns. If estimated tokens exceed budget, cut to 2 turns.
