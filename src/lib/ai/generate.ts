@@ -7,22 +7,27 @@ import type { BusinessContext, ApartmentContext, ProductContext } from './types'
 import type { MessageIntent } from './intentDetector';
 
 /**
- * Generates an AI reply by composing two prompt layers:
+ * Generates an AI reply using Gemini's native multi-turn chat API.
  *
- *   Layer 1 — Global rules (language, tone, accuracy, escalation)
- *   Layer 2 — Business-type rules (recommendations, lead flow, data context)
- *
- * Optimizations vs previous version:
- *   - No image URLs anywhere in prompts (SHOW_PHOTOS identifier only)
- *   - Structured state injection replaces verbose raw history
- *   - Token guard: auto-compresses context when estimate exceeds MAX_INPUT_TOKENS
- *   - True multimodal: customer images passed inline to Gemini Flash vision
- *   - 'chat' intent skips all business context (micro-prompt)
+ * Key changes vs. the previous text-blob approach:
+ *   - History is passed as structured Content[] turns, NOT concatenated into a text blob.
+ *     This prevents the model treating "[AI] ... [USER] ..." as a template to reproduce,
+ *     which was the root cause of cascading/snowballing replies.
+ *   - Current user message is ALWAYS the final turn — never present in history.
+ *   - System instruction carries: global rules + business rules + conversation state.
+ *   - isFirstMessage flag controls whether the model greets (backend-driven, not prompt-driven).
+ *   - 'chat' intent skips business context and uses a lean micro-prompt.
  */
 
-/** Token estimate — 1 token ≈ 2 chars for Georgian-heavy text (Georgian script is ~1 char/token in Gemini) */
+/** Token estimate — 1 token ≈ 2 chars for Georgian-heavy text */
 const estimateTokens = (text: string): number => Math.ceil(text.length / 2);
-const MAX_INPUT_TOKENS = 1800;
+const MAX_INPUT_TOKENS = 2000;
+
+// Local types for Gemini multi-turn API (compatible with SDK Content/Part types)
+type GeminiPart =
+  | { text: string }
+  | { inlineData: { data: string; mimeType: string } };
+type GeminiContent = { role: 'user' | 'model'; parts: GeminiPart[] };
 
 export async function generateReply(
   message: string,
@@ -34,8 +39,12 @@ export async function generateReply(
   intent: MessageIntent = 'search',
   imageBase64?: string | null,
   imageMimeType?: string | null,
+  /** True only on the very first message of a fresh conversation. */
+  isFirstMessage = false,
+  /** Last apartment shown via SHOW_PHOTOS — seeded from DB when not in history slice. */
+  lastShownAptId: string | null = null,
 ): Promise<string> {
-  // ── Chat intent: micro-prompt, skip all business context ─────────────────────
+  // ── Chat intent: lean micro-prompt, no business context ───────────────────
   if (intent === 'chat') {
     const microPrompt = `You are a warm, natural sales assistant. Reply in Georgian if the customer writes Georgian, English otherwise. 1–2 sentences max. Be conversational — if they say thanks, say you're welcome. If they say goodbye, wish them well.\n\nMessage: ${message}\n\nReply:`;
     const isGeo = /[\u10D0-\u10FF]/.test(message);
@@ -55,7 +64,6 @@ export async function generateReply(
   }
 
   // ── Layer 1: Global rules ──────────────────────────────────────────────────
-  // Photos: always allow SHOW_PHOTOS on photo intents regardless of photosSent flag.
   const globalPrompt = buildGlobalSystemPrompt(intent === 'photos' ? false : photosSent);
 
   // ── Layer 2: Business-type rules + compact inventory ──────────────────────
@@ -63,81 +71,92 @@ export async function generateReply(
     ? buildRealEstateSystemPrompt(context as ApartmentContext, message)
     : buildCraftShopSystemPrompt(context as ProductContext, message);
 
-  // ── Structured state injection ─────────────────────────────────────────────
-  // Replaces verbose history for the "what do we know" question.
-  // State is extracted deterministically — zero Gemini calls.
+  // ── Conversation state (deterministic, zero AI calls) ─────────────────────
   const state = extractConversationState(conversationHistory);
+  // Seed lastShownAptId from DB if not present in the history slice
+  if (!state.lastShownAptId && lastShownAptId) state.lastShownAptId = lastShownAptId;
   const stateLine = formatStateForPrompt(state);
 
-  // ── First-message detection ────────────────────────────────────────────────
-  // photosSent=true means we're definitely not on the first turn.
-  // Also guards against history that only contains the synthetic SHOW_PHOTOS AI
-  // entry (no real user messages) being mistaken for a fresh conversation,
-  // which would inject a mid-conversation greeting.
-  const isFirstMessage = !photosSent && conversationHistory.filter(m => m.role === 'user').length === 0;
+  // ── System instruction ─────────────────────────────────────────────────────
+  const systemParts: string[] = [`${globalPrompt}\n\n${businessPrompt}`, stateLine];
+  if (isFirstMessage) {
+    systemParts.push(
+      "This is the customer's very first message. Begin with a brief natural greeting (one sentence max), then answer their question in the same message.",
+    );
+  }
+  const systemInstructionText = systemParts.filter(Boolean).join('\n\n');
 
   // ── Token-guarded history slice ────────────────────────────────────────────
-  // Start with last 4 turns. If estimated tokens exceed budget, cut to 2 turns.
-  // History is the main variable cost driver — everything else is roughly fixed.
-  const systemPrompt = `${globalPrompt}\n\n${businessPrompt}`;
-  const baseTokens = estimateTokens(systemPrompt) + estimateTokens(stateLine) + estimateTokens(message) + 80;
-
-  let historyTurns = 4;
-  if (baseTokens + estimateTokens(
-    conversationHistory.slice(-4).map(m => m.content).join('')
-  ) > MAX_INPUT_TOKENS) {
-    historyTurns = 2;
+  const baseTokens = estimateTokens(systemInstructionText) + estimateTokens(message) + 80;
+  let historyTurns = 6;
+  if (
+    baseTokens +
+    estimateTokens(conversationHistory.slice(-6).map(m => m.content).join('')) >
+    MAX_INPUT_TOKENS
+  ) {
+    historyTurns = 4;
     console.info(`[ai/generate] Token guard: reducing history to ${historyTurns} turns`);
   }
 
-  const historyStr = conversationHistory
+  // ── Build Gemini multi-turn history ───────────────────────────────────────
+  // Rules:
+  //   1. Filter out synthetic SHOW_PHOTOS-only AI entries (internal markers, not real dialogue)
+  //   2. Merge consecutive same-role turns (Gemini requires strict user/model alternation)
+  //   3. Drop any leading model turns (Gemini history MUST start with user)
+  const historySlice = conversationHistory
     .slice(-historyTurns)
-    .map(m => `[${m.role === 'ai' ? 'AI' : 'USER'}] ${m.content}`)
-    .join('\n');
+    .filter(m => !(m.role === 'ai' && /^SHOW_PHOTOS:/i.test(m.content.trim())));
 
-  // ── Assemble prompt parts ──────────────────────────────────────────────────
-  const userTurnParts: string[] = [];
-  if (historyStr) {
-    userTurnParts.push(`${stateLine}\n\nRECENT TURNS:\n${historyStr}`);
-  } else {
-    userTurnParts.push(stateLine);
+  const geminiHistory: GeminiContent[] = [];
+  for (const turn of historySlice) {
+    const role: 'user' | 'model' = turn.role === 'ai' ? 'model' : 'user';
+    if (geminiHistory.length > 0 && geminiHistory[geminiHistory.length - 1].role === role) {
+      // Merge consecutive same-role turns (e.g. multi-message debounce bursts)
+      (geminiHistory[geminiHistory.length - 1].parts as { text: string }[]).push({
+        text: '\n' + turn.content,
+      });
+    } else {
+      geminiHistory.push({ role, parts: [{ text: turn.content }] });
+    }
   }
-  // isFirstMessage tells the AI this is the opening message so it greets.
-  // GLOBAL rule says "FIRST TURN: Greet briefly" — this note reinforces it without
-  // adding a label prefix that the model might mirror in its reply.
-  const customerLine = isFirstMessage
-    ? `[First message] ${message}`
-    : message;
-  userTurnParts.push(`CUSTOMER MESSAGE: ${customerLine}`);
+  // Ensure history starts with a user turn
+  while (geminiHistory.length > 0 && geminiHistory[0].role === 'model') geminiHistory.shift();
 
-  const textPrompt = `${systemPrompt}\n\n${userTurnParts.join('\n')}\n\nREPLY:`;
+  console.info(
+    `[ai/generate] history turns:${geminiHistory.length} isFirst:${isFirstMessage} intent:${intent}`,
+  );
 
-  // ── Build Gemini content parts (multimodal when image supplied) ────────────
-  type ContentPart = { text: string } | { inlineData: { data: string; mimeType: string } };
-  let contentParts: ContentPart[];
+  // ── Current message parts (multimodal when image supplied) ────────────────
+  const currentParts: GeminiPart[] =
+    imageBase64 && imageMimeType
+      ? [
+          { text: message },
+          { inlineData: { data: imageBase64, mimeType: imageMimeType } },
+          { text: 'Analyze the image above in context of the conversation.' },
+        ]
+      : [{ text: message }];
 
-  if (imageBase64 && imageMimeType) {
-    // True multimodal: customer image passed inline for Gemini vision analysis.
-    // Used for visual similarity + style matching recommendations.
-    contentParts = [
-      { text: textPrompt },
-      { inlineData: { data: imageBase64, mimeType: imageMimeType } },
-      { text: 'Analyze the image above in context of the conversation.' },
-    ];
-    console.info(`[ai/generate] Multimodal call with ${imageMimeType} image`);
-  } else {
-    contentParts = [{ text: textPrompt }];
-  }
+  if (imageBase64) console.info(`[ai/generate] Multimodal call with ${imageMimeType} image`);
 
-  // ── Gemini call with retry ─────────────────────────────────────────────────
+  // ── Gemini multi-turn call with retry ─────────────────────────────────────
   const retryDelays = [2000, 5000, 10000];
   let lastErr: unknown;
 
   for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
     try {
-      const result = await model.generateContent(contentParts.length === 1 ? textPrompt : contentParts);
+      // Each retry creates a fresh chat session (stateless — history + system are re-sent)
+      const chat = model.startChat({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        systemInstruction: systemInstructionText as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        history: geminiHistory as any,
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await chat.sendMessage(currentParts as any);
       const usage = result.response.usageMetadata;
-      console.info(`[ai/generate] tokens — in:${usage?.promptTokenCount ?? '?'} out:${usage?.candidatesTokenCount ?? '?'} total:${usage?.totalTokenCount ?? '?'} history:${historyTurns}t`);
+      console.info(
+        `[ai/generate] tokens — in:${usage?.promptTokenCount ?? '?'} out:${usage?.candidatesTokenCount ?? '?'} total:${usage?.totalTokenCount ?? '?'} hist:${geminiHistory.length}t`,
+      );
       const text = result.response.text().trim();
       if (text) return text;
       console.warn(`[ai/generate] Attempt ${attempt + 1} — empty response, retrying`);
@@ -147,7 +166,6 @@ export async function generateReply(
     } catch (err) {
       lastErr = err;
       const status = (err as { status?: number }).status;
-      // Retry on: rate-limit (429), overload (503), any 5xx, or unknown network error (status undefined)
       const isTransient = !status || status === 429 || status >= 500;
       if (!isTransient || attempt === retryDelays.length) break;
       const delay = retryDelays[attempt];

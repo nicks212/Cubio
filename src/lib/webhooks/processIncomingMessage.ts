@@ -1,5 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
-import { generateReply, detectLeadAndEscalation } from '@/lib/ai';
+import { generateReply } from '@/lib/ai';
+import { analyzeLeadState } from '@/lib/leads/detector';
+import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE } from '@/lib/ai/signals';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
 import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
@@ -149,6 +151,20 @@ export async function processIncomingMessage(
     // Redis unavailable — continue without hash dedup (idempotency guard above still applies)
   }
 
+  // 3c. History snapshot — loaded BEFORE saving the current message so this turn's
+  //     text is not included in the context history passed to the AI.
+  //     isFirstMessage: true only when there are zero prior user turns in DB.
+  const { data: historySnapshot } = await supabase
+    .from('messages')
+    .select('role, content')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: false })
+    .limit(10)
+    .then(r => r);
+  const preloadedHistory: MessageHistoryEntry[] = ((historySnapshot ?? []) as MessageHistoryEntry[]).reverse();
+  const isFirstMessage = !photosSent && preloadedHistory.filter(m => m.role === 'user').length === 0;
+  console.info(`${label} [history] snapshot: ${preloadedHistory.length} turns, isFirstMessage:${isFirstMessage}`);
+
   // 4. Save incoming message — capture ID + created_at for debounce check
   const { data: savedMsg } = await supabase
     .from('messages')
@@ -252,8 +268,9 @@ export async function processIncomingMessage(
     }
   }
 
-  // 6b. Kick off AI classifier and DB queries in parallel (classifier only when needed)
-  const [aiIntent, businessContext, historyRows] = await Promise.all([
+  // 6b. Kick off AI classifier and business context in parallel.
+  //     History was pre-loaded at step 3c (before message save) — no DB fetch here.
+  const [aiIntent, businessContext] = await Promise.all([
     needsAIClassify
       ? classifyIntentAI(combinedMessage).then(i => {
           console.info(`${label} AI intent classifier: '${i}' for: "${combinedMessage.slice(0, 60)}"`);
@@ -267,27 +284,14 @@ export async function processIncomingMessage(
       priorityProductNames: similarProductNames,
       imageSearchQuery: imageSearchQuery ?? undefined,
     }),
-
-    // Message history — always needed
-    supabase
-      .from('messages')
-      .select('role, content')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: false })
-      .limit(6)
-      .then(r => r.data),
   ]);
 
   const messageIntent = regexIntent ?? (aiIntent as import('@/lib/ai/intentDetector').MessageIntent);
 
-  const history: MessageHistoryEntry[] = ((historyRows ?? []) as MessageHistoryEntry[]).reverse();
-
-  // If the DB has a last_shown_apt but it's not yet visible in the recent history slice,
-  // inject a synthetic AI marker so extractConversationState() can detect the shown apartment.
-  const hasShownAptInHistory = history.some(m => m.role === 'ai' && /SHOW_PHOTOS/i.test(m.content));
-  if (lastShownApt && !hasShownAptInHistory) {
-    history.unshift({ role: 'ai', content: `SHOW_PHOTOS: ${lastShownApt}` });
-  }
+  // Use the pre-loaded history snapshot (captured before current message was saved to DB).
+  // lastShownApt is passed directly to generateReply to seed conversation state —
+  // no synthetic SHOW_PHOTOS injection needed.
+  const history: MessageHistoryEntry[] = preloadedHistory;
 
   // 7b. Photo follow-up detection:
   //     If the last AI message asked "which apartment?" in response to a photo request,
@@ -322,7 +326,7 @@ export async function processIncomingMessage(
     ? ({ apartments: [], products: [], businessDescription: null } as ApartmentContext)
     : businessContext;
 
-  // 8. Generate AI reply — Layer 1 (global) + Layer 2 (business-type) combined
+  // 8. Generate AI reply — multi-turn structured history, system instruction includes state
   const reply = await generateReply(
     combinedMessage,
     finalBusinessContext,
@@ -333,6 +337,8 @@ export async function processIncomingMessage(
     effectiveIntent,
     imageBase64,
     imageMimeType,
+    isFirstMessage,
+    lastShownApt,
   );
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);
@@ -435,22 +441,27 @@ export async function processIncomingMessage(
   // Release the Redis lock — next burst from this user can now be processed
   await releaseLock(conversationId);
 
-  // 11. Deterministic gate decides whether to invoke Gemini lead/escalation analysis.
-  //     Skips Gemini entirely for greetings, browsing, photo requests, short replies,
-  //     and conversations without buying signals. Only fires when meaningful signals exist.
+  // 11. Backend-only lead/escalation analysis — no Gemini call.
+  //     Always fires when gate signals OR lifecycle signals (cancel/apt-change) are present.
   const fullHistory = [...history, { role: 'ai', content: cleanReply }];
+  const hasLifecycleSignal =
+    CANCEL_RE.test(combinedMessage) || BROWSE_AGAIN_RE.test(combinedMessage);
   const gate = shouldRunLeadAnalysis(fullHistory, combinedMessage, integration.businessType);
 
-  if (gate.lead || gate.escalation) {
-    console.info(`${label} [leadGate] Running analysis — lead:${gate.lead} escalation:${gate.escalation}`);
+  if (gate.lead || gate.escalation || hasLifecycleSignal) {
+    console.info(
+      `${label} [leadGate] Running — lead:${gate.lead} escalation:${gate.escalation} lifecycle:${hasLifecycleSignal}`,
+    );
     void detectAndPersistLeadOrEscalation(
       supabase,
       fullHistory,
+      combinedMessage,
       integration.companyId,
       conversationId,
       integration.businessType,
       resolvedName,
       msg.provider,
+      lastShownApt,
       gate.lead,
       gate.escalation,
     );
@@ -551,70 +562,104 @@ function extractApartmentPhotos(
 async function detectAndPersistLeadOrEscalation(
   supabase: ReturnType<typeof createAdminClient>,
   history: Array<{ role: string; content: string }>,
+  latestMessage: string,
   companyId: string,
   conversationId: string,
   businessType: 'real_estate' | 'craft_shop',
   senderName: string | null,
   provider: string,
+  lastShownAptId: string | null,
   checkLead = true,
   checkEscalation = true,
 ) {
   try {
-    // Run combined detection in one Gemini call (saves 1 API round-trip per message)
-    const { lead: leadResult, escalation: escalationResult } = await detectLeadAndEscalation(
-      history,
-      businessType,
-      checkLead,
-      checkEscalation,
-    );
+    // Deterministic analysis — no Gemini call, pure regex + heuristics
+    const analysis = analyzeLeadState(history, latestMessage, businessType, lastShownAptId);
 
-    // Persist lead — update if an open lead exists (regenerate summary), create new if none/closed
-    if (leadResult.isLead && leadResult.summary) {
-      const { data: latestLead } = await supabase
-        .from('leads')
-        .select('id, status')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    // ── Fetch existing open lead for lifecycle updates + upsert ──────────────
+    const { data: existingLead } = await supabase
+      .from('leads')
+      .select('id, status, phone, name, meeting_notes')
+      .eq('conversation_id', conversationId)
+      .neq('status', 'closed')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-      if (latestLead && latestLead.status !== 'closed') {
-        // Existing open/active lead — regenerate with latest info
+    // ── Lead lifecycle updates (always applied to any existing open lead) ────
+    if (existingLead && existingLead.status !== 'cancelled') {
+      const updates: Record<string, unknown> = {};
+      const noteLines: string[] = [];
+
+      // Cancellation — mark status + append timestamped note
+      if (analysis.updateType.includes('cancel')) {
+        updates.status = 'cancelled';
+        if (analysis.cancellationNote) noteLines.push(analysis.cancellationNote);
+        console.info(`[pipeline] Lead cancelled for conversation ${conversationId}`);
+      }
+
+      // New/changed phone number
+      const latestPhoneMatch = PHONE_EXTRACT_RE.exec(latestMessage);
+      const latestPhone = latestPhoneMatch ? latestPhoneMatch[1] : null;
+      if (latestPhone && latestPhone !== (existingLead.phone as string | null)) {
+        updates.phone = latestPhone;
+        console.info(`[pipeline] Lead phone updated for conversation ${conversationId}`);
+      }
+
+      // Name — fill in if the lead was created without one
+      if (analysis.name && !(existingLead.name as string | null)) {
+        updates.name = senderName ?? analysis.name;
+      }
+
+      // Apartment change request — append a note (does not reset lead status)
+      if (analysis.updateType.includes('apt_change')) {
+        noteLines.push(
+          `[${new Date().toISOString().slice(0, 16)}] Customer requested different apartment: "${latestMessage.slice(0, 120)}"`,
+        );
+      }
+
+      if (noteLines.length > 0) {
+        const existing = (existingLead.meeting_notes as string | null) ?? '';
+        updates.meeting_notes = [existing, ...noteLines].filter(Boolean).join('\n---\n');
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('leads').update(updates).eq('id', existingLead.id as string);
+      }
+    }
+
+    // ── Lead creation / update ────────────────────────────────────────────────
+    const isCancelled = (existingLead?.status as string | null) === 'cancelled';
+    if (checkLead && analysis.isLead && analysis.summary) {
+      if (existingLead && !isCancelled) {
+        // Existing open lead — refresh with latest info
         await supabase.from('leads').update({
-          name: senderName ?? leadResult.name ?? undefined,
+          name: senderName ?? analysis.name ?? undefined,
           provider_nickname: senderName ?? undefined,
-          phone: leadResult.phone ?? undefined,
-          email: leadResult.email ?? undefined,
-          summary: leadResult.summary,
-          meeting_date: leadResult.meetingDate ?? undefined,
-          meeting_notes: leadResult.meetingNotes ?? undefined,
+          phone: analysis.phone ?? undefined,
+          summary: analysis.summary,
           status: 'new',
-        }).eq('id', latestLead.id as string);
-        console.info(`[pipeline] Lead regenerated for conversation ${conversationId}`);
-      } else {
-        // No lead, or lead was closed — create fresh ticket
+        }).eq('id', existingLead.id as string);
+        console.info(`[pipeline] Lead updated for conversation ${conversationId}`);
+      } else if (!existingLead) {
+        // No existing lead — create fresh
         await supabase.from('leads').insert({
           company_id: companyId,
           conversation_id: conversationId,
-          name: senderName ?? leadResult.name,
+          name: senderName ?? analysis.name,
           provider_nickname: senderName,
-          phone: leadResult.phone,
-          email: leadResult.email,
-          summary: leadResult.summary,
-          meeting_date: leadResult.meetingDate,
-          meeting_notes: leadResult.meetingNotes,
+          phone: analysis.phone,
+          summary: analysis.summary,
           status: 'new',
-          ai_handled: true,
+          ai_handled: false,
           provider,
         });
         console.info(`[pipeline] Lead created for conversation ${conversationId}`);
       }
     }
 
-    // Persist escalation — but only based on messages sent AFTER the last resolved/ignored escalation.
-    // This prevents old frustration from re-triggering new tickets after a resolved case.
-    if (escalationResult.isEscalation && escalationResult.summary) {
-      // Find the most recent escalation for this conversation (any status)
+    // ── Escalation ────────────────────────────────────────────────────────────
+    if (checkEscalation && analysis.isEscalation) {
       const { data: latestEscalation } = await supabase
         .from('escalations')
         .select('id, status, updated_at')
@@ -626,8 +671,7 @@ async function detectAndPersistLeadOrEscalation(
       if (latestEscalation?.status === 'open') {
         // Already being handled — skip
       } else if (latestEscalation?.status === 'resolved' || latestEscalation?.status === 'ignored') {
-        // Prior escalation was resolved/ignored — only open a new one if there are 2+ NEW
-        // user messages AFTER that resolution (proving fresh frustration, not replay of old history)
+        // Only re-open if there are 2+ new user messages since the resolution
         const { count: newMsgCount } = await supabase
           .from('messages')
           .select('id', { count: 'exact', head: true })
@@ -641,23 +685,23 @@ async function detectAndPersistLeadOrEscalation(
             conversation_id: conversationId,
             contact_name: senderName,
             provider_nickname: senderName,
-            summary: escalationResult.summary,
+            summary: `Escalation: ${latestMessage.slice(0, 200)}`,
             status: 'open',
             provider,
           });
           await supabase.from('conversations').update({ ai_paused: true }).eq('id', conversationId);
           console.info(`[pipeline] New escalation (post-resolution) + AI paused for conversation ${conversationId}`);
         } else {
-          console.info(`[pipeline] Escalation detection suppressed — not enough new messages since last resolution (conversation ${conversationId})`);
+          console.info(`[pipeline] Escalation suppressed — not enough new messages since last resolution (conversation ${conversationId})`);
         }
       } else {
-        // No prior escalation — create fresh one
+        // No prior escalation — create fresh
         await supabase.from('escalations').insert({
           company_id: companyId,
           conversation_id: conversationId,
           contact_name: senderName,
           provider_nickname: senderName,
-          summary: escalationResult.summary,
+          summary: `Escalation: ${latestMessage.slice(0, 200)}`,
           status: 'open',
           provider,
         });

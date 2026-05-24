@@ -53,6 +53,14 @@ export const ANGER_RE =
 export const QUALIFICATION_RE =
   /\b(?:\d[\d\s,]*(?:₾|\$|usd|gel|lari|ლარ|dollar|k\b)|(?:\d+)\s*(?:room|bed|ოთახ(?:ი|იანი)?|комнат)|(?:\d+)\s*(?:floor|სართ(?:ულ|ული)?|этаж)|\d+\s*m[²2]|\d+\s*(?:sq|sqm|square))/i;
 
+/** Customer cancels a meeting, apartment, or request. */
+export const CANCEL_RE =
+  /გაუქმ|cancel(?:led|lation)?|შეცვლ|ar\s*minda|აღარ\s*მინდა|მოხსნ|refuse|nevermind|never\s*mind|changed?\s*my\s*mind|i(?:'m)?\s*not\s*(?:interested|sure)|meeting\s*cancel|appointment\s*cancel|don'?t\s*want|არ\s*მინდა/i;
+
+/** Customer wants to see a different apartment — resets confirmed selection. */
+export const BROWSE_AGAIN_RE =
+  /სხვა\s*ბინ|კიდ(?:ე|ევ)?\s*(?:ბინ|სურათ|ნახ)|show\s*(?:me\s*)?another|another\s*(?:apartment|option|one)|different\s*(?:apartment|floor|room|option)|other\s*(?:apartment|option|one)|more\s*(?:apartment|option)|meore|sxva\s*(?:bina|variant|sartu)|სხვა\s*(?:ვარი|სართ|ოთახ|პრო)|სხვ(?:ა|ებ).*(?:ბინ|სართ|ოთახ|ვარ)|can\s*i\s*see\s*(?:another|more|other)|მაჩვენ(?:ე|ეთ)\s*სხვ|ვნახ(?:ო|ავ)\s*სხვ/i;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. SKIP / SUPPRESS PATTERNS
 // ─────────────────────────────────────────────────────────────────────────────

@@ -40,9 +40,9 @@ const TTL = {
 /**
  * How long to wait after the LAST message before generating a reply.
  * Timer resets on every new message — so if user sends 4 messages 3s apart,
- * the AI responds 7s after the FOURTH message, with all 4 combined.
+ * the AI responds 10s after the FOURTH message, with all 4 combined.
  */
-export const DEBOUNCE_MS = 7000;
+export const DEBOUNCE_MS = 10000;
 
 /** Returns false when Upstash env vars are not configured — skips all Redis ops. */
 function redisConfigured(): boolean {
