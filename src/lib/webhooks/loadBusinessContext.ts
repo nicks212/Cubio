@@ -113,5 +113,5 @@ export async function loadBusinessContext(
     console.info(`[loadBusinessContext] ${prioritized.length} priority products from vector search surfaced to top`);
   }
 
-  return { products: allProducts, businessDescription };
+  return { products: allProducts, businessDescription, imageSearchQuery: options.imageSearchQuery ?? null };
 }

@@ -126,6 +126,28 @@ export function extractConversationState(
   // Name — look for user reply after AI asked for their name
   const name = extractNameFromHistory(history);
 
+  // desiredProduct — scan for AI messages that name a product (craft shop context).
+  // Pattern: AI message contains "• ProductName:" followed by a user buying-intent reply.
+  // Takes the LAST such match so that if the customer changes selection, we track the latest.
+  let desiredProduct: string | null = null;
+  for (let i = 0; i < history.length - 1; i++) {
+    const msg  = history[i];
+    const next = history[i + 1];
+    if ((msg.role === 'ai' || msg.role === 'model') && next.role === 'user') {
+      if (APT_CONFIRMED_RE.test(next.content) || BUYING_INTENT_RE.test(next.content)) {
+        // Look for a bullet-point product name in the AI message: "• Name:" or "• Name —"
+        const prodMatch = msg.content.match(/•\s+([^:\n|—]+?)(?:\s*[:—]|\s+\$|\s+₾)/);
+        if (prodMatch) {
+          const candidate = prodMatch[1].trim();
+          // Exclude apartment-number-like strings (all digits + dots) and very short tokens
+          if (candidate.length > 3 && !/^\d[\d.]*$/.test(candidate)) {
+            desiredProduct = candidate;
+          }
+        }
+      }
+    }
+  }
+
   // Buying intent and photo request — binary flags
   const buyingIntent = BUYING_INTENT_RE.test(allUserText) || aptConfirmed;
   const photosRequested = PHOTO_RE.test(allUserText);
@@ -139,7 +161,7 @@ export function extractConversationState(
     name,
     buyingIntent,
     photosRequested,
-    desiredProduct: null,
+    desiredProduct,
     lastShownAptId,
     aptConfirmed,
   };

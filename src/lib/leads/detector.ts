@@ -84,6 +84,7 @@ export function analyzeLeadState(
   const summaryParts: string[] = [];
   if (name)                    summaryParts.push(name);
   if (phone)                   summaryParts.push(`📞 ${phone}`);
+  if (state.desiredProduct)    summaryParts.push(`🛍 ${state.desiredProduct}`);
   if (state.rooms)             summaryParts.push(`${state.rooms}-ოთახ.`);
   if (state.budget)            summaryParts.push(`ბიუჯეტი: ${state.budget}`);
   if (state.floor)             summaryParts.push(`${state.floor}-სართ.`);

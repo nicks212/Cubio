@@ -344,12 +344,16 @@ export async function processIncomingMessage(
     if (!escalationConfirmed && !ANGER_RE.test(combinedMessage)) {
       const humanReq = HUMAN_REQUEST_RE.test(combinedMessage); // always re-offer if explicit
       const customReq = !skipReOffer && CUSTOM_REQUEST_RE.test(combinedMessage);
-      const aptCtx = businessContext as ApartmentContext;
-      const noInventory = !skipReOffer
-        && integration.businessType === 'real_estate'
-        && effectiveIntent === 'search'
-        && Array.isArray(aptCtx.apartments)
-        && aptCtx.apartments.filter(a => a.status === 'vacant').length === 0;
+      const aptCtx  = businessContext as ApartmentContext;
+      const prodCtx = businessContext as ProductContext;
+      const noInventory = !skipReOffer && effectiveIntent === 'search' && (
+        (integration.businessType === 'real_estate'
+          && Array.isArray(aptCtx.apartments)
+          && aptCtx.apartments.filter(a => a.status === 'vacant').length === 0) ||
+        (integration.businessType === 'craft_shop'
+          && Array.isArray(prodCtx.products)
+          && prodCtx.products.filter(p => p.in_stock).length === 0)
+      );
       offerEscalation = humanReq || customReq || noInventory;
     }
   } catch {

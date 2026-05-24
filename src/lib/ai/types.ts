@@ -14,6 +14,8 @@ export interface ApartmentContext {
     project?: { name: string; location?: string | null; description?: string | null; completion_date?: string | null; images?: string[] } | null;
   }>;
   businessDescription: string | null;
+  /** Non-null when context was loaded after an image similarity search. */
+  imageSearchQuery?: string | null;
 }
 
 export interface ProductContext {
@@ -29,6 +31,8 @@ export interface ProductContext {
     images?: string[];
   }>;
   businessDescription: string | null;
+  /** Non-null when context was loaded after an image similarity search. */
+  imageSearchQuery?: string | null;
 }
 
 export type BusinessContext = ApartmentContext | ProductContext;
