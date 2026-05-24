@@ -176,6 +176,7 @@ function extractNameFromHistory(
     }
   }
   return null;
+}
 
 /**
  * Formats extracted state as a compact single-line string for prompt injection.
