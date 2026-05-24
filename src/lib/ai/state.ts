@@ -38,7 +38,7 @@ export interface ConversationState {
 
 /** Positive reaction after seeing photos — customer likes / wants the apartment. */
 const APT_CONFIRMED_RE =
-  /magari|minda|m[ai]nd[ao]|v[i]?q[i]?d[i]?|viq[i]?d|შემიწვილ|მინდა|ჩემ[ი]შვილ|ვიყიდ|ვიყიდი|ვიყ[დ]|აიღო|საჩქა|i want|i like|i'?ll take|that one|this one|let'?s proceed|how (do|can) (i|we) (buy|purchase)|rogor shevizen|rogor\s*v?iy?id|რო[გ] ვიყ|რო[გ] შევ[ი]ძ|გაკეთი|გაკეთება|cool|perfect|great|exactly|yes please|i'?m interested|dainteresebul|daintereseb/i;
+  /magari|minda|m[ai]nd[ao]|v[i]?q[i]?d[i]?|viq[i]?d|momwon[ts]?|momtond|შემიწვილ|მინდა|ჩემ[ი]შვილ|ვიყიდ|ვიყიდი|ვიყ[დ]|მომwons|მომwonT|მომwonds|მოmwons|მოewons|aigo|აიღო|საჩქა|i want|i like|i'?ll take|that one|this one|let'?s proceed|how (do|can) (i|we) (buy|purchase)|rogor shevizen|rogor\s*v?iy?id|რო[გ] ვიყ|რო[გ] შევ[ი]ძ|გაკეთი|გაკეთება|cool|perfect|great|exactly|yes please|i'?m interested|dainteresebul|daintereseb/i;
 
 /** Customer changed mind after confirming — wants to see a different apartment. Resets aptConfirmed. */
 const BROWSE_AGAIN_RE =

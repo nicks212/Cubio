@@ -85,6 +85,10 @@ export async function generateReply(
 
   // ── System instruction ─────────────────────────────────────────────────────
   const systemParts: string[] = [`${globalPrompt}\n\n${businessPrompt}`, stateLine];
+  if (!isFirstMessage) {
+    // Hard constraint — injected FIRST so it overrides the model's tendency to greet
+    systemParts.unshift('NO GREETING: Do NOT use გამარჯობა, hello, hi, or any greeting. Start directly with your answer.');
+  }
   if (isFirstMessage) {
     systemParts.push(
       "This is the customer's very first message. Begin with a brief natural greeting (one sentence max), then answer their question in the same message.",
