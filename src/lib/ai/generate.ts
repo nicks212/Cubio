@@ -146,8 +146,8 @@ export async function generateReply(
     try {
       // Each retry creates a fresh chat session (stateless — history + system are re-sent)
       const chat = model.startChat({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        systemInstruction: systemInstructionText as any,
+        // Gemini API requires Content object format, not a plain string
+        systemInstruction: { role: 'system', parts: [{ text: systemInstructionText }] },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         history: geminiHistory as any,
       });
