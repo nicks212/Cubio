@@ -25,6 +25,8 @@ export interface ConversationState {
   floor: number | null;
   sizeSqm: number | null;
   phone: string | null;
+  /** Customer name extracted from the conversation (after AI asked for it). */
+  name: string | null;
   buyingIntent: boolean;
   photosRequested: boolean;
   desiredProduct: string | null;  // craft shop: product name when mentioned
@@ -121,6 +123,9 @@ export function extractConversationState(
   const phoneMatch = PHONE_EXTRACT_RE.exec(allUserText);
   if (phoneMatch) phone = phoneMatch[1].replace(/\s/g, '');
 
+  // Name — look for user reply after AI asked for their name
+  const name = extractNameFromHistory(history);
+
   // Buying intent and photo request — binary flags
   const buyingIntent = BUYING_INTENT_RE.test(allUserText) || aptConfirmed;
   const photosRequested = PHOTO_RE.test(allUserText);
@@ -131,6 +136,7 @@ export function extractConversationState(
     floor,
     sizeSqm,
     phone,
+    name,
     buyingIntent,
     photosRequested,
     desiredProduct: null,
@@ -138,6 +144,38 @@ export function extractConversationState(
     aptConfirmed,
   };
 }
+
+/**
+ * Extracts the customer's name by looking for turns where:
+ *   1. The AI asked for their name
+ *   2. The next user message is 1–5 words with no digits or URLs
+ */
+function extractNameFromHistory(
+  history: Array<{ role: string; content: string }>,
+): string | null {
+  for (let i = 0; i < history.length - 1; i++) {
+    const msg  = history[i];
+    const next = history[i + 1];
+    if (
+      (msg.role === 'ai' || msg.role === 'model') &&
+      /სახელ|სახელი|your\s+(?:full\s+)?name|შენი\s+სახელ|ვინ\s*ხარ|გვარ/i.test(msg.content)
+    ) {
+      if (next.role === 'user') {
+        const text  = next.content.trim();
+        const words = text.split(/\s+/);
+        if (
+          words.length >= 1 &&
+          words.length <= 5 &&
+          text.length  <= 60 &&
+          !/\d/.test(text) &&
+          !/http|@|#|\+/.test(text)
+        ) {
+          return text;
+        }
+      }
+    }
+  }
+  return null;
 
 /**
  * Formats extracted state as a compact single-line string for prompt injection.
@@ -149,7 +187,10 @@ export function formatStateForPrompt(state: ConversationState): string {
   if (state.rooms)        parts.push(`rooms:${state.rooms}`);
   if (state.floor)        parts.push(`floor:${state.floor}`);
   if (state.sizeSqm)      parts.push(`size:${state.sizeSqm}m²`);
+  if (state.name)         parts.push(`name_collected:${state.name}`);
+  else if (state.buyingIntent || state.aptConfirmed || state.lastShownAptId) parts.push('name_collected:NO');
   if (state.phone)        parts.push(`phone:${state.phone}`);
+  else if (state.buyingIntent || state.aptConfirmed || state.lastShownAptId) parts.push('phone_collected:NO');
   if (state.desiredProduct) parts.push(`product:${state.desiredProduct}`);
   if (state.lastShownAptId) parts.push(`shown_apt:${state.lastShownAptId}`);
   if (state.aptConfirmed)   parts.push(`apt_confirmed:YES`);

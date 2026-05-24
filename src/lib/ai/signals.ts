@@ -39,7 +39,7 @@ export const PROJ_PHOTO_RE =
 
 /** Explicit buying-intent phrases. Must match at least one to qualify. */
 export const BUYING_INTENT_RE =
-  /\b(?:want\s+to\s+(?:buy|visit|see|reserve|purchase)|i(?:'m|\s+am)\s+interested\s+in\s+(?:buy|purchas|reserv)|how\s+(?:can|do)\s+i\s+(?:buy|purchase|reserve|order)|please\s+contact|call\s+me|i\s+want\s+(?:this|consultation|a\s+consult)|can\s+(?:i|your|the)\s+(?:visit|see\s+it|operator|agent|rep))|(?:მინდა(?:\s*(?:ვნახო|შევიძინო|ვიზიტი|შეძენ|დაჯავშნ|კონსულტ))?|გთხოვ\s*(?:დამიკავშირდ|დარეკ|შეგ(?:ატყობინ|ახსენ))|კონსულტაცია\s*მინდა|ოპერატორ(?:ი|მა)\s*დამიკავშირდ|ვიყიდი|დაჯავშნ|ვიზიტ(?:ი|ზე)|შეძენ(?:ა|ას)|(?:შე)?ვნახ(?:ავ|ო)\s*(?:ბინ|ბუნ)|хочу\s*(?:купить|посмотреть|записаться|эту|этот)|позвоните\s*мне|как\s*(?:купить|приобрести|заказать)|хочу\s*консультацию|\bminda(?:a)?\b|\bviqidi?\b)/i;
+  /\b(?:want\s+to\s+(?:buy|visit|see|reserve|purchase)|i(?:'m|\s+am)\s+interested\s+in\s+(?:buy|purchas|reserv)|how\s+(?:can|do)\s+i\s+(?:buy|purchase|reserve|order)|please\s+contact|call\s+me|i\s+want\s+(?:this|consultation|a\s+consult)|can\s+(?:i|your|the)\s+(?:visit|see\s+it|operator|agent|rep))|(?:მინდა(?:\s*(?:ვნახო|შევიძინო|ვიზიტი|შეძენ|დაჯავშნ|კონსულტ))?|გთხოვ\s*(?:დამიკავშირდ|დარეკ|შეგ(?:ატყობინ|ახსენ))|კონსულტაცია\s*მინდა|ოპერატორ(?:ი|მა)\s*დამიკავშირდ|ვიყიდი|დაჯავშნ|ვიზიტ(?:ი|ზე)|შეძენ(?:ა|ას)|(?:შე)?ვნახ(?:ავ|ო)\s*(?:ბინ|ბუნ)|хочу\s*(?:купить|посмотреть|записаться|эту|этот)|позвоните\s*мне|как\s*(?:купить|приобрести|заказать)|хочу\s*консультацию|\bminda(?:a)?\b|\bviqidi?\b|\b(?:moval|movide|movdivar|movalt)\b|adgilze\s+moval|sad\s+movide|xval\s+movide|movida\s+sheidzleba)/i;
 
 /** Phone number — Georgian mobile, international, or bare 9–12 digit run. */
 export const PHONE_RE =
@@ -60,6 +60,28 @@ export const CANCEL_RE =
 /** Customer wants to see a different apartment — resets confirmed selection. */
 export const BROWSE_AGAIN_RE =
   /სხვა\s*ბინ|კიდ(?:ე|ევ)?\s*(?:ბინ|სურათ|ნახ)|show\s*(?:me\s*)?another|another\s*(?:apartment|option|one)|different\s*(?:apartment|floor|room|option)|other\s*(?:apartment|option|one)|more\s*(?:apartment|option)|meore|sxva\s*(?:bina|variant|sartu)|სხვა\s*(?:ვარი|სართ|ოთახ|პრო)|სხვ(?:ა|ებ).*(?:ბინ|სართ|ოთახ|ვარ)|can\s*i\s*see\s*(?:another|more|other)|მაჩვენ(?:ე|ეთ)\s*სხვ|ვნახ(?:ო|ავ)\s*სხვ/i;
+
+/**
+ * Non-angry request for a human agent / representative.
+ * ANGER_RE already covers furious demands — this catches polite requests.
+ */
+export const HUMAN_REQUEST_RE =
+  /connect\s+me|speak\s+to\s+(?:a\s+)?(?:human|person|agent|rep(?:resentative)?|someone)|talk\s+to\s+(?:a\s+)?(?:human|person|agent|rep(?:resentative)?|someone)|live\s+(?:agent|support|chat)|customer\s+(?:service|support)|ოპერატორ(?:ი|ს)?(?:\s*(?:მინდა|გამომიძახ|დამიკავშირ))?|წარმომადგენ(?:ელ(?:ი|ს|თ))?(?:\s*(?:მინდა|გამომიძახ|დამიკავშირ))?|ადამიანი\s*(?:მინდა|გამომიძახ)|ადამიანთან\s*(?:საუბარ|კავშირ)/i;
+
+/**
+ * Customer requests a custom deal, price negotiation, or off-plan arrangement
+ * that the AI cannot resolve alone.
+ */
+export const CUSTOM_REQUEST_RE =
+  /\b(?:custom|bespoke|negotiat|special\s*(?:price|deal|offer|request|discount)|off[\s-]?plan|personaliz|different\s*price|price\s*(?:negotia|reduc|discuss)|discount\b)|(?:სპეციალ(?:ური|ი)\s*(?:ფასი?|შეთავაზ)|ფასდათმობ|მოლაპარაკ(?:ება)?|ინდივიდ(?:ურ(?:ი|ი))?|ნეგოცი)/i;
+
+/**
+ * Customer confirms they want to be connected with a representative.
+ * Only matched when an escalation offer was previously made (checked via Redis key).
+ * Requires the ENTIRE message to be a confirmation — prevents partial matches.
+ */
+export const ESCALATION_CONFIRM_RE =
+  /^[\s]*(?:yes\s+please|yes\s+sure|ok\s+please|yes|yep|yeah|yup|sure|ok|okay|please|connect|go\s+ahead|do\s+it|absolutely|sounds\s+good|alright|will\s+do|aha|კი|კარგი|გთხოვ|სიამოვნებით|დიახ|да|конечно|хорошо|ладно)[\s!.,?]*$/i;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. SKIP / SUPPRESS PATTERNS

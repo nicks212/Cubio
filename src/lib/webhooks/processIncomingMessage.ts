@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { generateReply } from '@/lib/ai';
 import { analyzeLeadState } from '@/lib/leads/detector';
-import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE } from '@/lib/ai/signals';
+import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, ANGER_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE } from '@/lib/ai/signals';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
 import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
@@ -326,6 +326,58 @@ export async function processIncomingMessage(
     ? ({ apartments: [], products: [], businessDescription: null } as ApartmentContext)
     : businessContext;
 
+  // ── Soft-escalation detection (deterministic, zero AI calls) ─────────────
+  // Triggers: (1) explicit human/operator request  (2) custom/negotiation request
+  //           (3) no vacant inventory for a search query
+  // Flow: offer human help this turn → on next turn check Redis key → if confirmed
+  //       skip AI, send contact info, create escalation record + pause AI.
+  const ESC_OFFER_KEY = `cubio:esc_offered:${conversationId}`;
+  let escalationConfirmed = false;
+  let offerEscalation = false;
+  try {
+    const escOffered = await redis.get(ESC_OFFER_KEY);
+    const skipReOffer = !!escOffered; // don't spam the offer if customer already saw it
+    if (escOffered) {
+      if (ESCALATION_CONFIRM_RE.test(combinedMessage.trim())) escalationConfirmed = true;
+      await redis.del(ESC_OFFER_KEY); // clear regardless — offer was either taken or declined
+    }
+    if (!escalationConfirmed && !ANGER_RE.test(combinedMessage)) {
+      const humanReq = HUMAN_REQUEST_RE.test(combinedMessage); // always re-offer if explicit
+      const customReq = !skipReOffer && CUSTOM_REQUEST_RE.test(combinedMessage);
+      const aptCtx = businessContext as ApartmentContext;
+      const noInventory = !skipReOffer
+        && integration.businessType === 'real_estate'
+        && effectiveIntent === 'search'
+        && Array.isArray(aptCtx.apartments)
+        && aptCtx.apartments.filter(a => a.status === 'vacant').length === 0;
+      offerEscalation = humanReq || customReq || noInventory;
+    }
+  } catch {
+    // Redis unavailable — soft escalation skipped; hard escalation (ANGER_RE) still active
+  }
+
+  // Confirmed soft escalation: skip AI, send contact, persist escalation record
+  if (escalationConfirmed) {
+    const isGeo = /[\u10D0-\u10FF]/.test(combinedMessage)
+      || history.some(m => /[\u10D0-\u10FF]/.test(m.content));
+    const contactMsg = buildEscalationContactMessage(
+      (businessContext as ApartmentContext).businessDescription,
+      isGeo,
+    );
+    await supabase.from('messages').insert({
+      conversation_id: conversationId,
+      company_id: integration.companyId,
+      role: 'ai',
+      content: contactMsg,
+    });
+    await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
+    await sendProviderResponse(msg.provider, msg.senderId, contactMsg, integration.accessToken, integration.providerAccountId);
+    void persistEscalation(supabase, integration.companyId, conversationId, resolvedName, combinedMessage, msg.provider);
+    await releaseLock(conversationId);
+    console.info(`${label} [escalation] Soft escalation confirmed — contact sent + AI pausing for conversation ${conversationId}`);
+    return { conversationId, reply: contactMsg };
+  }
+
   // 8. Generate AI reply — multi-turn structured history, system instruction includes state
   const reply = await generateReply(
     combinedMessage,
@@ -339,6 +391,7 @@ export async function processIncomingMessage(
     imageMimeType,
     isFirstMessage,
     lastShownApt,
+    offerEscalation,
   );
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);
@@ -398,6 +451,12 @@ export async function processIncomingMessage(
     console.warn(`${label} Stripped ${leakedUrls.length} hallucinated URL(s) from AI reply — NOT forwarding as images`);
   }
 
+  // If we offered escalation this turn, persist the flag so next message can confirm it
+  if (offerEscalation && cleanReply.length > 0) {
+    try { await redis.set(ESC_OFFER_KEY, '1', { ex: 14400 }); } catch { /* ok */ }
+    console.info(`${label} [escalation] Offer sent — awaiting customer confirmation`);
+  }
+
   // 9. Save AI reply
   await supabase.from('messages').insert({
     conversation_id: conversationId,
@@ -446,7 +505,7 @@ export async function processIncomingMessage(
   const fullHistory = [...history, { role: 'ai', content: cleanReply }];
   const hasLifecycleSignal =
     CANCEL_RE.test(combinedMessage) || BROWSE_AGAIN_RE.test(combinedMessage);
-  const gate = shouldRunLeadAnalysis(fullHistory, combinedMessage, integration.businessType);
+  const gate = shouldRunLeadAnalysis(fullHistory, combinedMessage, integration.businessType, lastShownApt);
 
   if (gate.lead || gate.escalation || hasLifecycleSignal) {
     console.info(
@@ -712,6 +771,59 @@ async function detectAndPersistLeadOrEscalation(
   } catch (err) {
     console.error('[pipeline] detectAndPersistLeadOrEscalation error:', err);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Soft escalation helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Creates an escalation record and pauses the AI for this conversation.
+ * Used when the customer explicitly confirms they want a human representative.
+ */
+async function persistEscalation(
+  supabase: ReturnType<typeof createAdminClient>,
+  companyId: string,
+  conversationId: string,
+  senderName: string | null,
+  latestMessage: string,
+  provider: string,
+) {
+  try {
+    await supabase.from('escalations').insert({
+      company_id: companyId,
+      conversation_id: conversationId,
+      contact_name: senderName,
+      provider_nickname: senderName,
+      summary: `Customer requested representative: "${latestMessage.slice(0, 200)}"`,
+      status: 'open',
+      provider,
+    });
+    await supabase.from('conversations').update({ ai_paused: true }).eq('id', conversationId);
+    console.info(`[pipeline] Soft escalation persisted + AI paused for conversation ${conversationId}`);
+  } catch (err) {
+    console.error('[pipeline] persistEscalation error:', err);
+  }
+}
+
+/**
+ * Composes a natural escalation confirmation message with the company's contact info.
+ * Extracts the phone number from businessDescription when available.
+ * Scalable: works for real_estate, craft_shop, and any future business type.
+ */
+function buildEscalationContactMessage(
+  businessDescription: string | null | undefined,
+  isGeorgian: boolean,
+): string {
+  // Extract first phone-like pattern from the business description
+  const phoneMatch = businessDescription
+    ? /(?:\+?\d[\d\s\-()]{5,15}\d)/.exec(businessDescription)
+    : null;
+  const phone = phoneMatch ? `\n📞 ${phoneMatch[0].trim()}` : '';
+
+  return isGeorgian
+    ? `ჩვენი წარმომადგენელი მალე დაგიკავშირდებათ!${phone}`
+    : `A representative will be with you shortly!${phone}`;
 }
 
 // ── Meta sender name resolution ───────────────────────────────────────────────

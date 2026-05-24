@@ -24,16 +24,18 @@ export type ShouldAnalyse =
   | { lead: false; escalation: true };
 
 /**
- * Decides whether to invoke Gemini lead+escalation analysis.
+ * Decides whether to invoke lead+escalation analysis.
  *
- * @param history        Full conversation history INCLUDING the latest AI reply
- * @param latestMessage  The raw customer message just processed
- * @param businessType   'real_estate' | 'craft_shop'
+ * @param history          Full conversation history INCLUDING the latest AI reply
+ * @param latestMessage    The raw customer message just processed
+ * @param businessType     'real_estate' | 'craft_shop'
+ * @param lastShownAptId   Apartment last shown via SHOW_PHOTOS (from DB) — counts as qualification
  */
 export function shouldRunLeadAnalysis(
   history: Array<{ role: string; content: string }>,
   latestMessage: string,
   businessType: 'real_estate' | 'craft_shop',
+  lastShownAptId: string | null = null,
 ): ShouldAnalyse {
   const msg = latestMessage.trim();
 
@@ -72,7 +74,8 @@ export function shouldRunLeadAnalysis(
   // ── Signal scoring ─────────────────────────────────────────────────────
   const hasPhone        = PHONE_RE.test(userText);
   const hasBuyingIntent = BUYING_INTENT_RE.test(userText);
-  const hasQualification = QUALIFICATION_RE.test(userText);
+  // lastShownAptId counts as qualification — customer has viewed a specific apartment
+  const hasQualification = QUALIFICATION_RE.test(userText) || !!lastShownAptId;
 
   // Skip if latest message is pure browsing with no other signals
   if (BROWSE_ONLY_RE.test(msg) && !hasPhone && !hasBuyingIntent) {

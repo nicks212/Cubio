@@ -43,6 +43,12 @@ export async function generateReply(
   isFirstMessage = false,
   /** Last apartment shown via SHOW_PHOTOS — seeded from DB when not in history slice. */
   lastShownAptId: string | null = null,
+  /**
+   * When true, backend has detected a condition it cannot resolve (no inventory, custom
+   * request, explicit human ask). AI should include a brief offer to connect the customer
+   * with a representative and ask if they'd like that. One sentence, no apologies.
+   */
+  offerEscalation = false,
 ): Promise<string> {
   // ── Chat intent: lean micro-prompt, no business context ───────────────────
   if (intent === 'chat') {
@@ -82,6 +88,11 @@ export async function generateReply(
   if (isFirstMessage) {
     systemParts.push(
       "This is the customer's very first message. Begin with a brief natural greeting (one sentence max), then answer their question in the same message.",
+    );
+  }
+  if (offerEscalation) {
+    systemParts.push(
+      'ESCALATION (this turn only): Include a brief, natural offer to connect the customer with a company representative — one sentence, no apologies. Ask if they would like that.',
     );
   }
   const systemInstructionText = systemParts.filter(Boolean).join('\n\n');
