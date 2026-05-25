@@ -840,10 +840,17 @@ export async function resolveMetaSenderName(
   accessToken: string,
   pageId?: string,
 ): Promise<string | null> {
+  // Instagram Login tokens (start with 'IGAA') must use graph.instagram.com.
+  // Facebook page tokens and legacy Instagram tokens use graph.facebook.com.
+  // This ensures FB is completely unaffected — only IGAA tokens route differently.
+  const baseHost = accessToken.startsWith('IGAA')
+    ? 'https://graph.instagram.com'
+    : 'https://graph.facebook.com';
+
   try {
     // ── Attempt 1: direct user profile lookup ──────────────────────────────
     const fields = provider === 'instagram' ? 'name,username' : 'name,first_name,last_name';
-    const url = new URL(`https://graph.facebook.com/v22.0/${senderId}`);
+    const url = new URL(`${baseHost}/v22.0/${senderId}`);
     url.searchParams.set('fields', fields);
     url.searchParams.set('access_token', accessToken);
     const res = await fetch(url.toString());
@@ -857,11 +864,13 @@ export async function resolveMetaSenderName(
 
     // ── Attempt 2: Conversations API (pages_messaging permission) ──────────
     // Works even when direct profile lookup is blocked by Meta privacy restrictions.
+    // Instagram Login API requires platform=instagram on this endpoint.
     if (pageId) {
-      const convUrl = new URL(`https://graph.facebook.com/v22.0/${pageId}/conversations`);
+      const convUrl = new URL(`${baseHost}/v22.0/${pageId}/conversations`);
       convUrl.searchParams.set('user_id', senderId);
       convUrl.searchParams.set('fields', 'participants');
       convUrl.searchParams.set('access_token', accessToken);
+      if (provider === 'instagram') convUrl.searchParams.set('platform', 'instagram');
       const convRes = await fetch(convUrl.toString());
       if (convRes.ok) {
         const convData = await convRes.json() as {
