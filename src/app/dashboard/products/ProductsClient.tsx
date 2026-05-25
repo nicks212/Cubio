@@ -247,7 +247,7 @@ export default function ProductsClient({
                 {(product.zodiac_compatibility?.length ?? 0) > 0 && (
                   <div className="flex items-center gap-1 mb-3">
                     <Star className="w-3 h-3 text-amber-500" />
-                    <p className="text-xs text-muted-foreground">{product.zodiac_compatibility?.join(', ')}</p>
+                    <p className="text-xs text-muted-foreground">{product.zodiac_compatibility?.map(s => t(`zodiac.${s}`)).join(', ')}</p>
                   </div>
                 )}
                 <div className="flex gap-2 pt-3 border-t border-slate-100">
@@ -318,9 +318,9 @@ export default function ProductsClient({
                       key={sign}
                       type="button"
                       onClick={() => toggleZodiac(sign)}
-                      className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors capitalize ${selectedZodiacs.includes(sign) ? 'bg-primary text-white border-primary' : 'bg-white text-muted-foreground border-slate-200 hover:border-primary hover:text-primary'}`}
+                      className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${selectedZodiacs.includes(sign) ? 'bg-primary text-white border-primary' : 'bg-white text-muted-foreground border-slate-200 hover:border-primary hover:text-primary'}`}
                     >
-                      {sign}
+                      {t(`zodiac.${sign}`)}
                     </button>
                   ))}
                 </div>
