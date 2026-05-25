@@ -16,6 +16,7 @@ import {
   SKIP_INTENTS_RE,
   BROWSE_ONLY_RE,
   PHOTO_ONLY_RE,
+  PRODUCT_DISSATISFIED_RE,
 } from './signals';
 
 export type ShouldAnalyse =
@@ -93,6 +94,21 @@ export function shouldRunLeadAnalysis(
   const craftQualified = businessType === 'craft_shop'
     ? /[₾$]\d|\d\s*(?:₾|\$)|product|item|piece|სამკაულ|ბეჭედ|ყელსაბამ|სამაჯურ|ვყიდ|хочу\s+(?:браслет|кольцо|украшени)/i.test(fullText)
     : false;
+
+  // ── Craft shop: dissatisfied customer → always create a lead ──────────
+  // Customer has seen products but nothing matched — we want to capture their
+  // contact so the shop can follow up. Guard: need ≥ 2 user messages to confirm
+  // the dissatisfaction is post-product-listing (state.ts enforces this too, but
+  // belt-and-suspenders here avoids firing on the very first message).
+  if (businessType === 'craft_shop' && PRODUCT_DISSATISFIED_RE.test(msg)) {
+    const userMsgCount = history.filter(m => m.role === 'user').length;
+    const aiHasListedProducts = history.some(
+      m => (m.role === 'ai' || m.role === 'model') && /^\s*•\s+\S/m.test(m.content),
+    );
+    if (userMsgCount >= 2 && aiHasListedProducts) {
+      return { lead: true, escalation: hasAnger };
+    }
+  }
 
   const runLead = positiveSignalCount >= 2 || (craftQualified && hasBuyingIntent);
 

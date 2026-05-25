@@ -69,6 +69,14 @@ export const HUMAN_REQUEST_RE =
   /connect\s+me|speak\s+to\s+(?:a\s+)?(?:human|person|agent|rep(?:resentative)?|someone)|talk\s+to\s+(?:a\s+)?(?:human|person|agent|rep(?:resentative)?|someone)|live\s+(?:agent|support|chat)|customer\s+(?:service|support)|ოპერატორ(?:ი|ს)?(?:\s*(?:მინდა|გამომიძახ|დამიკავშირ))?|წარმომადგენ(?:ელ(?:ი|ს|თ))?(?:\s*(?:მინდა|გამომიძახ|დამიკავშირ))?|ადამიანი\s*(?:მინდა|გამომიძახ)|ადამიანთან\s*(?:საუბარ|კავშირ)/i;
 
 /**
+ * Craft shop: customer has seen products but is not satisfied / wants something else.
+ * Only meaningful AFTER the AI has already listed products (checked in state.ts).
+ * Covers English, Georgian script, romanized Georgian.
+ */
+export const PRODUCT_DISSATISFIED_RE =
+  /\b(?:not\s+(?:what\s+i|quite\s+right|satisfied|happy|quite)|nothing\s+(?:match|suit|work)|looking\s+for\s+something\s+(?:else|different|other)|don'?t\s+(?:have|see)\s+what\s+i|something\s+(?:else|different|other|more\s+unique)|different\s+(?:style|design|type|option)|doesn'?t\s+(?:match|suit|work)|can'?t\s+find|not\s+finding\s+it|none\s+of\s+(?:these|them)|not\s+in\s+stock|out\s+of\s+stock|don'?t\s+like\s+(?:any|these|those))|(?:არ\s*(?:მომწონს|მაქვს\s*სასურველი|მიხდება)|ეს\s*(?:არ\s*არის|არ\s*ვარგა)|ვეძებ\s*სხვ|სხვ(?:ა|ანაირ)\s*(?:რამ|დიზაინ|სტილ|ვარიანტ|ნიმუშ)|სხვა\s*(?:მინდა|მჭირდება|ვეძებ)|ვეძებ\s*(?:სხვა|განსხვავებულ|უნიკალ)|ვერ\s*ვპოულობ|ვერ\s*ვხედავ\s*(?:სასურველს|სასურ)|არ\s*მომდის|ასეთი\s*(?:არ|ვერ))|(?:ar\s+momwons|ar\s+maq?vs\s*sasurv|es\s+ar\s+aris|vedzieb\s+sxva|sxva\s+(?:ram|diz|stil|varia|nimu)|sxva\s+minda|sxva\s+mchirdeba|ver\s+vpoulob|ar\s+momdia)/i;
+
+/**
  * Customer requests a custom deal, price negotiation, or off-plan arrangement
  * that the AI cannot resolve alone.
  */

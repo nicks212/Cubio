@@ -100,6 +100,14 @@ LEAD COLLECTION — when customer selects a product or shows buying intent (mind
   • Emoji / "yes" / thanks / single word WITHOUT a phone number → they have NOT answered — ask again politely.
   • NEVER output the confirmation line unless STATE shows an actual phone number.
   • If they say thanks/goodbye after confirmation → respond warmly, do NOT repeat the rep-contact line.
+
+DISSATISFIED CUSTOMER — when STATE shows dissatisfied:YES:
+  The customer has seen our catalog and nothing matched their needs. Do NOT list products again.
+  Warmly acknowledge and invite them to the physical shop where the full collection is available.
+  Use COMPANY INFO to share the shop address, working hours, and contact phone naturally in the reply.
+  Example: "სამწუხაროდ, ჩვენი ონლაინ კატალოგი სრული კოლექციის მხოლოდ ნაწილია — მაღაზიაში გაცილებით მეტი არჩევანია! [address, hours, phone from COMPANY INFO]"
+  ALSO collect their contact: if phone_collected:NO → ask for full name + phone in the SAME message so a representative can personally help them find what they need.
+  If phone:[number] is already in STATE → confirm a rep will be in touch and wish them a pleasant visit.
 ${groupSection}
 TOP PRODUCTS${context.imageSearchQuery ? ' (closest visual matches to customer photo)' : q ? ' (matched to your message)' : ''}:
 ${detailedList}${overflowNote}

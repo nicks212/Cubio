@@ -17,6 +17,7 @@ import {
   FLOOR_EXTRACT_RE,
   SIZE_EXTRACT_RE,
   PHONE_EXTRACT_RE,
+  PRODUCT_DISSATISFIED_RE,
 } from './signals';
 
 export interface ConversationState {
@@ -30,6 +31,8 @@ export interface ConversationState {
   buyingIntent: boolean;
   photosRequested: boolean;
   desiredProduct: string | null;  // craft shop: product name when mentioned
+  /** True when customer expressed dissatisfaction after products were shown (craft shop only). */
+  productDissatisfied: boolean;
   /** The apartment_number last shown to the customer via SHOW_PHOTOS. */
   lastShownAptId: string | null;
   /** True when customer reacted positively after photos were shown ("Minda", "Magaria!", "how do I buy?") */
@@ -152,6 +155,21 @@ export function extractConversationState(
   const buyingIntent = BUYING_INTENT_RE.test(allUserText) || aptConfirmed;
   const photosRequested = PHOTO_RE.test(allUserText);
 
+  // productDissatisfied — craft shop only.
+  // Only true when the AI has already listed products (contains bullet "•" lines)
+  // AND a subsequent user message matches PRODUCT_DISSATISFIED_RE.
+  // This prevents "I want something different" on the very first message from triggering it.
+  let productDissatisfied = false;
+  let aiHasListedProducts = false;
+  for (const msg of history) {
+    if ((msg.role === 'ai' || msg.role === 'model') && /^\s*•\s+\S/m.test(msg.content)) {
+      aiHasListedProducts = true;
+    }
+    if (aiHasListedProducts && msg.role === 'user' && PRODUCT_DISSATISFIED_RE.test(msg.content)) {
+      productDissatisfied = true;
+    }
+  }
+
   return {
     budget,
     rooms,
@@ -162,6 +180,7 @@ export function extractConversationState(
     buyingIntent,
     photosRequested,
     desiredProduct,
+    productDissatisfied,
     lastShownAptId,
     aptConfirmed,
   };
@@ -215,6 +234,7 @@ export function formatStateForPrompt(state: ConversationState): string {
   if (state.phone)        parts.push(`phone:${state.phone}`);
   else if (state.buyingIntent || state.aptConfirmed || state.lastShownAptId) parts.push('phone_collected:NO');
   if (state.desiredProduct) parts.push(`product:${state.desiredProduct}`);
+  if (state.productDissatisfied) parts.push(`dissatisfied:YES`);
   if (state.lastShownAptId) parts.push(`shown_apt:${state.lastShownAptId}`);
   if (state.aptConfirmed)   parts.push(`apt_confirmed:YES`);
   if (state.buyingIntent)   parts.push(`intent:BUYING`);
