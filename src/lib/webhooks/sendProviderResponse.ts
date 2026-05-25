@@ -57,7 +57,10 @@ async function sendMetaResponse(
     return;
   }
   const apiVersion = 'v22.0';
-  const url = `https://graph.facebook.com/${apiVersion}/me/messages?access_token=${pageAccessToken}`;
+  // Instagram Login tokens (IGAA...) must use graph.instagram.com — graph.facebook.com rejects them.
+  // Facebook page tokens always use graph.facebook.com.
+  const baseHost = pageAccessToken.startsWith('IGAA') ? 'https://graph.instagram.com' : 'https://graph.facebook.com';
+  const url = `${baseHost}/${apiVersion}/me/messages?access_token=${pageAccessToken}`;
 
   const res = await fetch(url, {
     method: 'POST',
@@ -212,7 +215,9 @@ async function sendMetaImage(
   pageAccessToken: string,
 ): Promise<void> {
   const apiVersion = 'v22.0';
-  const url = `https://graph.facebook.com/${apiVersion}/me/messages?access_token=${pageAccessToken}`;
+  // Same IGAA token routing as sendMetaResponse.
+  const baseHost = pageAccessToken.startsWith('IGAA') ? 'https://graph.instagram.com' : 'https://graph.facebook.com';
+  const url = `${baseHost}/${apiVersion}/me/messages?access_token=${pageAccessToken}`;
 
   const res = await fetch(url, {
     method: 'POST',
