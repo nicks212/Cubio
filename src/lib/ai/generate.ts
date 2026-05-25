@@ -52,7 +52,12 @@ export async function generateReply(
 ): Promise<string> {
   // ── Chat intent: lean micro-prompt, no business context ───────────────────
   if (intent === 'chat') {
-    const microPrompt = `You are a warm, natural sales assistant. Reply in Georgian if the customer writes Georgian, English otherwise. 1–2 sentences max. Be conversational — if they say thanks, say you're welcome. If they say goodbye, wish them well.\n\nMessage: ${message}\n\nReply:`;
+    // Inject a short business hint so the AI responds contextually to openers like
+    // "I saw an ad", "someone referred me", "vnaxe reklama" — instead of the ACCURACY fallback.
+    // Truncated to 120 chars to keep the micro-prompt lean.
+    const bizCtx = (context as { businessDescription?: string | null }).businessDescription;
+    const bizHint = bizCtx ? ` for: ${bizCtx.slice(0, 120)}` : '';
+    const microPrompt = `You are a warm, natural sales assistant${bizHint}. Reply in Georgian if the customer writes Georgian or romanized Georgian (e.g. "reklama", "vnaxe", "minda", "shercheva"), English otherwise. 1–2 sentences max. Be conversational. If they mention seeing an ad or coming to inquire — warmly ask what they are looking for. If they say thanks, say you're welcome. If they say goodbye, wish them well.\n\nMessage: ${message}\n\nReply:`;
     const isGeo = /[\u10D0-\u10FF]/.test(message);
     for (let attempt = 0; attempt <= 1; attempt++) {
       try {

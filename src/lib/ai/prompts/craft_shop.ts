@@ -2,10 +2,24 @@ import type { ProductContext } from '../types';
 
 type ProductRow = ProductContext['products'][0];
 
-function scoreProduct(p: ProductRow, q: string): number {
-  if (!q) return 0;
-  const text = `${p.name} ${p.category ?? ''} ${p.material ?? ''} ${(p.zodiac_compatibility ?? []).join(' ')} ${p.birthstones ?? ''}`.toLowerCase();
-  return text.includes(q.substring(0, 8)) ? 2 : 0;
+function scoreProduct(p: ProductRow, q: string, customerBudget: number | null): number {
+  let score = 0;
+  // Keyword relevance
+  if (q) {
+    const text = `${p.name} ${p.category ?? ''} ${p.material ?? ''} ${(p.zodiac_compatibility ?? []).join(' ')} ${p.birthstones ?? ''}`.toLowerCase();
+    if (text.includes(q.substring(0, 8))) score += 2;
+  }
+  // Price proximity — products at or under budget score highest, then closest over budget
+  if (customerBudget !== null) {
+    if (p.price <= customerBudget) {
+      // Within budget: closer to budget ceiling = more relevant
+      score += 3 + (p.price / customerBudget);
+    } else {
+      // Over budget: penalise by how far over they are (closer = less penalty)
+      score -= (p.price - customerBudget) / customerBudget;
+    }
+  }
+  return score;
 }
 
 /**
@@ -20,9 +34,25 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const available = context.products.filter(p => p.in_stock);
   const q = userQuery.toLowerCase();
 
-  const sorted = [...available].sort((a, b) => scoreProduct(b, q) - scoreProduct(a, q));
+  // Extract customer budget from userQuery (e.g. "7 gel", "₾25", "50 lari")
+  const budgetRaw = /(\d[\d,\s]*)\s*(?:₾|\$|gel|lari|ლარ)/i.exec(userQuery);
+  const customerBudget = budgetRaw ? parseFloat(budgetRaw[1].replace(/[,\s]/g, '')) : null;
+
+  // Sort by combined score: keyword relevance + price proximity to budget.
+  // Products within budget always appear before more expensive ones.
+  const sorted = [...available].sort((a, b) => scoreProduct(b, q, customerBudget) - scoreProduct(a, q, customerBudget));
   const top3 = sorted.slice(0, 3);
   const rest = sorted.slice(3);
+
+  // Budget gap: customer's stated budget is below the cheapest available item.
+  // Backend detects this so AI never has to guess — it just follows the injected note.
+  const prices = available.map(p => p.price);
+  const minCatalogPrice = prices.length > 0 ? Math.min(...prices) : null;
+  const maxCatalogPrice = prices.length > 0 ? Math.max(...prices) : null;
+  const hasBudgetGap = customerBudget !== null && minCatalogPrice !== null && customerBudget < minCatalogPrice * 0.95;
+  const budgetGapNote = hasBudgetGap
+    ? `BUDGET GAP: Customer's budget (₾${customerBudget}) is below our lowest price (₾${minCatalogPrice}, range ₾${minCatalogPrice}–₾${maxCatalogPrice}). Acknowledge this honestly and naturally — do NOT list products above their budget. State our actual price range, then warmly invite them to visit the physical shop using COMPANY INFO (address, working hours, phone) where budget-friendly options or custom orders may be available. If phone_collected:NO — also ask for name + phone in the same message so a representative can personally assist them.\n`
+    : '';
 
   // Top 3 — full detail; compact photo metadata (no raw URLs)
   const detailedList = top3.length > 0
@@ -109,7 +139,7 @@ DISSATISFIED CUSTOMER — when STATE shows dissatisfied:YES:
   ALSO collect their contact: if phone_collected:NO → ask for full name + phone in the SAME message so a representative can personally help them find what they need.
   If phone:[number] is already in STATE → confirm a rep will be in touch and wish them a pleasant visit.
 ${groupSection}
-TOP PRODUCTS${context.imageSearchQuery ? ' (closest visual matches to customer photo)' : q ? ' (matched to your message)' : ''}:
+${budgetGapNote}TOP PRODUCTS${context.imageSearchQuery ? ' (closest visual matches to customer photo)' : q ? ' (matched to your message)' : ''}:
 ${detailedList}${overflowNote}
 
 Only reference products listed here. Do not invent products, prices, or availability.`.trim();

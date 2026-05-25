@@ -5,7 +5,15 @@ type ApartmentRow = ApartmentContext['apartments'][0];
 function scoreApartment(a: ApartmentRow, wantRooms: number | null, maxPrice: number | null): number {
   let s = 0;
   if (wantRooms !== null && a.rooms_quantity === wantRooms) s += 3;
-  if (maxPrice !== null && a.total_price <= maxPrice) s += 2;
+  if (maxPrice !== null) {
+    if (a.total_price <= maxPrice) {
+      // Within budget: closer to ceiling = more relevant
+      s += 2 + (a.total_price / maxPrice);
+    } else {
+      // Over budget: penalise proportionally — further over = ranked lower
+      s -= (a.total_price - maxPrice) / maxPrice;
+    }
+  }
   return s;
 }
 
@@ -65,6 +73,16 @@ export function buildRealEstateSystemPrompt(
       }).join('\n')
     : '';
 
+  // Budget gap: customer's stated budget is below the cheapest available apartment.
+  // Detected here so AI never guesses — it just follows the injected note naturally.
+  const prices = vacant.map(a => a.total_price);
+  const minCatalogPrice = prices.length > 0 ? Math.min(...prices) : null;
+  const maxCatalogPrice = prices.length > 0 ? Math.max(...prices) : null;
+  const hasBudgetGap = maxPrice !== null && minCatalogPrice !== null && maxPrice < minCatalogPrice * 0.95;
+  const budgetGapNote = hasBudgetGap
+    ? `BUDGET GAP: Customer's budget (₾${maxPrice.toLocaleString()}) is below our lowest apartment price (₾${minCatalogPrice.toLocaleString()}, range ₾${minCatalogPrice.toLocaleString()}–₾${maxCatalogPrice?.toLocaleString()}). Acknowledge this honestly and naturally — do NOT recommend apartments above their budget. State our actual price range, then warmly invite them to discuss payment plans, installment options, or upcoming projects that may fit their budget. If phone_collected:NO — ask for name + phone in the same message so a sales rep can follow up personally.\n`
+    : '';
+
   const businessInfo = context.businessDescription
     ? `COMPANY INFO: ${context.businessDescription}\n\n`
     : '';
@@ -93,7 +111,7 @@ LEAD COLLECTION — MANDATORY when customer shows buying intent, wants to visit,
 ALWAYS follow what the customer is actually asking. If they want a different apartment, different floor, or more options → help them immediately. The customer decides — never say "we already selected an apartment for you".
 
 AVAILABLE APARTMENTS${filterNote}:
-${detailedList}${compactRest}
+${budgetGapNote}${detailedList}${compactRest}
 
 IMPORTANT: The lists above contain ALL available apartments. Never say there are no options on a specific floor or rooms count without checking every line above.
 Only reference apartments listed here. For unlisted info, say you will check and follow up.`.trim();
