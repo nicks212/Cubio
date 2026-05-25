@@ -45,9 +45,18 @@ export const BUYING_INTENT_RE =
 export const PHONE_RE =
   /(?:\+995[\s-]?)?(?:\(?\d{3}\)?[\s-]?)?\d{2,3}[\s-]?\d{2,3}[\s-]?\d{2,4}|\+\d{7,15}|\b\d{9,12}\b/;
 
-/** Angry / abusive language or explicit human-agent demand. */
+/**
+ * Broad gate used to decide whether to run the AI frustration scorer.
+ * Intentionally wider than strict anger detection — false positives are OK here
+ * (the AI will rate them 1–2 and skip). What matters is not missing true frustration.
+ * Covers: Georgian script, romanized Georgian, English, Russian.
+ */
+export const FRUSTRATION_GATE_RE =
+  /\b(?:terrible|awful|horrible|unacceptable|ridiculous|useless|scam|fraud|furious|angry|disgusting|outrage|worst|never\s+again|nobody\s*(?:answers?|responds?|replies?))|(?:საშინელ|კატასტროფ|სამარცხვინ|თაღლით|გაბრაზ|ვერ\s*(?:გავიგ|ვიგ)|ვეღარ|არავინ\s*(?:მიპასუხ|პასუხ|გვიპასუხ)|უბედ|შეუძლებელ|ვერ\s*მიპასუხ)|(?:sashinele|ubedur|aravin\s*mipasux|ver\s*gavig|ver\s*mipasux|katastrofa)|(?:менеджер|жалоба|мошенничество|обман|ужасно|отвратительно)/i;
+
+/** @deprecated Use HUMAN_REQUEST_RE for explicit operator demands and FRUSTRATION_GATE_RE + AI scoring for anger detection. */
 export const ANGER_RE =
-  /\b(?:ridiculous|unacceptable|terrible|disgusting|useless|awful|horrible|scam|fraud|furious|angry|worst|never\s+again|talk\s+to\s+(?:a\s+)?human|speak\s+to\s+(?:a\s+)?(?:person|human|manager|supervisor|agent)|get\s+me\s+(?:a\s+)?(?:manager|supervisor|human)|real\s+person\s+please)|(?:სასაცილოა|სამარცხვინოა|კატასტროფა|თაღლითი|გაბრაზებ|ადამიანი\s*მინდა|ოპერატორი\s*(?:გამომიძახ|დამიკავშირ)|менеджер|жалоба|мошенничество|обман|ужасно|отвратительно|поговорить\s+с\s+человеком)/i;
+  /\b(?:ridiculous|unacceptable|terrible|disgusting|useless|awful|horrible|scam|fraud|furious|angry|worst|never\s+again|talk\s+to\s+(?:a\s+)?human|speak\s+to\s+(?:a\s+)?(?:person|human|manager|supervisor|agent)|get\s+me\s+(?:a\s+)?(?:manager|supervisor|human)|real\s+person\s+please)|(?:სასაცილოა|სამარცხვინოა|კატასტროფა|თაღლითი|გაბრაზებ|საშინელება|უბედურება|ვერ\s*(?:გავიგე|მიპასუხ)|არავინ\s*(?:მიპასუხ|გიპასუხ|გვიპასუხ|პასუხ)|ადამიანი\s*მინდა|ოპერატორი\s*(?:გამომიძახ|დამიკავშირ)|менеджер|жалоба|мошенничество|обман|ужасно|отвратительно|поговорить\s+с\s+человеком)|(?:\bsashinele|\bubedure|\baravin\s*mipasux|\baravin\s*ar\s*pasux)/i;
 
 /** Qualification signals — budget, room count, floor, m². */
 export const QUALIFICATION_RE =

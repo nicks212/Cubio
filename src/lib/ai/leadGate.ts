@@ -11,7 +11,8 @@
 import {
   BUYING_INTENT_RE,
   PHONE_RE,
-  ANGER_RE,
+  HUMAN_REQUEST_RE,
+  FRUSTRATION_GATE_RE,
   QUALIFICATION_RE,
   SKIP_INTENTS_RE,
   BROWSE_ONLY_RE,
@@ -45,13 +46,13 @@ export function shouldRunLeadAnalysis(
 
   // ── Hard skip: empty or purely social message ──────────────────────────
   if (!msg || SKIP_INTENTS_RE.test(msg)) {
-    return hasAnger
+    return checkEscalation
       ? { lead: false, escalation: true }
       : { lead: false, escalation: false };
   }
 
-  // ── Hard skip: pure photo request ─────────────────────────────────────
-  if (PHOTO_ONLY_RE.test(msg) && !hasAnger) {
+  // ── Hard skip: pure photo request ───────────────────────────────────────────
+  if (PHOTO_ONLY_RE.test(msg) && !checkEscalation) {
     return { lead: false, escalation: false };
   }
 
@@ -63,7 +64,7 @@ export function shouldRunLeadAnalysis(
   const hasPhoneEarly = PHONE_RE.test(userText2);
   const minDepth = hasPhoneEarly ? 2 : 3;
   if (userMessages.length < minDepth) {
-    return hasAnger
+    return checkEscalation
       ? { lead: false, escalation: true }
       : { lead: false, escalation: false };
   }
@@ -80,7 +81,7 @@ export function shouldRunLeadAnalysis(
 
   // Skip if latest message is pure browsing with no other signals
   if (BROWSE_ONLY_RE.test(msg) && !hasPhone && !hasBuyingIntent) {
-    return hasAnger
+    return checkEscalation
       ? { lead: false, escalation: true }
       : { lead: false, escalation: false };
   }
@@ -106,15 +107,15 @@ export function shouldRunLeadAnalysis(
       m => (m.role === 'ai' || m.role === 'model') && /^\s*•\s+\S/m.test(m.content),
     );
     if (userMsgCount >= 2 && aiHasListedProducts) {
-      return { lead: true, escalation: hasAnger };
+      return { lead: true, escalation: checkEscalation };
     }
   }
 
   const runLead = positiveSignalCount >= 2 || (craftQualified && hasBuyingIntent);
 
-  if (!runLead && !hasAnger) {
+  if (!runLead && !checkEscalation) {
     return { lead: false, escalation: false };
   }
 
-  return { lead: runLead, escalation: hasAnger || positiveSignalCount >= 2 };
+  return { lead: runLead, escalation: checkEscalation || positiveSignalCount >= 2 };
 }

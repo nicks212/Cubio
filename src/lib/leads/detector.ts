@@ -11,7 +11,7 @@ import {
   BUYING_INTENT_RE,
   PHONE_RE,
   PHONE_EXTRACT_RE,
-  ANGER_RE,
+  HUMAN_REQUEST_RE,
   QUALIFICATION_RE,
   CANCEL_RE,
   BROWSE_AGAIN_RE,
@@ -65,7 +65,10 @@ export function analyzeLeadState(
     QUALIFICATION_RE.test(userText) ||
     !!lastShownAptId ||
     businessType === 'craft_shop'; // craft shop: product mention counts as qualification
-  const isEscalation = ANGER_RE.test(latestMessage);
+  // Explicit human-operator request in the latest message — immediate escalation.
+  // Frustration/anger is scored 1–5 by the AI in the fire-and-forget path (detect.ts);
+  // the AI's score >= 3 creates an escalation there, not here.
+  const isEscalation = HUMAN_REQUEST_RE.test(latestMessage);
 
   // ── Phone extraction ───────────────────────────────────────────────────────
   const phoneMatch = PHONE_EXTRACT_RE.exec(userText);

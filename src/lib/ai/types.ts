@@ -51,5 +51,12 @@ export interface LeadDetection {
 
 export interface EscalationDetection {
   isEscalation: boolean;
+  /**
+   * 1 = calm/neutral, 2 = mildly frustrated, 3 = clearly upset,
+   * 4 = angry, 5 = abusive/threatening.
+   * Threshold for escalation creation: >= 3.
+   * Repeated questions alone (no frustration expressed) must score 1 or 2.
+   */
+  frustrationLevel: number;
   summary: string;
 }

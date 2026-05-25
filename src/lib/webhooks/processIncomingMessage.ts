@@ -1,7 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { generateReply } from '@/lib/ai';
 import { analyzeLeadState } from '@/lib/leads/detector';
-import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, ANGER_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE } from '@/lib/ai/signals';
+import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE } from '@/lib/ai/signals';
+import { detectLeadAndEscalation } from '@/lib/ai/detect';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
 import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
@@ -49,15 +50,20 @@ export async function processIncomingMessage(
   }
 
   // Resolve sender name from provider API (Meta webhooks don’t include the user’s name)
-  let resolvedName = msg.senderName;
+  let resolvedName: string | null = msg.senderName ?? null;
+  // For Instagram: @handle stored separately as provider_nickname (handle identifies the account)
+  // For Facebook: same as display name (no separate handle concept)
+  let resolvedNickname: string | null = msg.senderName ?? null;
   if (!resolvedName && (msg.provider === 'facebook' || msg.provider === 'instagram')) {
-    resolvedName = await resolveMetaSenderName(
+    const resolved = await resolveMetaSenderName(
       msg.senderId,
       msg.provider as 'facebook' | 'instagram',
       integration.accessToken,
       integration.providerAccountId, // page ID — used for Conversations API fallback
     );
-    if (resolvedName) console.info(`${label} Resolved sender name: ${resolvedName}`);
+    resolvedName = resolved.name;
+    resolvedNickname = resolved.nickname;
+    if (resolvedName || resolvedNickname) console.info(`${label} Resolved sender name: ${resolvedName ?? resolvedNickname}`);
   }
 
   // 2. Find or create conversation — read ai_paused for human takeover check
@@ -86,11 +92,11 @@ export async function processIncomingMessage(
       // Cascade to leads and escalations that were created with null contact_name
       await Promise.all([
         supabase.from('leads')
-          .update({ name: resolvedName, provider_nickname: resolvedName })
+          .update({ name: resolvedName, provider_nickname: resolvedNickname ?? resolvedName })
           .eq('conversation_id', conversationId)
           .is('name', null),
         supabase.from('escalations')
-          .update({ contact_name: resolvedName, provider_nickname: resolvedName })
+          .update({ contact_name: resolvedName, provider_nickname: resolvedNickname ?? resolvedName })
           .eq('conversation_id', conversationId)
           .is('contact_name', null),
       ]);
@@ -341,7 +347,7 @@ export async function processIncomingMessage(
       if (ESCALATION_CONFIRM_RE.test(combinedMessage.trim())) escalationConfirmed = true;
       await redis.del(ESC_OFFER_KEY); // clear regardless — offer was either taken or declined
     }
-    if (!escalationConfirmed && !ANGER_RE.test(combinedMessage)) {
+    if (!escalationConfirmed && !HUMAN_REQUEST_RE.test(combinedMessage)) {
       const humanReq = HUMAN_REQUEST_RE.test(combinedMessage); // always re-offer if explicit
       const customReq = !skipReOffer && CUSTOM_REQUEST_RE.test(combinedMessage);
       const aptCtx  = businessContext as ApartmentContext;
@@ -376,7 +382,7 @@ export async function processIncomingMessage(
     });
     await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
     await sendProviderResponse(msg.provider, msg.senderId, contactMsg, integration.accessToken, integration.providerAccountId);
-    void persistEscalation(supabase, integration.companyId, conversationId, resolvedName, combinedMessage, msg.provider);
+    void persistEscalation(supabase, integration.companyId, conversationId, resolvedName, resolvedNickname, combinedMessage, msg.provider);
     await releaseLock(conversationId);
     console.info(`${label} [escalation] Soft escalation confirmed — contact sent + AI pausing for conversation ${conversationId}`);
     return { conversationId, reply: contactMsg };
@@ -523,6 +529,7 @@ export async function processIncomingMessage(
       conversationId,
       integration.businessType,
       resolvedName,
+      resolvedNickname,
       msg.provider,
       lastShownApt,
       gate.lead,
@@ -630,14 +637,30 @@ async function detectAndPersistLeadOrEscalation(
   conversationId: string,
   businessType: 'real_estate' | 'craft_shop',
   senderName: string | null,
+  providerNickname: string | null,
   provider: string,
   lastShownAptId: string | null,
   checkLead = true,
   checkEscalation = true,
 ) {
   try {
-    // Deterministic analysis — no Gemini call, pure regex + heuristics
+    // Deterministic analysis — no Gemini call, pure regex + heuristics.
+    // isEscalation here = explicit human/operator request only.
     const analysis = analyzeLeadState(history, latestMessage, businessType, lastShownAptId);
+
+    // AI-based frustration scoring — runs in the fire-and-forget path so no latency impact.
+    // The AI scores 1–5; scores >= 3 create an escalation.
+    // Explicit human requests (already in analysis.isEscalation) bypass AI scoring.
+    let escalationSignal = analysis.isEscalation;
+    if (checkEscalation && !analysis.isEscalation) {
+      const { escalation: aiEsc } = await detectLeadAndEscalation(history, businessType, false, true);
+      escalationSignal = aiEsc.isEscalation; // true when frustrationLevel >= 3
+      if (aiEsc.frustrationLevel >= 2) {
+        console.info(`[pipeline] Frustration score ${aiEsc.frustrationLevel}/5 for conversation ${conversationId}${
+          aiEsc.frustrationLevel >= 3 ? ' → escalating' : ' → below threshold, skipping'
+        }`);
+      }
+    }
 
     // ── Fetch existing open lead for lifecycle updates + upsert ──────────────
     const { data: existingLead } = await supabase
@@ -698,7 +721,7 @@ async function detectAndPersistLeadOrEscalation(
         // Existing open lead — refresh with latest info
         await supabase.from('leads').update({
           name: senderName ?? analysis.name ?? undefined,
-          provider_nickname: senderName ?? undefined,
+          provider_nickname: providerNickname ?? senderName ?? undefined,
           phone: analysis.phone ?? undefined,
           summary: analysis.summary,
           status: 'new',
@@ -710,7 +733,7 @@ async function detectAndPersistLeadOrEscalation(
           company_id: companyId,
           conversation_id: conversationId,
           name: senderName ?? analysis.name,
-          provider_nickname: senderName,
+          provider_nickname: providerNickname ?? senderName,
           phone: analysis.phone,
           summary: analysis.summary,
           status: 'new',
@@ -722,7 +745,7 @@ async function detectAndPersistLeadOrEscalation(
     }
 
     // ── Escalation ────────────────────────────────────────────────────────────
-    if (checkEscalation && analysis.isEscalation) {
+    if (checkEscalation && escalationSignal) {
       const { data: latestEscalation } = await supabase
         .from('escalations')
         .select('id, status, updated_at')
@@ -747,7 +770,7 @@ async function detectAndPersistLeadOrEscalation(
             company_id: companyId,
             conversation_id: conversationId,
             contact_name: senderName,
-            provider_nickname: senderName,
+            provider_nickname: providerNickname ?? senderName,
             summary: `Escalation: ${latestMessage.slice(0, 200)}`,
             status: 'open',
             provider,
@@ -763,7 +786,7 @@ async function detectAndPersistLeadOrEscalation(
           company_id: companyId,
           conversation_id: conversationId,
           contact_name: senderName,
-          provider_nickname: senderName,
+          provider_nickname: providerNickname ?? senderName,
           summary: `Escalation: ${latestMessage.slice(0, 200)}`,
           status: 'open',
           provider,
@@ -790,6 +813,7 @@ async function persistEscalation(
   companyId: string,
   conversationId: string,
   senderName: string | null,
+  providerNickname: string | null,
   latestMessage: string,
   provider: string,
 ) {
@@ -798,7 +822,7 @@ async function persistEscalation(
       company_id: companyId,
       conversation_id: conversationId,
       contact_name: senderName,
-      provider_nickname: senderName,
+      provider_nickname: providerNickname ?? senderName,
       summary: `Customer requested representative: "${latestMessage.slice(0, 200)}"`,
       status: 'open',
       provider,
@@ -839,13 +863,15 @@ export async function resolveMetaSenderName(
   provider: 'facebook' | 'instagram',
   accessToken: string,
   pageId?: string,
-): Promise<string | null> {
+): Promise<{ name: string | null; nickname: string | null }> {
   // Instagram Login tokens (start with 'IGAA') must use graph.instagram.com.
   // Facebook page tokens and legacy Instagram tokens use graph.facebook.com.
   // This ensures FB is completely unaffected — only IGAA tokens route differently.
   const baseHost = accessToken.startsWith('IGAA')
     ? 'https://graph.instagram.com'
     : 'https://graph.facebook.com';
+
+  const empty = { name: null, nickname: null };
 
   try {
     // ── Attempt 1: direct user profile lookup ──────────────────────────────
@@ -856,10 +882,15 @@ export async function resolveMetaSenderName(
     const res = await fetch(url.toString());
     if (res.ok) {
       const data = await res.json() as { name?: string; first_name?: string; last_name?: string; username?: string };
-      const resolved = provider === 'instagram'
-        ? (data.name ?? (data.username ? `@${data.username}` : null) ?? null)
-        : (data.name ?? ([data.first_name, data.last_name].filter(Boolean).join(' ') || null));
-      if (resolved) return resolved;
+      if (provider === 'instagram') {
+        const name = data.name ?? null;
+        // Instagram: prefer @username as the provider_nickname (handle), fall back to display name
+        const nickname = data.username ? `@${data.username}` : (data.name ?? null);
+        if (name || nickname) return { name, nickname };
+      } else {
+        const name = data.name ?? ([data.first_name, data.last_name].filter(Boolean).join(' ') || null);
+        if (name) return { name, nickname: name };
+      }
     }
 
     // ── Attempt 2: Conversations API (pages_messaging permission) ──────────
@@ -881,7 +912,7 @@ export async function resolveMetaSenderName(
         const participant =
           participants.find(p => p.id === senderId) ??
           participants.find(p => p.id !== pageId);
-        if (participant?.name) return participant.name;
+        if (participant?.name) return { name: participant.name, nickname: participant.name };
       } else {
         const errBody = await convRes.text().catch(() => '');
         console.warn(`[resolveMetaSenderName] Conversations API ${convRes.status} for ${provider}/${senderId}: ${errBody}`);
@@ -889,9 +920,9 @@ export async function resolveMetaSenderName(
     }
 
     console.warn(`[resolveMetaSenderName] Could not resolve name for ${provider} sender ${senderId}`);
-    return null;
+    return empty;
   } catch (err) {
     console.error(`[resolveMetaSenderName] Fetch failed for sender ${senderId} (${provider}):`, err);
-    return null;
+    return empty;
   }
 }

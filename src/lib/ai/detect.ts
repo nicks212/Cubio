@@ -4,7 +4,7 @@ import type { LeadDetection, EscalationDetection } from './types';
 const EMPTY_LEAD: LeadDetection = {
   isLead: false, summary: '', meetingDate: null, meetingNotes: null, name: null, phone: null, email: null,
 };
-const EMPTY_ESCALATION: EscalationDetection = { isEscalation: false, summary: '' };
+const EMPTY_ESCALATION: EscalationDetection = { isEscalation: false, frustrationLevel: 1, summary: '' };
 
 /**
  * Detects both lead signals AND escalation signals in a single Gemini call.
@@ -41,23 +41,30 @@ export async function detectLeadAndEscalation(
 
   // ── Escalation-only prompt (shorter = fewer tokens when lead check skipped) ──
   if (!checkLead && checkEscalation) {
-    const escalationPrompt = `Analyze this conversation for escalation signals only. Respond with JSON only, no markdown.
+    const escalationPrompt = `Analyze this conversation for customer frustration only. Respond with JSON only, no markdown.
 
 Conversation:
 ${historyStr}
 
 Return exactly:
 {
-  "isEscalation": true ONLY if customer is clearly angry, uses offensive/abusive language, or explicitly demands a human agent. Repeated questions or mild impatience do NOT count,
-  "escalationSummary": "Why upset and what they need. Empty string if not an escalation."
+  "frustrationLevel": integer 1–5 where:
+    1 = calm or neutral,
+    2 = mildly impatient (e.g. asking the same question twice, no emotional tone),
+    3 = clearly frustrated or upset — words or tone expressing disappointment, feeling ignored, or dissatisfaction,
+    4 = angry — strong complaints, feeling deceived, raising their voice in text,
+    5 = abusive or threatening language.
+  IMPORTANT: Repeated questions alone without any expressed frustration or negative emotion must score 1 or 2, never 3+.
+  "escalationSummary": "One sentence: what upset them and what they need. Empty string if frustrationLevel is 1 or 2."
 }`;
     try {
       const result = await model.generateContent(escalationPrompt);
       const raw = result.response.text().trim().replace(/```json\n?|\n?```/g, '');
-      const p = JSON.parse(raw) as { isEscalation: boolean; escalationSummary: string };
+      const p = JSON.parse(raw) as { frustrationLevel: number; escalationSummary: string };
+      const level = typeof p.frustrationLevel === 'number' ? p.frustrationLevel : 1;
       return {
         lead: EMPTY_LEAD,
-        escalation: { isEscalation: p.isEscalation, summary: p.escalationSummary ?? '' },
+        escalation: { isEscalation: level >= 3, frustrationLevel: level, summary: p.escalationSummary ?? '' },
       };
     } catch {
       return { lead: EMPTY_LEAD, escalation: EMPTY_ESCALATION };
@@ -96,8 +103,14 @@ Return exactly:
   "name": null or "customer's full name if they explicitly shared it in conversation",
   "phone": null or "phone number if explicitly mentioned anywhere",
   "email": null or "email if explicitly mentioned",
-  "isEscalation": true ONLY if customer is clearly angry, uses offensive/abusive language, or explicitly demands a human agent. Repeated questions, mild impatience, or asking multiple times do NOT count,
-  "escalationSummary": "Why upset and what they need. Empty string if not an escalation."
+  "frustrationLevel": integer 1–5 where:
+    1 = calm or neutral,
+    2 = mildly impatient (e.g. asking the same question twice, no emotional tone),
+    3 = clearly frustrated or upset — words or tone expressing disappointment, feeling ignored, or dissatisfaction,
+    4 = angry — strong complaints, feeling deceived, raising their voice in text,
+    5 = abusive or threatening language.
+  IMPORTANT: Repeated questions alone without any expressed frustration or negative emotion must score 1 or 2, never 3+.
+  "escalationSummary": "One sentence: what upset them and what they need. Empty string if frustrationLevel is 1 or 2."
 }`;
 
   try {
@@ -106,23 +119,25 @@ Return exactly:
     const p = JSON.parse(raw) as {
       isLead: boolean; summary: string; meetingDate: string | null;
       meetingNotes: string | null; name: string | null; phone: string | null; email: string | null;
-      isEscalation: boolean; escalationSummary: string;
+      isEscalation: boolean; escalationSummary: string; frustrationLevel: number;
     };
-    return {
-      lead: {
-        isLead: p.isLead,
-        summary: p.summary ?? '',
-        meetingDate: p.meetingDate ?? null,
-        meetingNotes: p.meetingNotes ?? null,
-        name: p.name ?? null,
-        phone: p.phone ?? null,
-        email: p.email ?? null,
-      },
-      escalation: {
-        isEscalation: p.isEscalation,
-        summary: p.escalationSummary ?? '',
-      },
-    };
+      const level = typeof p.frustrationLevel === 'number' ? p.frustrationLevel : (p.isEscalation ? 4 : 1);
+      return {
+        lead: {
+          isLead: p.isLead,
+          summary: p.summary ?? '',
+          meetingDate: p.meetingDate ?? null,
+          meetingNotes: p.meetingNotes ?? null,
+          name: p.name ?? null,
+          phone: p.phone ?? null,
+          email: p.email ?? null,
+        },
+        escalation: {
+          isEscalation: level >= 3,
+          frustrationLevel: level,
+          summary: p.escalationSummary ?? '',
+        },
+      };
   } catch {
     return { lead: EMPTY_LEAD, escalation: EMPTY_ESCALATION };
   }
