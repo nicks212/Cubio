@@ -58,13 +58,29 @@ Return exactly:
   "escalationSummary": "One sentence: what upset them and what they need. Empty string if frustrationLevel is 1 or 2."
 }`;
     try {
-      const result = await model.generateContent(escalationPrompt);
-      const raw = result.response.text().trim().replace(/```json\n?|\n?```/g, '');
-      const p = JSON.parse(raw) as { frustrationLevel: number; escalationSummary: string };
-      const level = typeof p.frustrationLevel === 'number' ? p.frustrationLevel : 1;
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: escalationPrompt }] }],
+        // Low token cap + zero temperature — scorer only needs a short JSON object.
+        // Using 200 (not the shared 400) prevents truncation of the escalationSummary string
+        // which would otherwise cause JSON.parse to throw and silently return no-escalation.
+        generationConfig: { maxOutputTokens: 200, temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } } as never,
+      });
+      const raw = result.response.text().trim().replace(/```json\n?|\n?```/g, '').trim();
+      let level = 1;
+      let summary = '';
+      try {
+        const p = JSON.parse(raw) as { frustrationLevel: number; escalationSummary: string };
+        level = typeof p.frustrationLevel === 'number' ? Math.max(1, Math.min(5, p.frustrationLevel)) : 1;
+        summary = p.escalationSummary ?? '';
+      } catch {
+        // JSON was truncated — extract frustrationLevel via regex as a fallback.
+        // frustrationLevel always appears before escalationSummary so it's safe to regex-extract.
+        const m = /"frustrationLevel"\s*:\s*([1-5])/.exec(raw);
+        level = m ? parseInt(m[1]) : 1;
+      }
       return {
         lead: EMPTY_LEAD,
-        escalation: { isEscalation: level >= 3, frustrationLevel: level, summary: p.escalationSummary ?? '' },
+        escalation: { isEscalation: level >= 3, frustrationLevel: level, summary },
       };
     } catch {
       return { lead: EMPTY_LEAD, escalation: EMPTY_ESCALATION };

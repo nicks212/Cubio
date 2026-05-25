@@ -521,7 +521,11 @@ export async function processIncomingMessage(
     console.info(
       `${label} [leadGate] Running — lead:${gate.lead} escalation:${gate.escalation} lifecycle:${hasLifecycleSignal}`,
     );
-    void detectAndPersistLeadOrEscalation(
+    // Awaited (not void) — Vercel can terminate the serverless function immediately after
+    // the response is returned, killing fire-and-forget Gemini + Supabase work before it
+    // completes. The reply is already sent to the user via sendProviderResponse above;
+    // the extra time here only delays the webhook 200 OK, which providers accept for 20s+.
+    await detectAndPersistLeadOrEscalation(
       supabase,
       fullHistory,
       combinedMessage,
@@ -769,7 +773,7 @@ async function detectAndPersistLeadOrEscalation(
           .gt('created_at', latestEscalation.updated_at as string);
 
         if ((newMsgCount ?? 0) >= 2) {
-          await supabase.from('escalations').insert({
+          const { error: esc2Err } = await supabase.from('escalations').insert({
             company_id: companyId,
             conversation_id: conversationId,
             contact_name: senderName,
@@ -778,14 +782,19 @@ async function detectAndPersistLeadOrEscalation(
             status: 'open',
             provider,
           });
-          await supabase.from('conversations').update({ ai_paused: true }).eq('id', conversationId);
-          console.info(`[pipeline] New escalation (post-resolution) + AI paused for conversation ${conversationId}`);
+          if (esc2Err) {
+            console.error(`[pipeline] escalations re-open insert failed for ${conversationId}:`, esc2Err.message);
+          } else {
+            const { error: pauseErr2 } = await supabase.from('conversations').update({ ai_paused: true }).eq('id', conversationId);
+            if (pauseErr2) console.error(`[pipeline] ai_paused update failed for ${conversationId}:`, pauseErr2.message);
+            console.info(`[pipeline] New escalation (post-resolution) + AI paused for conversation ${conversationId}`);
+          }
         } else {
           console.info(`[pipeline] Escalation suppressed — not enough new messages since last resolution (conversation ${conversationId})`);
         }
       } else {
         // No prior escalation — create fresh
-        await supabase.from('escalations').insert({
+        const { error: esc1Err } = await supabase.from('escalations').insert({
           company_id: companyId,
           conversation_id: conversationId,
           contact_name: senderName,
@@ -794,8 +803,13 @@ async function detectAndPersistLeadOrEscalation(
           status: 'open',
           provider,
         });
-        await supabase.from('conversations').update({ ai_paused: true }).eq('id', conversationId);
-        console.info(`[pipeline] Escalation created + AI paused for conversation ${conversationId}`);
+        if (esc1Err) {
+          console.error(`[pipeline] escalations insert failed for ${conversationId}:`, esc1Err.message);
+        } else {
+          const { error: pauseErr } = await supabase.from('conversations').update({ ai_paused: true }).eq('id', conversationId);
+          if (pauseErr) console.error(`[pipeline] ai_paused update failed for ${conversationId}:`, pauseErr.message);
+          console.info(`[pipeline] Escalation created + AI paused for conversation ${conversationId}`);
+        }
       }
     }
   } catch (err) {

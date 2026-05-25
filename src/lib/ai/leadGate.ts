@@ -47,7 +47,18 @@ export function shouldRunLeadAnalysis(
   //   the AI makes the final call (score >= 3 = escalate, score 1-2 = skip)
   const hasExplicitHumanReq = HUMAN_REQUEST_RE.test(msg);
   const mightBeFrustrated   = FRUSTRATION_GATE_RE.test(msg);
-  const checkEscalation = hasExplicitHumanReq || mightBeFrustrated;
+  // Also scan the last 3 user messages from history — the latest message might be neutral
+  // (e.g. "!") while a previous message expressed frustration or requested a human.
+  // Without this, the gate misses escalation when the customer follows up a frustrated
+  // message with a short acknowledgement before the escalation was created.
+  const recentUserHistory = history
+    .filter(m => m.role === 'user')
+    .slice(-3)
+    .map(m => m.content)
+    .join('\n');
+  const checkEscalation = hasExplicitHumanReq || mightBeFrustrated
+    || HUMAN_REQUEST_RE.test(recentUserHistory)
+    || FRUSTRATION_GATE_RE.test(recentUserHistory);
 
   // ── Hard skip: empty or purely social message ──────────────────────────
   if (!msg || SKIP_INTENTS_RE.test(msg)) {
