@@ -41,8 +41,13 @@ export function shouldRunLeadAnalysis(
 ): ShouldAnalyse {
   const msg = latestMessage.trim();
 
-  // ── Always check escalation when anger/abuse detected ─────────────────
-  const hasAnger = ANGER_RE.test(msg);
+  // ── Escalation gate ─────────────────────────────────────────────────────
+  // hasExplicitHumanReq: customer directly asked for a person/operator — always escalate
+  // mightBeFrustrated: broad signal that the AI frustration scorer should run;
+  //   the AI makes the final call (score >= 3 = escalate, score 1-2 = skip)
+  const hasExplicitHumanReq = HUMAN_REQUEST_RE.test(msg);
+  const mightBeFrustrated   = FRUSTRATION_GATE_RE.test(msg);
+  const checkEscalation = hasExplicitHumanReq || mightBeFrustrated;
 
   // ── Hard skip: empty or purely social message ──────────────────────────
   if (!msg || SKIP_INTENTS_RE.test(msg)) {
