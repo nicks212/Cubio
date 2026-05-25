@@ -4,7 +4,11 @@ import { processIncomingMessage } from '@/lib/webhooks/processIncomingMessage';
 import { verifyMetaSignature } from '@/lib/webhooks/security';
 
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN ?? 'cubio_webhook_token';
-const META_APP_SECRET = process.env.META_APP_SECRET;
+// META_APP_SECRET        = main app secret (signs Facebook/Messenger payloads)
+// META_IG_APP_SECRET     = Instagram-specific app secret (signs Instagram API payloads)
+// If only one is set it is used for both. If neither is set, signature validation is skipped.
+const META_APP_SECRET    = process.env.META_APP_SECRET;
+const META_IG_APP_SECRET = process.env.META_IG_APP_SECRET;
 
 // GET: Webhook verification (Facebook / Instagram)
 export async function GET(request: NextRequest) {
@@ -26,16 +30,26 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
 
-  // Verify X-Hub-Signature-256 when META_APP_SECRET is configured.
-  // Required in production to ensure requests genuinely come from Meta.
-  if (META_APP_SECRET) {
-    const sig = request.headers.get('x-hub-signature-256');
-    if (!verifyMetaSignature(rawBody, sig, META_APP_SECRET)) {
-      console.warn('[webhook/meta] Invalid or missing X-Hub-Signature-256 — rejecting request');
+  // Verify X-Hub-Signature-256 when app secret(s) are configured.
+  // Facebook payloads are signed with META_APP_SECRET.
+  // Instagram API payloads are signed with META_IG_APP_SECRET (separate secret shown on the
+  // Instagram product page in Meta Developer Console). Falls back to META_APP_SECRET if
+  // META_IG_APP_SECRET is not set, and to no validation if neither secret is configured.
+  const sig = request.headers.get('x-hub-signature-256');
+  let parsedObject: string | null = null;
+  try { parsedObject = (JSON.parse(rawBody) as { object?: string }).object ?? null; } catch { /* will re-parse below */ }
+  const isInstagram = parsedObject === 'instagram';
+  const secretToUse = isInstagram
+    ? (META_IG_APP_SECRET ?? META_APP_SECRET)
+    : (META_APP_SECRET ?? META_IG_APP_SECRET);
+
+  if (secretToUse) {
+    if (!verifyMetaSignature(rawBody, sig, secretToUse)) {
+      console.warn(`[webhook/meta] Invalid or missing X-Hub-Signature-256 for ${isInstagram ? 'instagram' : 'facebook'} — rejecting request`);
       return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
     }
   } else {
-    console.warn('[webhook/meta] META_APP_SECRET not set — skipping signature validation');
+    console.warn('[webhook/meta] No META_APP_SECRET / META_IG_APP_SECRET set — skipping signature validation');
   }
 
   let body: MetaWebhookPayload;
