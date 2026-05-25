@@ -653,7 +653,10 @@ async function detectAndPersistLeadOrEscalation(
     // Explicit human requests (already in analysis.isEscalation) bypass AI scoring.
     let escalationSignal = analysis.isEscalation;
     if (checkEscalation && !analysis.isEscalation) {
-      const { escalation: aiEsc } = await detectLeadAndEscalation(history, businessType, false, true);
+      // Pass only the last 4 customer messages — frustration is always visible in recent tone.
+      // Keeps input tiny (~100–200 tokens max) regardless of conversation length.
+      const recentUserMessages = history.filter(m => m.role === 'user').slice(-4);
+      const { escalation: aiEsc } = await detectLeadAndEscalation(recentUserMessages, businessType, false, true);
       escalationSignal = aiEsc.isEscalation; // true when frustrationLevel >= 3
       if (aiEsc.frustrationLevel >= 2) {
         console.info(`[pipeline] Frustration score ${aiEsc.frustrationLevel}/5 for conversation ${conversationId}${
