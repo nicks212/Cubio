@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
+import sharp from 'sharp';
 
 const ALLOWED_BUCKETS = new Set(['project-images', 'apartment-images', 'product-images']);
-const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/heic', 'image/heif']);
 const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB — pre-compression limit
+const MAX_OUTPUT_BYTES = 350 * 1024;     // 350 KB after server-side compression
 
 /**
  * POST /api/upload
@@ -43,24 +45,54 @@ export async function POST(request: NextRequest) {
 
   // After client-side compression the file should be webp, but also accept input formats
   if (!ALLOWED_TYPES.has(file.type)) {
-    return NextResponse.json({ error: 'Invalid file type. Allowed: PNG, JPG, WEBP' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid file type. Allowed: PNG, JPG, WEBP, HEIC' }, { status: 400 });
   }
 
   if (file.size > MAX_FILE_BYTES) {
     return NextResponse.json({ error: 'File too large. Max 15 MB.' }, { status: 400 });
   }
 
-  const ext = file.type === 'image/webp' ? 'webp' : file.type.split('/')[1];
+  const arrayBuffer = await file.arrayBuffer();
+  const inputBuffer = Buffer.from(arrayBuffer);
+
+  // Server-side conversion: HEIC/HEIF → WebP, and also compress oversized normal images
+  let finalBuffer: Buffer;
+  const isHeic = file.type === 'image/heic' || file.type === 'image/heif';
+  if (isHeic || file.size > MAX_OUTPUT_BYTES) {
+    let pipeline = sharp(inputBuffer).rotate(); // auto-rotate via EXIF
+    // Resize to max 2000px on longest side
+    pipeline = pipeline.resize(2000, 2000, { fit: 'inside', withoutEnlargement: true });
+    // Try quality 82 first; binary search if still too large
+    let quality = 82;
+    finalBuffer = await pipeline.webp({ quality }).toBuffer();
+    if (finalBuffer.byteLength > MAX_OUTPUT_BYTES) {
+      let lo = 20, hi = 80;
+      while (hi - lo > 5) {
+        const mid = Math.round((lo + hi) / 2);
+        const candidate = await sharp(inputBuffer).rotate()
+          .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: mid }).toBuffer();
+        if (candidate.byteLength <= MAX_OUTPUT_BYTES) { lo = mid; finalBuffer = candidate; }
+        else hi = mid;
+      }
+    }
+  } else {
+    finalBuffer = inputBuffer;
+  }
+
+  const storageMime = (isHeic || file.type !== 'image/webp') && (isHeic || file.size > MAX_OUTPUT_BYTES)
+    ? 'image/webp'
+    : file.type;
+  const ext = storageMime === 'image/webp' ? 'webp' : storageMime.split('/')[1];
+
   const uniqueId = crypto.randomUUID();
   const storagePath = `${companyId}/${uniqueId}.${ext}`;
-
-  const arrayBuffer = await file.arrayBuffer();
 
   // Use admin client so upload works regardless of RLS storage policies
   const admin = createAdminClient();
   const { error: uploadError } = await admin.storage
     .from(bucket)
-    .upload(storagePath, arrayBuffer, { contentType: file.type, upsert: false });
+    .upload(storagePath, finalBuffer, { contentType: storageMime, upsert: false });
 
   if (uploadError) {
     console.error('[upload] Storage error:', uploadError.message);

@@ -18,7 +18,6 @@ interface ImageUploaderProps {
 }
 
 const ACCEPTED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/heic', 'image/heif']);
-const HEIC_MIME = new Set(['image/heic', 'image/heif']);
 const HEIC_EXT_RE = /\.hei[cf]$/i;
 const MAX_INPUT_BYTES = 15 * 1024 * 1024; // 15 MB input limit
 const MAX_OUTPUT_BYTES = 350 * 1024;       // 350 KB after compression
@@ -142,19 +141,20 @@ export default function ImageUploader({
     const targetSlot = pendingSlot.current;
     setLoadingSlot(targetSlot);
     try {
-      // Convert HEIC/HEIF → JPEG first, then feed into the existing WebP pipeline
-      let sourceFile: File = file;
-      if (HEIC_MIME.has(file.type) || HEIC_EXT_RE.test(file.name)) {
-        const heic2any = (await import('heic2any')).default;
-        const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
-        const blob = Array.isArray(converted) ? converted[0] : converted;
-        sourceFile = new File([blob], file.name.replace(HEIC_EXT_RE, '.jpg'), { type: 'image/jpeg' });
+      const isHeic = HEIC_EXT_RE.test(file.name) || file.type === 'image/heic' || file.type === 'image/heif';
+
+      // HEIC: browser can't decode it — send raw to server which uses sharp
+      // Normal images: compress client-side to WebP ≤350KB first
+      let uploadFile: File;
+      if (isHeic) {
+        uploadFile = file;
+      } else {
+        const blob = await compressToWebP(file);
+        uploadFile = new File([blob], `img-${Date.now()}.webp`, { type: 'image/webp' });
       }
-      const blob = await compressToWebP(sourceFile);
-      const webpFile = new File([blob], `img-${Date.now()}.webp`, { type: 'image/webp' });
 
       const fd = new FormData();
-      fd.append('file', webpFile);
+      fd.append('file', uploadFile);
       fd.append('bucket', bucket);
 
       const res = await fetch('/api/upload', { method: 'POST', body: fd });
