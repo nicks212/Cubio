@@ -4,10 +4,12 @@ type ProductRow = ProductContext['products'][0];
 
 function scoreProduct(p: ProductRow, q: string, customerBudget: number | null): number {
   let score = 0;
-  // Keyword relevance
+  // Keyword relevance — split query into individual words so "ტაროს კარტები" matches
+  // a product named "ტარო" (q.substring(0,8) would give "ტაროს კა" which doesn't match).
   if (q) {
     const text = `${p.name} ${p.category ?? ''} ${p.material ?? ''} ${(p.zodiac_compatibility ?? []).join(' ')} ${p.birthstones ?? ''}`.toLowerCase();
-    if (text.includes(q.substring(0, 8))) score += 2;
+    const queryWords = q.match(/[\u10D0-\u10FF\w]{3,}/g) ?? [];
+    if (queryWords.some(w => text.includes(w))) score += 2;
   }
   // Price proximity — products at or under budget score highest, then closest over budget
   if (customerBudget !== null) {
@@ -39,8 +41,15 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const customerBudget = budgetRaw ? parseFloat(budgetRaw[1].replace(/[,\s]/g, '')) : null;
 
   // Sort by combined score: keyword relevance + price proximity to budget.
-  // Products within budget always appear before more expensive ones.
-  const sorted = [...available].sort((a, b) => scoreProduct(b, q, customerBudget) - scoreProduct(a, q, customerBudget));
+  // A small position bonus preserves the vector-search ordering from loadBusinessContext
+  // so visually-similar products don't get pushed out of top-3 by scoring ties.
+  const sorted = [...available].sort((a, b) => {
+    const posA = available.indexOf(a);
+    const posB = available.indexOf(b);
+    const sa = scoreProduct(a, q, customerBudget) + (available.length - posA) * 0.1;
+    const sb = scoreProduct(b, q, customerBudget) + (available.length - posB) * 0.1;
+    return sb - sa;
+  });
   const top3 = sorted.slice(0, 3);
   const rest = sorted.slice(3);
 
@@ -144,5 +153,6 @@ ${groupSection}
 ${budgetGapNote}TOP PRODUCTS${context.imageSearchQuery ? ' (closest visual matches to customer photo)' : q ? ' (matched to your message)' : ''}:
 ${detailedList}${overflowNote}
 
-Only reference products listed here. Do not invent products, prices, or availability.`.trim();
+Only reference products listed here. Do not invent products, prices, or availability.
+OUT-OF-CATALOG: If the customer asks about a specific product or category NOT present in the TOP PRODUCTS list — do NOT say "I don't have this info" and do NOT offer to connect a rep. Instead: acknowledge you don't currently carry that exact item, then warmly suggest the 1–2 closest alternatives from TOP PRODUCTS. If nothing is remotely related, briefly describe what you do carry (e.g. category names).`.trim();
 }

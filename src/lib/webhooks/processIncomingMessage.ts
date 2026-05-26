@@ -359,6 +359,16 @@ export async function processIncomingMessage(
     effectiveIntent = 'search';
   }
 
+  // 7d. Image-only message override:
+  //     Customer sent only an image with no caption → combinedMessage is empty.
+  //     detectIntent('') hard-codes 'chat', which stubs out the business context and
+  //     discards the vector-search results computed in step 6a. An image is always a
+  //     product/search intent — force 'search' so the inventory + image context are used.
+  if (msg.imageUrl && !combinedMessage.trim()) {
+    effectiveIntent = 'search';
+    console.info(`${label} Image-only message (no caption) — overriding intent to 'search'`);
+  }
+
   // For pure chat intent, replace context with empty stub (saves token budget).
   // Must be computed AFTER all intent overrides above.
   const finalBusinessContext: BusinessContext = effectiveIntent === 'chat'
