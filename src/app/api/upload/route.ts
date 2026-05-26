@@ -43,8 +43,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid bucket' }, { status: 400 });
   }
 
-  // After client-side compression the file should be webp, but also accept input formats
-  if (!ALLOWED_TYPES.has(file.type)) {
+  // iOS sometimes sends HEIC with empty or wrong MIME — detect by extension as fallback
+  const fileName = file.name ?? '';
+  const isHeicByExt = /\.hei[cf]$/i.test(fileName);
+  const effectiveMime = (file.type === '' || file.type === 'application/octet-stream') && isHeicByExt
+    ? 'image/heic'
+    : file.type;
+
+  if (!ALLOWED_TYPES.has(effectiveMime)) {
     return NextResponse.json({ error: 'Invalid file type. Allowed: PNG, JPG, WEBP, HEIC' }, { status: 400 });
   }
 
@@ -57,32 +63,37 @@ export async function POST(request: NextRequest) {
 
   // Server-side conversion: HEIC/HEIF → WebP, and also compress oversized normal images
   let finalBuffer: Buffer;
-  const isHeic = file.type === 'image/heic' || file.type === 'image/heif';
-  if (isHeic || file.size > MAX_OUTPUT_BYTES) {
-    let pipeline = sharp(inputBuffer).rotate(); // auto-rotate via EXIF
-    // Resize to max 2000px on longest side
-    pipeline = pipeline.resize(2000, 2000, { fit: 'inside', withoutEnlargement: true });
-    // Try quality 82 first; binary search if still too large
-    let quality = 82;
-    finalBuffer = await pipeline.webp({ quality }).toBuffer();
-    if (finalBuffer.byteLength > MAX_OUTPUT_BYTES) {
-      let lo = 20, hi = 80;
-      while (hi - lo > 5) {
-        const mid = Math.round((lo + hi) / 2);
-        const candidate = await sharp(inputBuffer).rotate()
-          .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
-          .webp({ quality: mid }).toBuffer();
-        if (candidate.byteLength <= MAX_OUTPUT_BYTES) { lo = mid; finalBuffer = candidate; }
-        else hi = mid;
+  let storageMime: string;
+  const isHeic = effectiveMime === 'image/heic' || effectiveMime === 'image/heif';
+  const needsProcessing = isHeic || file.size > MAX_OUTPUT_BYTES;
+
+  if (needsProcessing) {
+    try {
+      let pipeline = sharp(inputBuffer).rotate(); // auto-rotate via EXIF
+      pipeline = pipeline.resize(2000, 2000, { fit: 'inside', withoutEnlargement: true });
+      let quality = 82;
+      finalBuffer = await pipeline.webp({ quality }).toBuffer();
+      if (finalBuffer.byteLength > MAX_OUTPUT_BYTES) {
+        let lo = 20, hi = 80;
+        while (hi - lo > 5) {
+          const mid = Math.round((lo + hi) / 2);
+          const candidate = await sharp(inputBuffer).rotate()
+            .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: mid }).toBuffer();
+          if (candidate.byteLength <= MAX_OUTPUT_BYTES) { lo = mid; finalBuffer = candidate; }
+          else hi = mid;
+        }
       }
+      storageMime = 'image/webp';
+    } catch (err) {
+      console.error('[upload] sharp processing error:', err);
+      return NextResponse.json({ error: 'Failed to process image. Please try a JPEG or PNG instead.' }, { status: 422 });
     }
   } else {
     finalBuffer = inputBuffer;
+    storageMime = effectiveMime;
   }
 
-  const storageMime = (isHeic || file.type !== 'image/webp') && (isHeic || file.size > MAX_OUTPUT_BYTES)
-    ? 'image/webp'
-    : file.type;
   const ext = storageMime === 'image/webp' ? 'webp' : storageMime.split('/')[1];
 
   const uniqueId = crypto.randomUUID();
