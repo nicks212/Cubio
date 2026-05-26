@@ -1,5 +1,5 @@
 import { model } from './model';
-import { buildGlobalSystemPrompt } from './prompts/global';
+import { buildGlobalSystemPrompt, LANGUAGE_RULE } from './prompts/global';
 import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
 import { extractConversationState, formatStateForPrompt } from './state';
@@ -57,11 +57,19 @@ export async function generateReply(
     // Truncated to 120 chars to keep the micro-prompt lean.
     const bizCtx = (context as { businessDescription?: string | null }).businessDescription;
     const bizHint = bizCtx ? ` for: ${bizCtx.slice(0, 120)}` : '';
-    const microPrompt = `You are a warm, natural sales assistant${bizHint}. Reply in Georgian if the customer writes Georgian or romanized Georgian (e.g. "reklama", "vnaxe", "minda", "shercheva"), English otherwise. 1–2 sentences max. Be conversational. If they mention seeing an ad or coming to inquire — warmly ask what they are looking for. If they say thanks, say you're welcome. If they say goodbye, wish them well.\n\nMessage: ${message}\n\nReply:`;
+    const chatSystemInstruction =
+      `You are a warm, natural sales assistant${bizHint}. ` +
+      `${LANGUAGE_RULE} ` +
+      `1–2 sentences max. Be conversational. ` +
+      `If they mention seeing an ad or coming to inquire — warmly ask what they are looking for. ` +
+      `If they say thanks, say you're welcome. If they say goodbye, wish them well.`;
     const isGeo = /[\u10D0-\u10FF]/.test(message);
     for (let attempt = 0; attempt <= 1; attempt++) {
       try {
-        const result = await model.generateContent(microPrompt);
+        const result = await model.generateContent({
+          systemInstruction: { role: 'system', parts: [{ text: chatSystemInstruction }] },
+          contents: [{ role: 'user', parts: [{ text: message }] }],
+        });
         const usage = result.response.usageMetadata;
         console.info(`[ai/generate] tokens (chat) — in:${usage?.promptTokenCount ?? '?'} out:${usage?.candidatesTokenCount ?? '?'} total:${usage?.totalTokenCount ?? '?'}`);
         const text = result.response.text().trim();

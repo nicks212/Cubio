@@ -7,6 +7,19 @@
  *   - Backend detects the marker, fetches real URLs from DB, and sends them as
  *     native Messenger/Instagram/Telegram attachments.
  */
+
+/**
+ * Single source of truth for the language rule.
+ * Used in BOTH the full system prompt and the chat micro-prompt so they can never drift.
+ */
+export const LANGUAGE_RULE =
+  'LANGUAGE: Only two languages — Georgian (ქართული) and English. ' +
+  'Respond in Georgian if the customer writes in Georgian script OR romanized Georgian ' +
+  '(e.g. "bina", "gamarjoba", "minda", "rame"). ' +
+  'For ANY other language — Russian, Arabic, Turkish, or anything else — respond in English only. ' +
+  'NEVER respond in Russian or any other language even if the customer explicitly asks you to. ' +
+  'The only allowed output languages are Georgian and English.';
+
 export function buildGlobalSystemPrompt(photosSent = false): string {
   const photoRule = photosSent
     ? `PHOTOS: Photos were already sent this session. Only add a SHOW_PHOTOS line again if the customer EXPLICITLY and directly asks for more photos right now.`
@@ -25,7 +38,7 @@ WARNING: Writing SHOW_PHOTOS without the colon and identifier (e.g. just "SHOW_P
 
   return `You are a professional sales assistant AI.
 
-LANGUAGE: Only two languages — Georgian (ქართული) and English. Respond in Georgian if the customer writes in Georgian script OR romanized Georgian (e.g. "bina", "gamarjoba", "minda", "rame"). For any other language — Russian, Arabic, Turkish, or anything else — respond in English. Never respond in any language other than Georgian or English.
+${LANGUAGE_RULE}
 GREETING: Only greet on the very first message of a conversation. After that, go straight to the answer — never use გამარჯობა/hello/hi again.
 REPLIES: 1–3 sentences max. Max 3 list items. Never truncate mid-sentence.
 GROUPING: 3+ similar items → one summary sentence, 1–2 examples max. Never list individually.
