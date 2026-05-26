@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
+import { generateAndStoreProductEmbedding } from '@/lib/ai/embeddings';
 
 const productSchema = z.object({
   name: z.string().min(1),
@@ -36,14 +37,27 @@ export async function createProduct(_prev: unknown, formData: FormData) {
   const imagesRaw = formData.get('images') as string;
   const images: string[] = imagesRaw ? (JSON.parse(imagesRaw) as string[]) : [];
 
-  const { error } = await supabase.from('products').insert({
+  const { data: newProduct, error } = await supabase.from('products').insert({
     ...parsed.data,
     company_id,
     zodiac_compatibility,
     images,
-  });
+  }).select('id').single();
   if (error) return { error: error.message };
   revalidatePath('/dashboard/products');
+  if (newProduct?.id) {
+    await generateAndStoreProductEmbedding(newProduct.id, {
+      name: parsed.data.name,
+      price: parsed.data.price,
+      currency: parsed.data.currency,
+      category: parsed.data.category ?? null,
+      material: parsed.data.material ?? null,
+      birthstones: parsed.data.birthstones ?? null,
+      in_stock: parsed.data.in_stock ?? true,
+      zodiac_compatibility,
+      images,
+    });
+  }
   return { success: true };
 }
 
@@ -67,6 +81,17 @@ export async function updateProduct(_prev: unknown, formData: FormData) {
     .eq('id', id).eq('company_id', company_id ?? '');
   if (error) return { error: error.message };
   revalidatePath('/dashboard/products');
+  await generateAndStoreProductEmbedding(id, {
+    name: parsed.data.name,
+    price: parsed.data.price,
+    currency: parsed.data.currency,
+    category: parsed.data.category ?? null,
+    material: parsed.data.material ?? null,
+    birthstones: parsed.data.birthstones ?? null,
+    in_stock: parsed.data.in_stock ?? true,
+    zodiac_compatibility,
+    images,
+  });
   return { success: true };
 }
 

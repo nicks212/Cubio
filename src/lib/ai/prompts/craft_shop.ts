@@ -58,7 +58,8 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const detailedList = top3.length > 0
     ? top3.map(p => {
         const sym = p.currency === 'USD' ? '$' : '₾';
-        const parts: string[] = [`• ${p.name}: ${sym}${p.price}`];
+        const idSlug = p.name.toLowerCase().replace(/\s+/g, '_').slice(0, 40);
+        const parts: string[] = [`• ${p.name} [id:${idSlug}]: ${sym}${p.price}`];
         if (p.category) parts.push(p.category);
         if (p.material) parts.push(p.material);
         if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);

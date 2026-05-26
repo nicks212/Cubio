@@ -441,9 +441,11 @@ export async function processIncomingMessage(
   // Fallback: when AI's entire reply was just the SHOW_PHOTOS marker (AI wrote no text),
   // provide a natural default sentence so the customer gets a text message with their photos.
   if (cleanReply.length === 0 && imageUrlsToSend.length > 0) {
-    cleanReply = messageIntent === 'photos' || /ფოტო|სურათ|surat|manax/i.test(combinedMessage)
-      ? 'აი ბინის ფოტოები! 📸'
-      : 'Here are the photos! 📸';
+    const isGeoFallback = /[\u10D0-\u10FF]/.test(combinedMessage)
+      || history.some(m => /[\u10D0-\u10FF]/.test(m.content));
+    cleanReply = integration.businessType === 'real_estate'
+      ? (isGeoFallback ? 'აი ბინის ფოტოები! 📸' : 'Here are the photos! 📸')
+      : (isGeoFallback ? 'გამოგიგზავნე! 📸' : 'Here you go! 📸');
     console.info(`${label} Empty reply after SHOW_PHOTOS strip — using fallback text`);
   }
 
