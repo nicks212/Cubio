@@ -127,7 +127,7 @@ ${imageMatchSection}
 LEAD COLLECTION — when customer selects a product or shows buying intent (minda, I want it, I'll take this, etc.):
   Check the STATE line:
   • phone_collected:NO → ask for full name + phone/email in ONE message. Example: "სიამოვნებით! გთხოვთ გვაცნობოთ თქვენი სახელი და საკონტაქტო ნომერი." / "Happy to help! Could you share your full name and phone number?"
-  • STATE shows phone:[number] → confirm ONCE: "გმადლობთ! ჩვენი წარმომადგენელი მალე დაგიკავშირდებათ." then give the company address/contact info.
+  • STATE shows phone:[number] → confirm ONCE: "გმადლობთ! ჩვენი წარმომადგენელი მალე დაგიკავშირდებათ." then share address/contact only if explicitly present in COMPANY INFO — never invent or assume location, hours, or phone.
   • Emoji / "yes" / thanks / single word WITHOUT a phone number → they have NOT answered — ask again politely.
   • NEVER output the confirmation line unless STATE shows an actual phone number.
   • If they say thanks/goodbye after confirmation → respond warmly, do NOT repeat the rep-contact line.
@@ -135,8 +135,8 @@ LEAD COLLECTION — when customer selects a product or shows buying intent (mind
 DISSATISFIED CUSTOMER — when STATE shows dissatisfied:YES:
   The customer has seen our catalog and nothing matched their needs. Do NOT list products again.
   Warmly acknowledge and invite them to the physical shop where the full collection is available.
-  Use COMPANY INFO to share the shop address, working hours, and contact phone naturally in the reply.
-  Example: "სამწუხაროდ, ჩვენი ონლაინ კატალოგი სრული კოლექციის მხოლოდ ნაწილია — მაღაზიაში გაცილებით მეტი არჩევანია! [address, hours, phone from COMPANY INFO]"
+  If COMPANY INFO contains address, working hours, or phone — share them naturally. If not present, do NOT mention or invent them.
+  Example: "სამწუხაროდ, ჩვენი ონლაინ კატალოგი სრული კოლექციის მხოლოდ ნაწილია — მაღაზიაში გაცილებით მეტი არჩევანია!"
   ALSO collect their contact: if phone_collected:NO → ask for full name + phone in the SAME message so a representative can personally help them find what they need.
   If phone:[number] is already in STATE → confirm a rep will be in touch and wish them a pleasant visit.
 ${groupSection}

@@ -17,6 +17,7 @@ interface WAMessage {
   timestamp: string;
   type: 'text' | 'image' | 'audio' | 'video' | 'document' | 'location' | 'contacts' | 'interactive' | 'sticker';
   text?: WATextMessage;
+  audio?: { id: string; mime_type?: string };
 }
 
 interface WAValue {
@@ -73,15 +74,18 @@ export function adaptWhatsAppPayload(
       }
 
       for (const msg of incomingMessages) {
-        // Only process text messages
-        if (msg.type !== 'text' || !msg.text?.body) continue;
+        // Handle text messages and audio/voice notes
+        const isText = msg.type === 'text' && !!msg.text?.body;
+        const isAudio = msg.type === 'audio' && !!msg.audio?.id;
+        if (!isText && !isAudio) continue;
 
         messages.push({
           provider: 'whatsapp',
           providerAccountId: phoneNumberId,
           senderId: msg.from,
           senderName: nameMap.get(msg.from) ?? null,
-          messageText: msg.text.body,
+          messageText: msg.text?.body ?? '',
+          audioFileId: msg.audio?.id ?? null,
           rawPayload: msg as unknown as Record<string, unknown>,
         });
       }

@@ -12,6 +12,7 @@ import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
 import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts } from '@/lib/ai/embeddings';
 import { redis } from '@/lib/redis';
 import { createHash } from 'crypto';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './types';
 import type { ApartmentContext, ProductContext, BusinessContext } from '@/lib/ai/types';
 import type { PhotoType } from '@/lib/ai/intentDetector';
@@ -224,10 +225,42 @@ export async function processIncomingMessage(
 
   // 5f. Drain the buffer — all messages the user sent since the last AI reply.
   const bufferedTexts = await drainBuffer(conversationId);
-  const combinedMessage = bufferedTexts.length > 0
+  let combinedMessage = bufferedTexts.length > 0
     ? bufferedTexts.join('\n')
     : msg.messageText;
   console.info(`${label} [debounce] processing ${bufferedTexts.length} buffered message(s) for conversation ${conversationId}`);
+
+  // 6-pre. Voice transcription — runs only when the customer sent a voice note.
+  // Transcription happens AFTER debounce so we don't waste a Gemini call on a message
+  // that will be skipped by the dedup/lock checks above.
+  // On success: combinedMessage is replaced with the transcript text.
+  // On failure: send a polite "please type" fallback and exit early.
+  if (msg.audioFileId && !combinedMessage.trim()) {
+    const transcript = await transcribeVoiceMessage(
+      msg.audioFileId,
+      msg.provider,
+      integration.accessToken,
+      label,
+    );
+    if (transcript) {
+      combinedMessage = transcript;
+      // Back-fill the message record so it shows readable text in the admin conversation view.
+      if (savedMessageId) {
+        await supabase.from('messages').update({ content: transcript }).eq('id', savedMessageId);
+      }
+      console.info(`${label} Voice transcribed (${transcript.length} chars): "${transcript.slice(0, 80)}"`);
+    } else {
+      // Transcription failed — let the customer know without crashing the pipeline.
+      const isGeoCtx = /[\u10D0-\u10FF]/.test(preloadedHistory.map(m => m.content).join(''));
+      const fallback = isGeoCtx
+        ? '\u10ee\u10db\u10dd\u10d5\u10d0ნი შეტყობინება მივიღე — გთხოვთ დაწეროთ თქვენი კითხვა ტექსტის სახით.'
+        : 'Voice message received — please type your question.';
+      await supabase.from('messages').update({ content: '[voice message]' }).eq('id', savedMessageId ?? '');
+      await sendProviderResponse(msg.provider, msg.senderId, fallback, integration.accessToken, integration.providerAccountId);
+      await releaseLock(conversationId);
+      return { conversationId, reply: fallback };
+    }
+  }
 
   // 6. Detect intent — fast regex first; AI classifier fallback for ambiguous short messages
   //    (romanized Georgian like "fotoebs", "suratebi", "vnaxo" can't be caught by keywords alone).
@@ -659,8 +692,11 @@ async function detectAndPersistLeadOrEscalation(
     // AI-based frustration scoring — runs in the fire-and-forget path so no latency impact.
     // The AI scores 1–5; scores >= 3 create an escalation.
     // Explicit human requests (already in analysis.isEscalation) bypass AI scoring.
+    // IMPORTANT: skip frustration scoring when the customer is already a qualified lead.
+    // A customer who voluntarily shared their phone + buying intent is NOT a frustrated customer.
+    // Scoring them as escalation would put a warm lead into the escalations panel instead of leads.
     let escalationSignal = analysis.isEscalation;
-    if (checkEscalation && !analysis.isEscalation) {
+    if (checkEscalation && !analysis.isEscalation && !analysis.isLead) {
       // Pass only the last 4 customer messages — frustration is always visible in recent tone.
       // Keeps input tiny (~100–200 tokens max) regardless of conversation length.
       const recentUserMessages = history.filter(m => m.role === 'user').slice(-4);
@@ -945,5 +981,94 @@ export async function resolveMetaSenderName(
   } catch (err) {
     console.error(`[resolveMetaSenderName] Fetch failed for sender ${senderId} (${provider}):`, err);
     return empty;
+  }
+}
+
+// ── Voice message transcription ───────────────────────────────────────────────
+// Downloads the audio file and uses Gemini to transcribe it to text.
+// Returns the transcript string, or null if download/transcription fails.
+// Caller decides how to handle null (polite fallback or silent skip).
+
+const _genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
+
+async function transcribeVoiceMessage(
+  audioFileId: string,
+  provider: string,
+  accessToken: string,
+  label: string,
+): Promise<string | null> {
+  try {
+    // Step 1: resolve a direct download URL (provider-specific)
+    let downloadUrl: string | null = null;
+
+    if (provider === 'instagram' || provider === 'facebook') {
+      // Meta: audioFileId IS the direct URL already
+      downloadUrl = audioFileId;
+    } else if (provider === 'whatsapp') {
+      // WhatsApp: audioFileId is a media ID — call Graph API to get the URL
+      const mediaRes = await fetch(
+        `https://graph.facebook.com/v21.0/${audioFileId}`,
+        { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(8000) },
+      );
+      if (!mediaRes.ok) {
+        console.warn(`${label} [voice] WhatsApp media lookup failed: ${mediaRes.status}`);
+        return null;
+      }
+      const mediaData = await mediaRes.json() as { url?: string };
+      downloadUrl = mediaData.url ?? null;
+    } else if (provider === 'telegram') {
+      // Telegram: audioFileId is a file_id — call getFile to resolve the path, then build URL
+      const fileRes = await fetch(
+        `https://api.telegram.org/bot${accessToken}/getFile?file_id=${encodeURIComponent(audioFileId)}`,
+        { signal: AbortSignal.timeout(8000) },
+      );
+      if (!fileRes.ok) {
+        console.warn(`${label} [voice] Telegram getFile failed: ${fileRes.status}`);
+        return null;
+      }
+      const fileData = await fileRes.json() as { ok: boolean; result?: { file_path?: string } };
+      if (fileData.ok && fileData.result?.file_path) {
+        downloadUrl = `https://api.telegram.org/file/bot${accessToken}/${fileData.result.file_path}`;
+      }
+    }
+
+    if (!downloadUrl) {
+      console.warn(`${label} [voice] Could not resolve download URL for ${provider} audio`);
+      return null;
+    }
+
+    // Step 2: download the audio file
+    const headers: Record<string, string> = {};
+    if (provider === 'whatsapp') {
+      // WhatsApp CDN URLs require Authorization header
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+    const audioRes = await fetch(downloadUrl, { headers, signal: AbortSignal.timeout(15000) });
+    if (!audioRes.ok) {
+      console.warn(`${label} [voice] Audio download failed: ${audioRes.status}`);
+      return null;
+    }
+    const audioBuffer = await audioRes.arrayBuffer();
+    const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+    const mimeType = (audioRes.headers.get('content-type') ?? 'audio/ogg').split(';')[0];
+    console.info(`${label} [voice] Downloaded audio (${(audioBuffer.byteLength / 1024).toFixed(0)}KB, ${mimeType})`);
+
+    // Step 3: transcribe with Gemini — compact prompt, output-capped to save tokens
+    const visionModel = _genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const result = await visionModel.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: 'Transcribe this voice message. Return only the spoken words, nothing else.' },
+          { inlineData: { data: audioBase64, mimeType } },
+        ],
+      }],
+      generationConfig: { maxOutputTokens: 300, temperature: 0, thinkingConfig: { thinkingBudget: 0 } } as never,
+    });
+    const transcript = result.response.text().trim();
+    return transcript || null;
+  } catch (err) {
+    console.warn(`${label} [voice] Transcription error (non-fatal):`, err);
+    return null;
   }
 }

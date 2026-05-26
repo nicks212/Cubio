@@ -5,7 +5,7 @@ import type { NormalizedMessage } from '../types';
 interface MetaMessage {
   mid?: string;
   text?: string;
-  attachments?: Array<{ type: string; payload: unknown }>;
+  attachments?: Array<{ type: string; payload: { url?: string } }>;
 }
 
 interface MetaMessagingEvent {
@@ -46,11 +46,14 @@ export function adaptMetaPayload(
     const events = entry.messaging ?? [];
 
     for (const event of events) {
-      // Only handle user-sent text messages
-      if (!event.message?.text) continue;
+      // Handle text messages and voice/audio attachments
+      const hasText = !!event.message?.text;
+      const audioAttachment = event.message?.attachments?.find(a => a.type === 'audio');
+      const audioUrl = audioAttachment?.payload?.url ?? null;
+      if (!hasText && !audioUrl) continue;
 
       const senderId = event.sender?.id;
-      const recipientId = event.recipient?.id; // This is the page/bot ID we use to look up integration
+      const recipientId = event.recipient?.id;
 
       if (!senderId || !recipientId) continue;
 
@@ -59,8 +62,9 @@ export function adaptMetaPayload(
         providerAccountId: recipientId,
         senderId,
         senderName: null,
-        messageText: event.message.text,
-        messageId: event.message.mid ?? null,
+        messageText: event.message?.text ?? '',
+        audioFileId: audioUrl,
+        messageId: event.message?.mid ?? null,
         rawPayload: event as Record<string, unknown>,
       });
     }

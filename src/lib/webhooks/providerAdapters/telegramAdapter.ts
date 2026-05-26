@@ -25,6 +25,7 @@ interface TelegramMessage {
   chat: TelegramChat;
   date: number;
   text?: string;
+  voice?: { file_id: string; duration: number; mime_type?: string; file_size?: number };
 }
 
 export interface TelegramWebhookPayload {
@@ -53,7 +54,9 @@ export async function adaptTelegramPayload(
   botToken?: string,
 ): Promise<NormalizedMessage | null> {
   const msg = payload.message ?? payload.edited_message;
-  if (!msg?.text || !msg.chat?.id) return null;
+  const hasText = !!msg?.text;
+  const hasVoice = !!msg?.voice?.file_id;
+  if ((!hasText && !hasVoice) || !msg?.chat?.id) return null;
 
   // Resolve providerAccountId: prefer explicit botToken, else look up from DB
   let providerAccountId: string;
@@ -77,7 +80,8 @@ export async function adaptTelegramPayload(
     providerAccountId,
     senderId: String(msg.chat.id),
     senderName,
-    messageText: msg.text,
+    messageText: msg.text ?? '',
+    audioFileId: msg.voice?.file_id ?? null,
     rawPayload: payload as unknown as Record<string, unknown>,
   };
 }

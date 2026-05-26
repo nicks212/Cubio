@@ -17,6 +17,13 @@ export interface NormalizedMessage {
   messageText: string;
   /** Optional image URL sent by the customer (used for multimodal AI recommendations) */
   imageUrl?: string | null;
+  /**
+   * Voice/audio message identifier — set when the customer sends a voice note.
+   * Meta (Instagram/Facebook): direct download URL from the attachment payload.
+   * WhatsApp: media ID (resolved to URL via Graph API in the processing pipeline).
+   * Telegram: file_id (resolved to URL via Bot API in the processing pipeline).
+   */
+  audioFileId?: string | null;
   /** Provider-assigned message ID (e.g. Facebook mid) — used for idempotency / dedup */
   messageId?: string | null;
   /** Raw provider payload for debugging / fallback */
