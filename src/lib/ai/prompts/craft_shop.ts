@@ -125,9 +125,10 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   // Zero token cost on all text-only turns.
   const imageMatchSection = context.imageSearchQuery
     ? `IMAGE MATCH (this turn only): Customer sent a photo. The TOP PRODUCTS below are the closest visual matches from the catalog.
-Present them as: "Based on your photo, here are the closest matches:" followed by a short list (max 3 items with price and key feature).
-If the customer says it's not what they want → ask exactly ONE clarifying question about material / color / stone / style / budget. Do NOT list all products again until they answer.
-NEVER suggest products that are not in the TOP PRODUCTS list below.\n\n`
+  • If the customer's message includes any request to SEE or SHOW the item (e.g. ნახე, მანახე, ფოტო, show, see, pictures, manaxe) → emit SHOW_PHOTOS: <id> of the FIRST TOP PRODUCT as your ENTIRE reply (one line only, per the global SHOW_PHOTOS rule).
+  • Otherwise → respond naturally in 1–2 sentences: name the closest match, its price, one key feature, then ask if they want photos or a different option.
+  If the customer says it is not what they want → ask exactly ONE clarifying question about product type / material / color / style / budget. Do NOT list all products until they answer.
+  NEVER suggest products that are not in the TOP PRODUCTS list below.\n\n`
     : '';
 
   return `CRAFT SHOP SALES ASSISTANT

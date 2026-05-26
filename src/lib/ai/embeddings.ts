@@ -36,27 +36,24 @@ const embeddingModel = genAI.getGenerativeModel({ model: 'text-embedding-004' })
  *
  * Real estate example:  "2-room apartment, modern open kitchen, mountain view,
  *                        light walls, floor-to-ceiling windows"
- * Craft shop example:   "silver ring, minimalist band, small round blue stone"
+ * Craft shop example:   "tarot card deck, illustrated, box packaging, esoteric symbols"
  *
- * Returns null if the image cannot be fetched or described.
+ * Accepts the already-downloaded base64 bytes + mimeType to avoid re-fetching
+ * the URL (Meta CDN URLs are signed and expire within seconds of the first fetch).
+ *
+ * Returns null if description fails.
  */
 export async function describeImageForSearch(
-  imageUrl: string,
+  base64: string,
+  mimeType: string,
   businessType: 'real_estate' | 'craft_shop',
 ): Promise<string | null> {
   try {
-    const imageRes = await fetch(imageUrl, { signal: AbortSignal.timeout(8000) });
-    if (!imageRes.ok) return null;
-
-    const buffer = await imageRes.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString('base64');
-    const mimeType = (imageRes.headers.get('content-type') ?? 'image/jpeg').split(';')[0];
-
     const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const searchContext = businessType === 'real_estate'
       ? 'Describe key visual features of this apartment or building that would help match it to similar properties: layout feel, natural light, finishes, view, style. Be concise (under 40 words).'
-      : 'Describe key visual features of this jewelry/craft item for similarity matching: material, style, color, stones, shape, size. Be concise (under 30 words).';
+      : 'Describe this product for catalog similarity matching. What type of product is it? Include: product category, style, material, color, any symbols or text visible, and distinguishing features. Be concise (under 30 words).';
 
     const result = await visionModel.generateContent([
       { text: searchContext },

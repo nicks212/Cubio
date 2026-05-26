@@ -290,7 +290,9 @@ export async function processIncomingMessage(
       console.warn(`${label} Failed to download customer image (non-fatal):`, err);
     }
 
-    imageSearchQuery = await describeImageForSearch(msg.imageUrl, integration.businessType);
+    imageSearchQuery = imageBase64 && imageMimeType
+      ? await describeImageForSearch(imageBase64, imageMimeType, integration.businessType)
+      : null;
     if (imageSearchQuery) {
       console.info(`${label} Image search query: "${imageSearchQuery.slice(0, 80)}"`);
       if (integration.businessType === 'real_estate') {
