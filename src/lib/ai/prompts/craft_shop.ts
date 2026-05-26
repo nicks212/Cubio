@@ -64,6 +64,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
         if (p.material) parts.push(p.material);
         if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);
         if (p.birthstones) parts.push(`stones: ${p.birthstones}`);
+        if (p.description) parts.push(`desc: ${p.description.slice(0, 80)}`);
         let line = parts.join(' | ');
         // Compact photo metadata — no URLs in Gemini prompt.
         // Backend resolves real URLs when AI emits SHOW_PHOTOS: <product_slug>.

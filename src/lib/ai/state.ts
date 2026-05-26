@@ -66,7 +66,7 @@ export function extractConversationState(
   let lastShownAptId: string | null = null;
   for (const msg of history) {
     if (msg.role === 'ai') {
-      const m = msg.content.match(/SHOW_PHOTOS[:\s]+([A-Za-z0-9_]+)/i);
+      const m = msg.content.match(/SHOW_PHOTOS[:\s]+([A-Za-z0-9_\u10D0-\u10FF-]+)/i);
       if (m) lastShownAptId = m[1].trim();
     }
   }
@@ -156,17 +156,37 @@ export function extractConversationState(
   const photosRequested = PHOTO_RE.test(allUserText);
 
   // productDissatisfied — craft shop only.
-  // Only true when the AI has already listed products (contains bullet "•" lines)
-  // AND a subsequent user message matches PRODUCT_DISSATISFIED_RE.
-  // This prevents "I want something different" on the very first message from triggering it.
+  // True when the AI has already listed products (bullet "•" lines) AND a subsequent user
+  // message matches PRODUCT_DISSATISFIED_RE.
+  // RESET: if the customer later sends a new non-complaint inquiry (≥4 chars, not trivial ack)
+  // they have moved on — resume normal sales mode.
   let productDissatisfied = false;
   let aiHasListedProducts = false;
-  for (const msg of history) {
+  let lastDissatisfiedIndex = -1;
+  for (let i = 0; i < history.length; i++) {
+    const msg = history[i];
     if ((msg.role === 'ai' || msg.role === 'model') && /^\s*•\s+\S/m.test(msg.content)) {
       aiHasListedProducts = true;
     }
     if (aiHasListedProducts && msg.role === 'user' && PRODUCT_DISSATISFIED_RE.test(msg.content)) {
       productDissatisfied = true;
+      lastDissatisfiedIndex = i;
+    }
+  }
+  if (productDissatisfied && lastDissatisfiedIndex >= 0) {
+    for (let i = lastDissatisfiedIndex + 1; i < history.length; i++) {
+      const m = history[i];
+      if (m.role === 'user') {
+        const text = m.content.trim();
+        if (
+          text.length >= 4 &&
+          !PRODUCT_DISSATISFIED_RE.test(text) &&
+          !/^(კი|კარგი|ok|okay|yes|no|არა|გასაგებია)$/i.test(text)
+        ) {
+          productDissatisfied = false;
+          break;
+        }
+      }
     }
   }
 

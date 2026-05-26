@@ -29,6 +29,7 @@ export interface ProductContext {
     material?: string | null;
     in_stock: boolean;
     images?: string[];
+    description?: string | null;
   }>;
   businessDescription: string | null;
   /** Non-null when context was loaded after an image similarity search. */
