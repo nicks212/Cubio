@@ -17,7 +17,9 @@ interface ImageUploaderProps {
   disabled?: boolean;
 }
 
-const ACCEPTED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const ACCEPTED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/heic', 'image/heif']);
+const HEIC_MIME = new Set(['image/heic', 'image/heif']);
+const HEIC_EXT_RE = /\.hei[cf]$/i;
 const MAX_INPUT_BYTES = 15 * 1024 * 1024; // 15 MB input limit
 const MAX_OUTPUT_BYTES = 350 * 1024;       // 350 KB after compression
 
@@ -128,8 +130,8 @@ export default function ImageUploader({
     e.target.value = '';
     setError(null);
 
-    if (!ACCEPTED_MIME.has(file.type)) {
-      setError('Allowed formats: PNG, JPG, WEBP');
+    if (!ACCEPTED_MIME.has(file.type) && !HEIC_EXT_RE.test(file.name)) {
+      setError('Allowed formats: PNG, JPG, WEBP, HEIC');
       return;
     }
     if (file.size > MAX_INPUT_BYTES) {
@@ -140,7 +142,15 @@ export default function ImageUploader({
     const targetSlot = pendingSlot.current;
     setLoadingSlot(targetSlot);
     try {
-      const blob = await compressToWebP(file);
+      // Convert HEIC/HEIF → JPEG first, then feed into the existing WebP pipeline
+      let sourceFile: File = file;
+      if (HEIC_MIME.has(file.type) || HEIC_EXT_RE.test(file.name)) {
+        const heic2any = (await import('heic2any')).default;
+        const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 });
+        const blob = Array.isArray(converted) ? converted[0] : converted;
+        sourceFile = new File([blob], file.name.replace(HEIC_EXT_RE, '.jpg'), { type: 'image/jpeg' });
+      }
+      const blob = await compressToWebP(sourceFile);
       const webpFile = new File([blob], `img-${Date.now()}.webp`, { type: 'image/webp' });
 
       const fd = new FormData();
@@ -195,7 +205,7 @@ export default function ImageUploader({
       <input
         ref={inputRef}
         type="file"
-        accept=".png,.jpg,.jpeg,.webp"
+        accept=".png,.jpg,.jpeg,.webp,.heic,.heif"
         className="sr-only"
         onChange={handleFileSelect}
       />

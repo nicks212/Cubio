@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useActionState } from 'react';
-import { Home, Plus, Edit, Trash2, X, Grid3x3, List, Wand2, Layers } from 'lucide-react';
+import { useState, useActionState, useEffect, useMemo } from 'react';
+import { Home, Plus, Edit, Trash2, X, Grid3x3, List, Wand2, Layers, Search } from 'lucide-react';
 import {
   createApartment, updateApartment, deleteApartment,
   updateApartmentStatus, bulkCreateApartments, createTemplate, deleteTemplate,
@@ -37,6 +37,9 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
   const [editing, setEditing] = useState<ApartmentWithProject | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [projectFilter, setProjectFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [priceMin, setPriceMin] = useState('');
+  const [priceMax, setPriceMax] = useState('');
   const [aptImages, setAptImages] = useState<string[]>([]);
   const [templateImages, setTemplateImages] = useState<string[]>([]);
   const [currency, setCurrency] = useState<'GEL' | 'USD'>('USD');
@@ -52,18 +55,29 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
     startFloor: 1, endFloor: 5, unitsPerFloor: 4, priceAdjustment: 0,
   });
 
-  const filtered = apartments.filter(a => {
-    if (statusFilter !== 'all' && a.status !== statusFilter) return false;
-    if (projectFilter !== 'all' && a.project_id !== projectFilter) return false;
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return apartments.filter(a => {
+      if (statusFilter !== 'all' && a.status !== statusFilter) return false;
+      if (projectFilter !== 'all' && a.project_id !== projectFilter) return false;
+      if (q) {
+        const num = a.apartment_number.toLowerCase();
+        const proj = (a.project?.name ?? '').toLowerCase();
+        if (!num.includes(q) && !proj.includes(q)) return false;
+      }
+      if (priceMin !== '' && a.total_price < Number(priceMin)) return false;
+      if (priceMax !== '' && a.total_price > Number(priceMax)) return false;
+      return true;
+    });
+  }, [apartments, statusFilter, projectFilter, searchQuery, priceMin, priceMax]);
 
   const openEdit = (a: ApartmentWithProject) => { setEditing(a); setAptImages(a.images ?? []); setCurrency((a.currency as 'GEL' | 'USD') ?? 'USD'); setModal('single'); };
   const closeModal = () => { setModal(null); setEditing(null); setAptImages([]); setTemplateImages([]); };
   const openCreateSingle = () => { setEditing(null); setAptImages([]); setCurrency('USD'); setModal('single'); };
 
-  if ((editing ? updateState : createState)?.success && modal === 'single') closeModal();
-  if (templateState?.success && modal === 'template') closeModal();
+  useEffect(() => { if (createState?.success) closeModal(); }, [createState]);
+  useEffect(() => { if (updateState?.success) closeModal(); }, [updateState]);
+  useEffect(() => { if (templateState?.success) closeModal(); }, [templateState]);
 
   const handleBulkCreate = async () => {
     const tpl = templates.find(t => t.id === bulkForm.templateId);
@@ -134,6 +148,16 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-6">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder={t('apartments.search_placeholder')}
+            className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 w-44"
+          />
+        </div>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
           <option value="all">{t('apartments.status_all')}</option>
           <option value="vacant">{t('apartments.status_vacant')}</option>
@@ -144,6 +168,11 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
           <option value="all">{t('apartments.project_all')}</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
+        <div className="flex items-center gap-1">
+          <input type="number" min="0" placeholder={t('apartments.price_min')} value={priceMin} onChange={e => setPriceMin(e.target.value)} className="w-24 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+          <span className="text-muted-foreground text-sm">–</span>
+          <input type="number" min="0" placeholder={t('apartments.price_max')} value={priceMax} onChange={e => setPriceMax(e.target.value)} className="w-24 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+        </div>
         <div className="ml-auto flex border border-slate-200 rounded-lg overflow-hidden">
           <button onClick={() => setView('grid')} className={`p-2 ${view === 'grid' ? 'bg-primary text-white' : 'bg-white text-muted-foreground hover:bg-slate-50'}`}><Grid3x3 className="w-4 h-4" /></button>
           <button onClick={() => setView('table')} className={`p-2 ${view === 'table' ? 'bg-primary text-white' : 'bg-white text-muted-foreground hover:bg-slate-50'}`}><List className="w-4 h-4" /></button>

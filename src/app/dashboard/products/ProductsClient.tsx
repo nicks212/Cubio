@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useActionState, useRef, useEffect } from 'react';
-import { Package, Plus, Edit, Trash2, X, Star, ChevronDown, Check } from 'lucide-react';
+import { useState, useActionState, useRef, useEffect, useMemo } from 'react';
+import { Package, Plus, Edit, Trash2, X, Star, ChevronDown, Check, Search } from 'lucide-react';
 import { createProduct, updateProduct, deleteProduct, createProductCategory } from './actions';
 import type { Product } from '@/types/database';
 import { useT } from '@/components/TranslationsProvider';
@@ -167,6 +167,30 @@ export default function ProductsClient({
   const [createState, createAction, createPending] = useActionState(createProduct, null);
   const [updateState, updateAction, updatePending] = useActionState(updateProduct, null);
 
+  // ── Filters ───────────────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [stockFilter, setStockFilter] = useState('all');
+  const [priceMin, setPriceMin] = useState('');
+  const [priceMax, setPriceMax] = useState('');
+
+  const filteredProducts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return products.filter(p => {
+      if (q) {
+        const name = p.name.toLowerCase();
+        if (!name.startsWith(q) && !name.includes(q)) return false;
+      }
+      if (categoryFilter === 'uncategorized') { if (p.category) return false; }
+      else if (categoryFilter !== 'all') { if (p.category !== categoryFilter) return false; }
+      if (stockFilter === 'in_stock' && !p.in_stock) return false;
+      if (stockFilter === 'out_of_stock' && p.in_stock) return false;
+      if (priceMin !== '' && p.price < Number(priceMin)) return false;
+      if (priceMax !== '' && p.price > Number(priceMax)) return false;
+      return true;
+    });
+  }, [products, searchQuery, categoryFilter, stockFilter, priceMin, priceMax]);
+
   const openCreate = () => {
     setEditing(null);
     setSelectedZodiacs([]);
@@ -185,8 +209,8 @@ export default function ProductsClient({
   };
   const closeModal = () => { setModalOpen(false); setEditing(null); setProductImages([]); };
 
-  const state = editing ? updateState : createState;
-  if (state?.success && modalOpen) closeModal();
+  useEffect(() => { if (createState?.success) closeModal(); }, [createState]);
+  useEffect(() => { if (updateState?.success) closeModal(); }, [updateState]);
 
   const toggleZodiac = (sign: string) => {
     setSelectedZodiacs(prev => prev.includes(sign) ? prev.filter(s => s !== sign) : [...prev, sign]);
@@ -216,15 +240,51 @@ export default function ProductsClient({
         </button>
       </div>
 
+      {/* Filter bar — only shown when there are products */}
+      {products.length > 0 && (
+        <div className="flex flex-wrap gap-3 mb-6">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder={t('products.search_placeholder')}
+              className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+          <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+            <option value="all">{t('products.filter_all_categories')}</option>
+            <option value="uncategorized">{t('products.filter_uncategorized')}</option>
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={stockFilter} onChange={e => setStockFilter(e.target.value)} className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+            <option value="all">{t('products.filter_all_stock')}</option>
+            <option value="in_stock">{t('products.in_stock')}</option>
+            <option value="out_of_stock">{t('products.out_of_stock')}</option>
+          </select>
+          <div className="flex items-center gap-1">
+            <input type="number" min="0" placeholder={t('products.price_min')} value={priceMin} onChange={e => setPriceMin(e.target.value)} className="w-24 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+            <span className="text-muted-foreground text-sm">–</span>
+            <input type="number" min="0" placeholder={t('products.price_max')} value={priceMax} onChange={e => setPriceMax(e.target.value)} className="w-24 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+          </div>
+        </div>
+      )}
+
       {products.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
           <Package className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
           <p className="text-muted-foreground">{t('products.no_products')}</p>
           <button onClick={openCreate} className="mt-4 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 text-sm font-medium">{t('products.add')}</button>
         </div>
+      ) : filteredProducts.length === 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+          <Search className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
+          <p className="text-muted-foreground">{t('products.no_results')}</p>
+        </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {products.map(product => (
+          {filteredProducts.map(product => (
             <div key={product.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
               {/* Image */}
               <div className="aspect-square bg-slate-100 flex items-center justify-center overflow-hidden">
@@ -278,7 +338,7 @@ export default function ProductsClient({
               <input type="hidden" name="images" value={JSON.stringify(productImages)} />
               <input type="hidden" name="currency" value={currency} />
               <input type="hidden" name="category" value={selectedCategory} />
-              {state?.error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{state.error}</div>}
+              {(editing ? updateState : createState)?.error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{(editing ? updateState : createState)!.error}</div>}
               <div>
                 <label className="block text-sm font-medium mb-2">{t('products.name')} *</label>
                 <input name="name" required defaultValue={editing?.name ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
