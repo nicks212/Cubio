@@ -411,7 +411,9 @@ export async function processIncomingMessage(
   // We always process a valid SHOW_PHOTOS: ID regardless of our own intent classification,
   // because intent detection can miss romanized Georgian photo requests ("Suratebi" etc).
   // Guard: only process if there is a valid identifier (prevents bare SHOW_PHOTOS with no id).
-  const showPhotosRaw = reply.match(/SHOW_PHOTOS[:\s]+([A-Za-z0-9_]+)/i);
+  // Character class covers: Latin alphanum + underscore (apartment IDs like "0101", "project_0101")
+  // AND Georgian Unicode range U+10D0–U+10FF (product slugs built from Georgian product names).
+  const showPhotosRaw = reply.match(/SHOW_PHOTOS[:\s]+([A-Za-z0-9_\u10D0-\u10FF]+)/i);
   if (showPhotosRaw && messageIntent !== 'photos') {
     console.info(`${label} SHOW_PHOTOS detected with intent='${messageIntent}' — processing (intent may have been misclassified)`);
   }
