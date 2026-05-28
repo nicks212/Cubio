@@ -116,8 +116,9 @@ export function analyzeLeadState(
   // ── Name heuristic ─────────────────────────────────────────────────────────
   const name = extractNameFromHistory(history);
 
-  // ── Lead qualification ─────────────────────────────────────────────────────
-  const isLead = hasPhone && hasBuyingIntent && hasQualification;
+  // Lead fires on buying intent + qualification — phone is not required upfront.
+  // The admin sees the lead and can follow up via the conversation.
+  const isLead = hasBuyingIntent && hasQualification;
 
   // ── Summary ────────────────────────────────────────────────────────────────
   const state = extractConversationState(history);
@@ -131,7 +132,9 @@ export function analyzeLeadState(
   if (state.budget)            summaryParts.push(`ბიუჯეტი: ${state.budget}`);
   if (state.floor)             summaryParts.push(`${state.floor}-სართ.`);
   if (state.lastShownAptId)    summaryParts.push(`ბინა #${state.lastShownAptId}`);
-  const summary = summaryParts.join(' | ');
+  const summary = summaryParts.length > 0
+    ? summaryParts.join(' | ')
+    : businessType === 'craft_shop' ? 'მომხმარებელი — ყიდვის განზრავა' : 'Lead — buying intent';
 
   // ── Lifecycle update detection (latest message only) ──────────────────────
   const updateType: Array<'phone' | 'name' | 'cancel' | 'apt_change'> = [];

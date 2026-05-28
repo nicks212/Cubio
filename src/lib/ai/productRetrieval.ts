@@ -42,7 +42,13 @@ export function geoToLatin(text: string): string {
  */
 const SHORTCUTS: Record<string, string> = {
   // Tarot / ტარო
-  taro: 'taro', tarot: 'taro', taroti: 'taro', taros: 'taro', 'taro kartebis': 'taro',
+  taro: 'taro', tarot: 'taro', taroti: 'taro', taros: 'taro', taroebi: 'taro', 'taro kartebis': 'taro',
+  // Essential oils / ეთერზეთი
+  eterzetebi: 'eterzeti', eterzetsebi: 'eterzeti', eterzets: 'eterzeti', eterzetis: 'eterzeti',
+  'essential oil': 'eterzeti', 'essential oils': 'eterzeti',
+  'ether oil': 'eterzeti', 'ether oils': 'eterzeti',
+  'flavour oil': 'eterzeti', 'flavour oils': 'eterzeti',
+  'flavor oil': 'eterzeti', 'flavor oils': 'eterzeti',
   // Jewelry types
   ring: 'bechedi', rings: 'bechedi',
   bracelet: 'samajuri', bracelets: 'samajuri',

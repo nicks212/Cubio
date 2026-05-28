@@ -3,6 +3,7 @@ import { buildGlobalSystemPrompt, LANGUAGE_RULE } from './prompts/global';
 import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
 import { extractConversationState, formatStateForPrompt } from './state';
+import { BUYING_INTENT_RE } from './signals';
 import type { BusinessContext, ApartmentContext, ProductContext } from './types';
 import type { MessageIntent } from './intentDetector';
 
@@ -85,16 +86,19 @@ export async function generateReply(
   // ── Layer 1: Global rules ──────────────────────────────────────────────────
   const globalPrompt = buildGlobalSystemPrompt(intent === 'photos' ? false : photosSent);
 
-  // ── Layer 2: Business-type rules + compact inventory ──────────────────────
-  const businessPrompt = businessType === 'real_estate'
-    ? buildRealEstateSystemPrompt(context as ApartmentContext, message)
-    : buildCraftShopSystemPrompt(context as ProductContext, message);
-
-  // ── Conversation state (deterministic, zero AI calls) ─────────────────────
+  // ── Conversation state (deterministic, zero AI calls) ───────────────────────────────────────────
   const state = extractConversationState(conversationHistory);
   // Seed lastShownAptId from DB if not present in the history slice
   if (!state.lastShownAptId && lastShownAptId) state.lastShownAptId = lastShownAptId;
   const stateLine = formatStateForPrompt(state);
+
+  // ── Layer 2: Business-type rules + compact inventory ──────────────────────────
+  const businessPrompt = businessType === 'real_estate'
+    ? buildRealEstateSystemPrompt(context as ApartmentContext, message)
+    : buildCraftShopSystemPrompt(context as ProductContext, message, {
+        buyingIntent: state.buyingIntent || BUYING_INTENT_RE.test(message),
+        productDissatisfied: state.productDissatisfied,
+      });
 
   // ── System instruction ─────────────────────────────────────────────────────
   const systemParts: string[] = [`${globalPrompt}\n\n${businessPrompt}`, stateLine];
@@ -115,16 +119,10 @@ export async function generateReply(
   const systemInstructionText = systemParts.filter(Boolean).join('\n\n');
 
   // ── Token-guarded history slice ────────────────────────────────────────────
-  const baseTokens = estimateTokens(systemInstructionText) + estimateTokens(message) + 80;
-  let historyTurns = 6;
-  if (
-    baseTokens +
-    estimateTokens(conversationHistory.slice(-6).map(m => m.content).join('')) >
-    MAX_INPUT_TOKENS
-  ) {
-    historyTurns = 4;
-    console.info(`[ai/generate] Token guard: reducing history to ${historyTurns} turns`);
-  }
+  // Photo flows need more history for follow-up detection; non-photo turns are lean —
+  // STATE captures all structured facts, 3 turns is enough for tone continuity.
+  const isPhotoFlow = photosSent || !!lastShownAptId || intent === 'photos';
+  const historyTurns = isPhotoFlow ? 6 : 3;
 
   // ── Build Gemini multi-turn history ───────────────────────────────────────
   // Rules:

@@ -15,7 +15,7 @@
 export const LANGUAGE_RULE =
   'LANGUAGE: Only two languages — Georgian (ქართული) and English. ' +
   'Respond in Georgian if the customer writes in Georgian script OR romanized Georgian ' +
-  '(e.g. "bina", "gamarjoba", "minda", "rame"). ' +
+  '(e.g. "bina", "gamarjoba", "salami", "minda", "rame"). ' +
   'For ANY other language — Russian, Arabic, Turkish, or anything else — respond in English only. ' +
   'NEVER respond in Russian or any other language even if the customer explicitly asks you to. ' +
   'The only allowed output languages are Georgian and English.';
@@ -23,17 +23,10 @@ export const LANGUAGE_RULE =
 export function buildGlobalSystemPrompt(photosSent = false): string {
   const photoRule = photosSent
     ? `PHOTOS: Photos were already sent this session. Only add a SHOW_PHOTOS line again if the customer EXPLICITLY and directly asks for more photos right now.`
-    : `PHOTOS — STRICT RULE:
-SHOW_PHOTOS is FORBIDDEN unless the customer's exact words ask for photos/pictures/images RIGHT NOW.
-  ✓ ALLOWED: "show me photos", "ფოტო", "სურათი", "send pictures", "let me see it", "ვნახო"
-  ✗ FORBIDDEN: browsing, asking price, saying "interested", "tell me more", greetings, ANY other intent
-When photos ARE explicitly requested for a SPECIFIC item:  • Check conversation history first — if the item was already discussed or you asked a clarifying question and the customer answered, pick that item. Do NOT ask the customer to repeat themselves.  • Find that item's [id:XXXX] tag in the inventory.
-  • Your ENTIRE reply must be exactly ONE line: SHOW_PHOTOS: XXXX — nothing before it, nothing after it.
-  • NEVER say or show the id/number to the customer — it is an internal code only.
-FOLLOW-UP RULE: If YOUR previous message asked a clarifying question about which item and the customer just answered — this IS a photo request. Pick the matching item from inventory and emit SHOW_PHOTOS: XXXX immediately. Do NOT ask for more info.
-For PROJECT/BUILDING photos (real estate only): SHOW_PHOTOS: project_XXXX  (e.g. SHOW_PHOTOS: project_0101)
-NEVER include any URL anywhere in your reply — the backend handles all image delivery.
-WARNING: Writing SHOW_PHOTOS without the colon and identifier (e.g. just "SHOW_PHOTOS") is a bug — always write the full "SHOW_PHOTOS: XXXX" format or omit it entirely.`;
+    : `PHOTOS: Emit "SHOW_PHOTOS: XXXX" ONLY when the customer explicitly asks to see photos/images RIGHT NOW. Forbidden for browsing, pricing, greetings, or general interest.
+When requested: find the item's [id:XXXX] in inventory, reply with ONE line only: SHOW_PHOTOS: XXXX. Never show the id to the customer. No URLs ever.
+If your last message asked which item and customer just answered → emit SHOW_PHOTOS: XXXX immediately.
+Real-estate project photos: SHOW_PHOTOS: project_XXXX.`;
 
   return `You are a professional sales assistant AI.
 

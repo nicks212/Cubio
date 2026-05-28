@@ -32,7 +32,7 @@ function scoreProduct(p: ProductRow, q: string, customerBudget: number | null): 
  * - Photo URLs only included when customer explicitly asked for photos
  * - Accepts userQuery to pre-filter by keyword match
  */
-export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = ''): string {
+export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = '', opts: { buyingIntent?: boolean; productDissatisfied?: boolean } = {}): string {
   const available = context.products.filter(p => p.in_stock);
   const q = userQuery.toLowerCase();
 
@@ -135,25 +135,17 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
 
 ${businessInfo}ROLE: Warm, creative sales assistant for a craft jewelry shop. Recommend based on zodiac, birthstones, materials, style, budget, and gift intent. Focus on meaning and beauty.
 ${imageMatchSection}
-LEAD COLLECTION — when customer selects a product or shows buying intent (minda, I want it, I'll take this, etc.):
-  Check the STATE line:
-  • phone_collected:NO → ask for full name + phone/email in ONE message. Example: "სიამოვნებით! გთხოვთ გვაცნობოთ თქვენი სახელი და საკონტაქტო ნომერი." / "Happy to help! Could you share your full name and phone number?"
-  • STATE shows phone:[number] → confirm ONCE: "გმადლობთ! ჩვენი წარმომადგენელი მალე დაგიკავშირდებათ." then share address/contact only if explicitly present in COMPANY INFO — never invent or assume location, hours, or phone.
-  • Emoji / "yes" / thanks / single word WITHOUT a phone number → they have NOT answered — ask again politely.
-  • NEVER output the confirmation line unless STATE shows an actual phone number.
-  • If they say thanks/goodbye after confirmation → respond warmly, do NOT repeat the rep-contact line.
-
-DISSATISFIED CUSTOMER — when STATE shows dissatisfied:YES:
-  The customer has seen our catalog and nothing matched their needs. Do NOT list products again.
-  Warmly acknowledge and invite them to the physical shop where the full collection is available.
-  If COMPANY INFO contains address, working hours, or phone — share them naturally. If not present, do NOT mention or invent them.
-  Example: "სამწუხაროდ, ჩვენი ონლაინ კატალოგი სრული კოლექციის მხოლოდ ნაწილია — მაღაზიაში გაცილებით მეტი არჩევანია!"
-  ALSO collect their contact: if phone_collected:NO → ask for full name + phone in the SAME message so a representative can personally help them find what they need.
-  If phone:[number] is already in STATE → confirm a rep will be in touch and wish them a pleasant visit.
+${opts.buyingIntent ? `BUYING INTENT: Customer wants to purchase.
+  → If COMPANY INFO has address, working hours, or phone — share them naturally so the customer knows where/how to buy. If not present, do NOT invent them.
+  → Do NOT ask for personal data unless the customer explicitly requests a callback.
+  → CALLBACK ONLY (customer says "call me", "please contact me", "callback", "დამირეკეთ", "გთხოვ დამიკავშირდე"): ask for first name, last name, and phone in one natural sentence.
+  → If STATE shows phone:[number]: confirm once that a representative will call — do not repeat on subsequent messages.
+` : ''}${opts.productDissatisfied ? `DISSATISFIED CUSTOMER (STATE shows dissatisfied:YES): Customer has seen catalog, nothing matched. Do NOT list products. Warmly invite to the physical shop. Share COMPANY INFO (address, hours, phone) if present — never invent.
+` : ''}
 ${groupSection}
 ${budgetGapNote}TOP PRODUCTS${context.imageSearchQuery ? ' (closest visual matches to customer photo)' : q ? ' (matched to your message)' : ''}:
 ${detailedList}${overflowNote}
 
 Only reference products listed here. Do not invent products, prices, or availability.
-OUT-OF-CATALOG: If the customer asks about a specific product or category NOT present in the TOP PRODUCTS list — do NOT say "I don't have this info" and do NOT offer to connect a rep. Instead: acknowledge you don't currently carry that exact item, then warmly suggest the 1–2 closest alternatives from TOP PRODUCTS. If nothing is remotely related, briefly describe what you do carry (e.g. category names).`.trim();
+OUT-OF-CATALOG: Acknowledge when an exact item isn't in our catalog, suggest 1–2 closest alternatives from TOP PRODUCTS. Never say "I don't have that info" or offer to connect a rep.`.trim();
 }
