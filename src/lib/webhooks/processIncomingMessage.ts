@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { generateReply } from '@/lib/ai';
 import { analyzeLeadState } from '@/lib/leads/detector';
-import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE } from '@/lib/ai/signals';
+import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE } from '@/lib/ai/signals';
 import { detectLeadAndEscalation } from '@/lib/ai/detect';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
@@ -313,9 +313,9 @@ export async function processIncomingMessage(
   //     History was pre-loaded at step 3c (before message save) — no DB fetch here.
   const [aiIntent, businessContext] = await Promise.all([
     needsAIClassify
-      ? classifyIntentAI(combinedMessage).then(i => {
-          console.info(`${label} AI intent classifier: '${i}' for: "${combinedMessage.slice(0, 60)}"`);
-          return i;
+      ? classifyIntentAI(combinedMessage).then(r => {
+          console.info(`${label} AI intent classifier: '${r.intent}'${r.wantsEscalation ? ' [ESCALATE]' : ''} for: "${combinedMessage.slice(0, 60)}"`);
+          return r;
         })
       : Promise.resolve(null),
 
@@ -324,10 +324,11 @@ export async function processIncomingMessage(
       priorityApartmentNumbers: similarApartmentNumbers,
       priorityProductNames: similarProductNames,
       imageSearchQuery: imageSearchQuery ?? undefined,
+      textQuery: combinedMessage.trim() || undefined,
     }),
   ]);
 
-  const messageIntent = regexIntent ?? (aiIntent as import('@/lib/ai/intentDetector').MessageIntent);
+  const messageIntent = regexIntent ?? (aiIntent?.intent ?? 'search') as import('@/lib/ai/intentDetector').MessageIntent;
 
   // Use the pre-loaded history snapshot (captured before current message was saved to DB).
   // lastShownApt is passed directly to generateReply to seed conversation state —
@@ -378,8 +379,7 @@ export async function processIncomingMessage(
     : businessContext;
 
   // ── Soft-escalation detection (deterministic, zero AI calls) ─────────────
-  // Triggers: (1) explicit human/operator request  (2) custom/negotiation request
-  //           (3) no vacant inventory for a search query
+  // Triggers: (1) explicit human/operator request
   // Flow: offer human help this turn → on next turn check Redis key → if confirmed
   //       skip AI, send contact info, create escalation record + pause AI.
   const ESC_OFFER_KEY = `cubio:esc_offered:${conversationId}`;
@@ -392,20 +392,13 @@ export async function processIncomingMessage(
       if (ESCALATION_CONFIRM_RE.test(combinedMessage.trim())) escalationConfirmed = true;
       await redis.del(ESC_OFFER_KEY); // clear regardless — offer was either taken or declined
     }
-    if (!escalationConfirmed && !HUMAN_REQUEST_RE.test(combinedMessage)) {
-      const humanReq = HUMAN_REQUEST_RE.test(combinedMessage); // always re-offer if explicit
-      const customReq = !skipReOffer && CUSTOM_REQUEST_RE.test(combinedMessage);
-      const aptCtx  = businessContext as ApartmentContext;
-      const prodCtx = businessContext as ProductContext;
-      const noInventory = !skipReOffer && effectiveIntent === 'search' && (
-        (integration.businessType === 'real_estate'
-          && Array.isArray(aptCtx.apartments)
-          && aptCtx.apartments.filter(a => a.status === 'vacant').length === 0) ||
-        (integration.businessType === 'craft_shop'
-          && Array.isArray(prodCtx.products)
-          && prodCtx.products.filter(p => p.in_stock).length === 0)
-      );
-      offerEscalation = humanReq || customReq || noInventory;
+    if (!escalationConfirmed) {
+      const humanReq = HUMAN_REQUEST_RE.test(combinedMessage)
+        // Also surface escalation intent from the AI classifier for romanized/mixed requests
+        || (aiIntent?.wantsEscalation ?? false);
+      // We no longer trigger soft-escalation on custom requirements or zero search inventory
+      // to keep normal shopping queries inside sales flows and prevent false lockouts.
+      offerEscalation = humanReq;
     }
   } catch {
     // Redis unavailable — soft escalation skipped; hard escalation (ANGER_RE) still active
@@ -434,6 +427,19 @@ export async function processIncomingMessage(
   }
 
   // 8. Generate AI reply — multi-turn structured history, system instruction includes state
+  // Pre-reply signal snapshot logged for every turn — shows lead/frustration balance in server logs.
+  // Uses lightweight inline patterns (no extra imports needed) since this is diagnostic only.
+  {
+    const uText = [...history, { role: 'user', content: combinedMessage }]
+      .filter(m => m.role === 'user').map(m => m.content).join('\n');
+    const hasPhone   = /(?:\+995[\s-]?)?\d{9,12}/.test(uText);
+    const hasBuying  = /მინდა|viqidi|minda|want\s+to\s+buy|call\s+me|გთხოვ\s*დამიკავშირ/i.test(uText);
+    const quickLead  = (hasPhone ? 3 : 0) + (hasBuying ? 2 : 0);
+    const quickFrust = FRUSTRATION_GATE_RE.test(combinedMessage) ? 2 : 0;
+    const turnCount  = history.filter(m => m.role === 'user').length + 1;
+    console.info(`${label} [signals] lead:${quickLead} frust:${quickFrust} turns:${turnCount} intent:${effectiveIntent}`);
+  }
+
   const reply = await generateReply(
     combinedMessage,
     finalBusinessContext,
@@ -703,23 +709,36 @@ async function detectAndPersistLeadOrEscalation(
     const analysis = analyzeLeadState(history, latestMessage, businessType, lastShownAptId);
 
     // AI-based frustration scoring — runs in the fire-and-forget path so no latency impact.
-    // The AI scores 1–5; scores >= 3 create an escalation.
-    // Explicit human requests (already in analysis.isEscalation) bypass AI scoring.
+    // The AI scores 1–5; scores >= 4 create an escalation.
+    // Gate: only fire the Gemini scorer when deterministic preconditions indicate genuine distress:
+    //   • analysis.unresolvedAttempts >= 2 (customer tried multiple times with no result), OR
+    //   • explicit frustration language present in the latest message.
+    // A single frustration word on a normal browsing turn (e.g. "ძვირია" = it's expensive)
+    // does NOT qualify — that just means the price is high, not that the AI failed.
     // IMPORTANT: skip frustration scoring when the customer is already a qualified lead.
-    // A customer who voluntarily shared their phone + buying intent is NOT a frustrated customer.
-    // Scoring them as escalation would put a warm lead into the escalations panel instead of leads.
     let escalationSignal = analysis.isEscalation;
-    if (checkEscalation && !analysis.isEscalation && !analysis.isLead) {
+    const frustrationPreconditionMet = analysis.unresolvedAttempts >= 2 || FRUSTRATION_GATE_RE.test(latestMessage);
+    if (checkEscalation && !analysis.isEscalation && !analysis.isLead && frustrationPreconditionMet) {
       // Pass only the last 4 customer messages — frustration is always visible in recent tone.
       // Keeps input tiny (~100–200 tokens max) regardless of conversation length.
       const recentUserMessages = history.filter(m => m.role === 'user').slice(-4);
       const { escalation: aiEsc } = await detectLeadAndEscalation(recentUserMessages, businessType, false, true);
-      escalationSignal = aiEsc.isEscalation; // true when frustrationLevel >= 3
+      escalationSignal = aiEsc.isEscalation; // true when frustrationLevel >= 4
       if (aiEsc.frustrationLevel >= 2) {
         console.info(`[pipeline] Frustration score ${aiEsc.frustrationLevel}/5 for conversation ${conversationId}${
-          aiEsc.frustrationLevel >= 3 ? ' → escalating' : ' → below threshold, skipping'
+          aiEsc.isEscalation ? ' → escalating' : ' → below threshold, skipping'
         }`);
       }
+    } else if (checkEscalation && !analysis.isEscalation && !analysis.isLead && !frustrationPreconditionMet) {
+      console.info(`[pipeline] Frustration gate skipped — unresolvedAttempts:${analysis.unresolvedAttempts} no strong frustration signal for ${conversationId}`);
+    }
+
+    // Lead dominance rule: a customer actively in a purchase flow should not be escalated
+    // even if minor frustration signals exist. Lead score above frustration score means
+    // the customer is engaged and shopping, not hostile.
+    if (escalationSignal && !analysis.isEscalation && analysis.leadScore > analysis.frustrationScore + 1) {
+      console.info(`[pipeline] Escalation suppressed — lead_score(${analysis.leadScore}) > frustration_score(${analysis.frustrationScore}) for ${conversationId}`);
+      escalationSignal = false;
     }
 
     // ── Fetch existing open lead for lifecycle updates + upsert ──────────────

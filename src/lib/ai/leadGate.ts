@@ -41,24 +41,39 @@ export function shouldRunLeadAnalysis(
 ): ShouldAnalyse {
   const msg = latestMessage.trim();
 
+  // ── Unresolved attempts: user sent searchable queries but AI listed no products ──
+  // This is the key precondition for firing the expensive frustration AI scorer.
+  // Without it, single frustration words on normal price/availability questions trigger
+  // unnecessary Gemini calls that often return low scores anyway.
+  let unresolvedAttempts = 0;
+  for (let i = 0; i < history.length - 1; i++) {
+    const h = history[i];
+    if (h.role !== 'user') continue;
+    const c = h.content.trim();
+    if (!c || c.length < 3 || SKIP_INTENTS_RE.test(c) || PHOTO_ONLY_RE.test(c)) continue;
+    const nextAi = history.slice(i + 1).find(m => m.role === 'ai' || m.role === 'model');
+    if (nextAi && !/^\s*•\s+\S/m.test(nextAi.content) && !/SHOW_PHOTOS/i.test(nextAi.content)) {
+      unresolvedAttempts++;
+    }
+  }
+
   // ── Escalation gate ─────────────────────────────────────────────────────
-  // hasExplicitHumanReq: customer directly asked for a person/operator — always escalate
-  // mightBeFrustrated: broad signal that the AI frustration scorer should run;
-  //   the AI makes the final call (score >= 3 = escalate, score 1-2 = skip)
+  // hasExplicitHumanReq: customer directly asked for a person/operator — always check
+  // hasFrustrationWithContext: frustration signal present AND >= 2 turns went unresolved.
+  //   Without the unresolved context, single frustration words (e.g. "ძვირია" = it's expensive)
+  //   on normal browsing turns would fire the AI scorer unnecessarily.
   const hasExplicitHumanReq = HUMAN_REQUEST_RE.test(msg);
   const mightBeFrustrated   = FRUSTRATION_GATE_RE.test(msg);
-  // Also scan the last 3 user messages from history — the latest message might be neutral
-  // (e.g. "!") while a previous message expressed frustration or requested a human.
-  // Without this, the gate misses escalation when the customer follows up a frustrated
-  // message with a short acknowledgement before the escalation was created.
   const recentUserHistory = history
     .filter(m => m.role === 'user')
     .slice(-3)
     .map(m => m.content)
     .join('\n');
-  const checkEscalation = hasExplicitHumanReq || mightBeFrustrated
+  const hasFrustrationWithContext =
+    (mightBeFrustrated || FRUSTRATION_GATE_RE.test(recentUserHistory)) && unresolvedAttempts >= 2;
+  const checkEscalation = hasExplicitHumanReq
     || HUMAN_REQUEST_RE.test(recentUserHistory)
-    || FRUSTRATION_GATE_RE.test(recentUserHistory);
+    || hasFrustrationWithContext;
 
   // ── Hard skip: empty or purely social message ──────────────────────────
   if (!msg || SKIP_INTENTS_RE.test(msg)) {

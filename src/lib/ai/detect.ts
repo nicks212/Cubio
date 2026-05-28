@@ -80,7 +80,7 @@ Return exactly:
       }
       return {
         lead: EMPTY_LEAD,
-        escalation: { isEscalation: level >= 3, frustrationLevel: level, summary },
+        escalation: { isEscalation: level >= 4, frustrationLevel: level, summary },
       };
     } catch {
       return { lead: EMPTY_LEAD, escalation: EMPTY_ESCALATION };
@@ -149,7 +149,7 @@ Return exactly:
           email: p.email ?? null,
         },
         escalation: {
-          isEscalation: level >= 3,
+          isEscalation: level >= 4,
           frustrationLevel: level,
           summary: p.escalationSummary ?? '',
         },

@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import type { BusinessContext } from '@/lib/ai';
+import { retrieveProducts } from '@/lib/ai/productRetrieval';
 
 /** Options for context loading — used when vector similarity search pre-filtered results. */
 export interface LoadContextOptions {
@@ -9,6 +10,12 @@ export interface LoadContextOptions {
   priorityProductNames?: string[];
   /** Text query from image description — used for tighter text-based pre-filter fallback. */
   imageSearchQuery?: string;
+  /**
+   * Raw user message text — fed into deterministic product retrieval to catch
+   * script-variant queries (e.g. romanized Georgian "taro" vs Georgian "ტარო").
+   * Only used for craft_shop; ignored for real_estate.
+   */
+  textQuery?: string;
 }
 
 /**
@@ -111,6 +118,41 @@ export async function loadBusinessContext(
     const rest        = allProducts.filter((p: { name: string }) => !prioritySet.has(p.name.toLowerCase()));
     allProducts = [...prioritized, ...rest];
     console.info(`[loadBusinessContext] ${prioritized.length} priority products from vector search surfaced to top`);
+  }
+
+  // Deterministic text retrieval — catches romanized/transliterated queries that
+  // vector search may miss (e.g. "taro" vs ტარო, "silver ring" vs ვერცხლის ბეჭედი).
+  // Merges retrieval hits into the priority front without displacing vector-search results.
+  if (options.textQuery?.trim()) {
+    const retrievalHits = retrieveProducts(allProducts, options.textQuery);
+    if (retrievalHits.length > 0) {
+      const top = retrievalHits[0];
+      console.info(
+        `[loadBusinessContext] retrieval: ${retrievalHits.length} match(es) for "${options.textQuery.slice(0, 40)}" — top: "${top.name}" (conf: ${top.confidence.toFixed(2)}, reason: ${top.reason})`,
+      );
+      // Add retrieval hits that are not already in the current top priority slots
+      const currentTopNames = new Set(
+        allProducts.slice(0, Math.max(options.priorityProductNames?.length ?? 0, 1)).map(
+          (p: { name: string }) => p.name.toLowerCase(),
+        ),
+      );
+      const newPriority = retrievalHits
+        .filter(r => !currentTopNames.has(r.name.toLowerCase()))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map(r => allProducts.find((p: any) => p.name === r.name))
+        .filter(Boolean) as typeof allProducts;
+      if (newPriority.length > 0) {
+        const alreadyTop = allProducts.filter((p: { name: string }) => currentTopNames.has(p.name.toLowerCase()));
+        const others     = allProducts.filter(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (p: any) => !currentTopNames.has(p.name.toLowerCase()) && !newPriority.find((n: any) => n.name === p.name),
+        );
+        allProducts = [...alreadyTop, ...newPriority, ...others];
+        console.info(`[loadBusinessContext] retrieval promoted ${newPriority.length} product(s) to priority front`);
+      }
+    } else {
+      console.info(`[loadBusinessContext] retrieval: no matches above threshold for "${options.textQuery.slice(0, 40)}"`);
+    }
   }
 
   return { products: allProducts, businessDescription, imageSearchQuery: options.imageSearchQuery ?? null };

@@ -48,18 +48,17 @@ export function detectIntent(message: string): MessageIntent | null {
  * Uses a minimal Gemini prompt (~30 input tokens) — runs in ~300ms.
  * Should be called in PARALLEL with DB queries so it adds no wall-clock latency.
  *
- * Returns 'photos', 'chat', or 'search'.
+ * Returns the resolved intent plus a wantsEscalation flag for cases where the
+ * classifier detects a human-operator request not caught by HUMAN_REQUEST_RE regex
+ * (e.g. romanized Georgian "operatori minda" or mixed-script operator requests).
  */
-export async function classifyIntentAI(message: string): Promise<MessageIntent> {
-  const prompt = `You are a message classifier for a real estate sales chatbot.
-Classify the customer message into exactly one category:
-  PHOTOS  — customer wants to see photos/pictures/images of an apartment or building
-  CHAT    — greeting, thanks, short acknowledgement, emoji only
-  SEARCH  — anything else (price inquiry, availability, booking, etc.)
-
-Customer message: "${message.replace(/"/g, "'")}"
-
-Reply with a single word: PHOTOS, CHAT, or SEARCH`;
+export async function classifyIntentAI(
+  message: string,
+): Promise<{ intent: MessageIntent; wantsEscalation: boolean }> {
+  // Compressed 4-label prompt — ~40 input tokens, 1-word output, 0 thinking
+  const prompt = `Classify. One word only: PHOTOS, CHAT, SEARCH, or ESCALATE.
+PHOTOS=wants images/photos. CHAT=greeting/thanks/ack/emoji. ESCALATE=asks for human/agent/operator. SEARCH=everything else.
+Message: "${message.replace(/"/g, "'")}"`;
 
   try {
     const result = await model.generateContent({
@@ -68,12 +67,13 @@ Reply with a single word: PHOTOS, CHAT, or SEARCH`;
       generationConfig: { maxOutputTokens: 5, temperature: 0, thinkingConfig: { thinkingBudget: 0 } } as any,
     });
     const raw = result.response.text().trim().toUpperCase();
-    if (raw.includes('PHOTOS')) return 'photos';
-    if (raw.includes('CHAT')) return 'chat';
-    return 'search';
+    if (raw.includes('PHOTOS'))   return { intent: 'photos', wantsEscalation: false };
+    if (raw.includes('CHAT'))     return { intent: 'chat',   wantsEscalation: false };
+    if (raw.includes('ESCALATE')) return { intent: 'search', wantsEscalation: true  };
+    return { intent: 'search', wantsEscalation: false };
   } catch {
     // Gemini unavailable — fall back to 'search' (safe default)
-    return 'search';
+    return { intent: 'search', wantsEscalation: false };
   }
 }
 
