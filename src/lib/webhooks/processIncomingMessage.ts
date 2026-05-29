@@ -315,21 +315,30 @@ export async function processIncomingMessage(
       } else {
         similarProductNames = await searchSimilarProducts(integration.companyId, imageSearchQuery);
         if (similarProductNames.length > 0) {
-          console.info(`${label} Vector search: ${similarProductNames.length} similar products found`);
+          console.info(`${label} Vector search (image): ${similarProductNames.length} similar products found`);
         }
       }
     }
   }
 
-  // 6b. Kick off AI classifier and business context in parallel.
+  // 6b. Kick off AI classifier, text-vector product search, and business context in parallel.
+  //     For craft_shop text queries, searchSimilarProducts runs alongside the intent classifier
+  //     with zero sequential latency — uses the already-deployed pgvector index.
   //     History was pre-loaded at step 3c (before message save) — no DB fetch here.
-  const [aiIntent, businessContext] = await Promise.all([
+  const textVectorSearchPromise: Promise<string[]> =
+    integration.businessType === 'craft_shop' && combinedMessage.trim() && similarProductNames.length === 0
+      ? searchSimilarProducts(integration.companyId, combinedMessage.trim(), 5)
+      : Promise.resolve([]);
+
+  const [aiIntent, textVectorNames, businessContext] = await Promise.all([
     needsAIClassify
       ? classifyIntentAI(combinedMessage, { companyId: integration.companyId, conversationId }).then(r => {
           console.info(`${label} AI intent classifier: '${r.intent}'${r.wantsEscalation ? ' [ESCALATE]' : ''} for: "${combinedMessage.slice(0, 60)}"`);
           return r;
         })
       : Promise.resolve(null),
+
+    textVectorSearchPromise,
 
     // Business context — loaded unconditionally; discarded if intent turns out to be 'chat'
     loadBusinessContext(integration.companyId, integration.businessType, {
@@ -339,6 +348,25 @@ export async function processIncomingMessage(
       textQuery: combinedMessage.trim() || undefined,
     }),
   ]);
+
+  // Merge text-vector results into priority names (after image vector, before token retrieval).
+  // Only add names not already surfaced by the image vector search.
+  if (textVectorNames.length > 0) {
+    const existingSet = new Set(similarProductNames.map(n => n.toLowerCase()));
+    const newNames = textVectorNames.filter(n => !existingSet.has(n.toLowerCase()));
+    if (newNames.length > 0) {
+      console.info(`${label} Vector search (text): ${newNames.length} product(s) found — top: "${newNames[0]}"`);
+      // Promote text-vector hits to priority front in businessContext.
+      // businessContext was already loaded — re-sort products array in place.
+      if ('products' in businessContext && Array.isArray(businessContext.products)) {
+        const allProds = businessContext.products as Array<{ name: string }>;
+        const vectorSet = new Set([...similarProductNames, ...newNames].map(n => n.toLowerCase()));
+        const prioritized = allProds.filter(p => vectorSet.has(p.name.toLowerCase()));
+        const rest = allProds.filter(p => !vectorSet.has(p.name.toLowerCase()));
+        (businessContext as { products: Array<{ name: string }> }).products = [...prioritized, ...rest];
+      }
+    }
+  }
 
   const messageIntent = regexIntent ?? (aiIntent?.intent ?? 'search') as import('@/lib/ai/intentDetector').MessageIntent;
 
@@ -585,6 +613,12 @@ export async function processIncomingMessage(
   }
 
   if (integration.businessType === 'craft_shop' && cleanReply.length > 0) {
+    // Diagnostics — log the final top-3 products that were surfaced to the AI
+    if ('products' in finalBusinessContext) {
+      const top3names = (finalBusinessContext as ProductContext).products
+        .slice(0, 3).map(p => p.name);
+      console.info(`${label} [retrieval] query="${combinedMessage.slice(0, 60)}" top3_context=${JSON.stringify(top3names)}`);
+    }
     const guardedReply = guardCraftCatalogReply(cleanReply, combinedMessage, finalBusinessContext as ProductContext, history);
     if (guardedReply.replaced) {
       cleanReply = guardedReply.reply;

@@ -120,12 +120,16 @@ export function buildApartmentSearchText(apt: ApartmentRow): string {
 }
 
 /** Builds a searchable text representation of a product for embedding. */
-export function buildProductSearchText(p: ProductRow): string {
+export function buildProductSearchText(p: ProductRow & { keywords?: string | null }): string {
   const parts: string[] = [p.name];
-  if (p.category)     parts.push(p.category);
-  if (p.material)     parts.push(p.material);
-  if (p.birthstones)  parts.push(`stones: ${p.birthstones}`);
+  if (p.category)    parts.push(p.category);
+  if (p.material)    parts.push(p.material);
+  if (p.birthstones) parts.push(`stones: ${p.birthstones}`);
   if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(' ')}`);
+  // Description and keywords give semantic richness to the embedding — critical for
+  // cross-language and synonym queries (e.g. "incense" matching "სურნელოვანი ჩხირები").
+  if (p.description) parts.push(p.description);
+  if (p.keywords)    parts.push(p.keywords);
   return parts.join(', ');
 }
 
@@ -166,7 +170,7 @@ export async function generateAndStoreApartmentEmbedding(
  */
 export async function generateAndStoreProductEmbedding(
   productId: string,
-  product: ProductRow,
+  product: ProductRow & { keywords?: string | null },
 ): Promise<boolean> {
   const text = buildProductSearchText(product);
   const embedding = await generateTextEmbedding(text, TaskType.RETRIEVAL_DOCUMENT);

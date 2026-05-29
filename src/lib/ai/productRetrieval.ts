@@ -36,50 +36,48 @@ export function geoToLatin(text: string): string {
 }
 
 /**
- * Common Latin romanizations and English equivalents that map to the same
- * normalized form as their Georgian equivalent after geoToLatin().
- * Key = user input; value = normalized Latin token to use when matching.
+ * Common transliterated Georgian suffix endings that change a word's grammatical
+ * form without changing its semantic root.
+ *
+ * These are the Latin-script equivalents that geoToLatin() produces from Georgian
+ * grammatical suffixes: plural (-ები), genitive (-ის/-ს), instrumental (-ით),
+ * locative (-ში/-ზე), dative (-ს), adverbial (-ად).
+ *
+ * Stripping them allows "chxirebi" (plural) to match product "chxiri" (singular),
+ * "samajuris" (genitive) to match "samajuri", etc. — without any hardcoded
+ * synonym mappings specific to a business type.
+ *
+ * Sorted longest-first so greedy matching removes the longest applicable suffix.
  */
-const SHORTCUTS: Record<string, string> = {
-  // Tarot / ტარო
-  taro: 'taro', tarot: 'taro', taroti: 'taro', taros: 'taro', taroebi: 'taro', 'taro kartebis': 'taro',
-  // Essential oils / ეთერზეთი
-  eterzetebi: 'eterzeti', eterzetsebi: 'eterzeti', eterzets: 'eterzeti', eterzetis: 'eterzeti',
-  'essential oil': 'eterzeti', 'essential oils': 'eterzeti',
-  'ether oil': 'eterzeti', 'ether oils': 'eterzeti',
-  'flavour oil': 'eterzeti', 'flavour oils': 'eterzeti',
-  'flavor oil': 'eterzeti', 'flavor oils': 'eterzeti',
-  // Jewelry types
-  ring: 'bechedi', rings: 'bechedi',
-  bracelet: 'samajuri', bracelets: 'samajuri',
-  necklace: 'qelsabami', necklaces: 'qelsabami',
-  yelsabami: 'qelsabami', yelsabamebi: 'qelsabami', yelsabamis: 'qelsabami',
-  earring: 'sayure', earrings: 'sayure',
-  pendant: 'qelsabami',
-  // Materials / metals
-  silver: 'vercxli', gold: 'oqro',
-  // Gemstones
-  malachite: 'malakit', malachit: 'malakit',
-  lazurite: 'lazurit', lazurit: 'lazurit',
-  amethyst: 'ametisti', amethist: 'ametisti',
-  crystal: 'kristali', cristal: 'kristali',
-  amber: 'qariaqala',
-};
+const GEO_SUFFIXES = ['ebi', 'ebis', 'ebs', 'shi', 'its', 'ad', 'ze', 'is', 'it', 'eb', 's'];
+
+/**
+ * Strips the longest known Georgian morphological suffix from a Latin-script token.
+ * Returns the stemmed token (or the original if no suffix matches).
+ * Requires the stem to be at least 3 characters after stripping.
+ */
+function stemGeoToken(token: string): string {
+  for (const suffix of GEO_SUFFIXES) {
+    if (token.endsWith(suffix) && token.length - suffix.length >= 3) {
+      return token.slice(0, token.length - suffix.length);
+    }
+  }
+  return token;
+}
 
 /**
  * Normalizes a raw query string to a canonical Latin form for cross-script matching:
  *  1. Lowercase
- *  2. Apply known shortcuts (gold → oqro, taro → taro, etc.)
- *  3. Convert remaining Georgian script via geoToLatin
- *  4. Strip non-alphanumeric except hyphens
+ *  2. Convert Georgian script via geoToLatin
+ *  3. Strip non-alphanumeric except hyphens
+ *
+ * Synonym/shortcut mappings are intentionally absent — semantic matching is
+ * handled by the pgvector embedding layer (searchSimilarProducts).  This function
+ * is responsible only for script normalization so token-based matching can work
+ * across Georgian script, romanized Georgian, and Latin queries.
  */
 export function normalizeQuery(query: string): string {
   let q = query.toLowerCase().trim();
-  // Apply shortcuts — whole-word replacement only
-  for (const [src, dst] of Object.entries(SHORTCUTS)) {
-    const re = new RegExp(`(?<![a-z\\u10D0-\\u10FF])${src}(?![a-z\\u10D0-\\u10FF])`, 'gi');
-    if (re.test(q)) q = q.replace(re, dst);
-  }
   q = geoToLatin(q);
   q = q.replace(/[^a-z0-9\s-]/g, ' ').replace(/\s+/g, ' ').trim();
   return q;
@@ -92,72 +90,99 @@ type ProductLike = {
   material?: string | null;
   birthstones?: string | null;
   zodiac_compatibility?: string[] | null;
+  keywords?: string | null;
 };
 
 /**
- * Scores one product against a normalized query.
- * Checks all searchable fields with different weights.
+ * Scores one product against a normalized query using stem-aware token matching.
+ *
+ * Matching strategy:
+ * 1. Both query tokens and product field tokens are stemmed via stemGeoToken()
+ *    before comparison.  This lets inflected forms ("chxirebi") match base forms
+ *    ("chxiri") without any hardcoded synonym tables.
+ * 2. Fields are weighted by specificity: name > category/material > description/keywords > zodiac
+ * 3. Confidence is normalized to 0–1 against the theoretical maximum score.
  */
 export function scoreProductRetrieval(
   product: ProductLike,
   normalizedQuery: string,
 ): { score: number; confidence: number; reason: string } {
-  const tokens = normalizedQuery.match(/[a-z0-9]{2,}/g) ?? [];
+  const tokens = (normalizedQuery.match(/[a-z0-9]{2,}/g) ?? []).map(stemGeoToken);
   if (!tokens.length) return { score: 0, confidence: 0, reason: 'empty' };
 
   const nq = (s: string) => normalizeQuery(s);
-  const fname = nq(product.name);
-  const fcat  = nq(product.category ?? '');
-  const fmat  = nq(product.material ?? '');
-  const fdesc = nq(product.description ?? '');
-  const fst   = nq(product.birthstones ?? '');
-  const fzod  = (product.zodiac_compatibility ?? []).map(nq).join(' ');
+
+  // Pre-stem all field tokens once — avoids stemming on every token comparison.
+  const stemTokens = (s: string) => (nq(s).match(/[a-z0-9]{2,}/g) ?? []).map(stemGeoToken);
+
+  const nameTokens = stemTokens(product.name);
+  const catTokens  = stemTokens(product.category ?? '');
+  const matTokens  = stemTokens(product.material ?? '');
+  const dscTokens  = stemTokens(product.description ?? '');
+  const kwTokens   = stemTokens(product.keywords ?? '');
+  const stTokens   = stemTokens(product.birthstones ?? '');
+  const zodTokens  = (product.zodiac_compatibility ?? []).flatMap(z => stemTokens(z));
+
+  // Helper: count how many query tokens have at least one stemmed field token that
+  // starts with them or equals them (stem-prefix match for partial coverage).
+  const countHits = (fieldTokens: string[]) =>
+    tokens.filter(qt => fieldTokens.some(ft => ft === qt || ft.startsWith(qt) || qt.startsWith(ft))).length;
 
   let score = 0;
   let reason = '';
 
   // 1. Name match — highest weight
-  const joined = tokens.join(' ');
-  if (fname === joined) {
+  const nameHits = countHits(nameTokens);
+  const nameJoined = nameTokens.join(' ');
+  const queryJoined = tokens.join(' ');
+  if (nameJoined === queryJoined) {
     score += 10; reason = 'exact name';
-  } else if (fname.includes(joined) || joined.includes(fname)) {
+  } else if (nameJoined.includes(queryJoined) || queryJoined.includes(nameJoined)) {
     score += 8; reason = 'name contains query';
-  } else {
-    const nameHits = tokens.filter(t => fname.includes(t));
-    if (nameHits.length === tokens.length) {
-      score += 7; reason = 'all tokens in name';
-    } else if (nameHits.length > 0) {
-      score += nameHits.length * 2.5;
-      reason = `${nameHits.length}/${tokens.length} name tokens`;
+  } else if (nameHits === tokens.length) {
+    score += 7; reason = 'all tokens in name';
+  } else if (nameHits > 0) {
+    score += nameHits * 2.5;
+    reason = `${nameHits}/${tokens.length} name tokens`;
+  }
+
+  // 2. Category tokens — full match equivalent to name match; partial at 2.5 each
+  const catHits = countHits(catTokens);
+  if (catHits > 0) {
+    if (catHits === tokens.length) {
+      score += 7; if (!reason) reason = 'all tokens match category';
+    } else {
+      score += catHits * 2.5;
+      if (!reason) reason = `${catHits} category tokens`;
     }
   }
 
-  // 2. Category tokens — weight 1.5 each
-  const catHits = fcat ? tokens.filter(t => fcat.includes(t)) : [];
-  if (catHits.length > 0) {
-    score += catHits.length * 1.5;
-    if (!reason) reason = `${catHits.length} category tokens`;
+  // 3. Material tokens — 2.0 each
+  const matHits = countHits(matTokens);
+  if (matHits > 0) {
+    score += matHits * 2.0;
+    if (!reason) reason = `${matHits} material tokens`;
   }
 
-  // 3. Material tokens — weight 1.5 each
-  const matHits = fmat ? tokens.filter(t => fmat.includes(t)) : [];
-  if (matHits.length > 0) {
-    score += matHits.length * 1.5;
-    if (!reason) reason = `${matHits.length} material tokens`;
+  // 4. Keywords — 1.5 each (business-provided search terms)
+  const kwHits = countHits(kwTokens);
+  if (kwHits > 0) {
+    score += kwHits * 1.5;
+    if (!reason) reason = `${kwHits} keyword tokens`;
   }
 
-  // 4. Description tokens — weight 1.0 each, capped at 3
-  const dscHits = fdesc ? tokens.filter(t => fdesc.includes(t)).slice(0, 3) : [];
-  if (dscHits.length > 0) {
-    score += dscHits.length;
-    if (!reason) reason = `${dscHits.length} description tokens`;
+  // 5. Description tokens — 1.0 each, capped at 3
+  const dscHits = Math.min(countHits(dscTokens), 3);
+  if (dscHits > 0) {
+    score += dscHits;
+    if (!reason) reason = `${dscHits} description tokens`;
   }
 
-  // 5. Birthstones / zodiac — weight 1.0 each
-  const spdHits = tokens.filter(t => fst.includes(t) || fzod.includes(t));
-  if (spdHits.length > 0) {
-    score += spdHits.length;
-    if (!reason) reason = `${spdHits.length} stone/zodiac tokens`;
+  // 6. Birthstones / zodiac — 1.0 each
+  const spdHits = countHits([...stTokens, ...zodTokens]);
+  if (spdHits > 0) {
+    score += spdHits;
+    if (!reason) reason = `${spdHits} stone/zodiac tokens`;
   }
 
   // Confidence normalized against maximum possible score

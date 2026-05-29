@@ -98,6 +98,7 @@ export interface Product {
   currency: 'GEL' | 'USD';
   category: string | null;
   material: string | null;
+  keywords: string | null;
   in_stock: boolean;
   images: string[];
   created_at: string;

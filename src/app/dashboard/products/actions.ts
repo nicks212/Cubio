@@ -13,6 +13,7 @@ const productSchema = z.object({
   category: z.string().optional(),
   material: z.string().optional(),
   birthstones: z.string().optional(),
+  keywords: z.string().optional(),
   in_stock: z.string().optional().transform(v => v === 'true'),
 });
 
@@ -53,6 +54,8 @@ export async function createProduct(_prev: unknown, formData: FormData) {
       category: parsed.data.category ?? null,
       material: parsed.data.material ?? null,
       birthstones: parsed.data.birthstones ?? null,
+      keywords: parsed.data.keywords ?? null,
+      description: parsed.data.description ?? null,
       in_stock: parsed.data.in_stock ?? true,
       zodiac_compatibility,
       images,
@@ -88,6 +91,8 @@ export async function updateProduct(_prev: unknown, formData: FormData) {
     category: parsed.data.category ?? null,
     material: parsed.data.material ?? null,
     birthstones: parsed.data.birthstones ?? null,
+    keywords: parsed.data.keywords ?? null,
+    description: parsed.data.description ?? null,
     in_stock: parsed.data.in_stock ?? true,
     zodiac_compatibility,
     images,

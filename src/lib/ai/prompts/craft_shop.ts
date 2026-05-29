@@ -112,7 +112,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
     return sb - sa;
   });
   const relevantPool = shouldListSpecificProducts
-    ? sorted.slice(0, q || context.imageSearchQuery ? 10 : 8)
+    ? sorted.slice(0, retrievalHits.length > 0 || context.imageSearchQuery ? 3 : 5)
     : [];
   const top3 = relevantPool.slice(0, 3);
   const rest = relevantPool.slice(3);
