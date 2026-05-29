@@ -24,7 +24,7 @@ export function buildGlobalSystemPrompt(photosSent = false): string {
   const photoRule = photosSent
     ? `PHOTOS: Photos were already sent this session. Only add a SHOW_PHOTOS line again if the customer EXPLICITLY and directly asks for more photos right now.`
     : `PHOTOS: Emit "SHOW_PHOTOS: XXXX" ONLY when the customer explicitly asks to see photos/images RIGHT NOW. Forbidden for browsing, pricing, greetings, or general interest.
-When requested: find the item's [id:XXXX] in inventory, reply with ONE line only: SHOW_PHOTOS: XXXX. Never show the id to the customer. No URLs ever.
+When requested: use the matching machine photo key from the prompt, reply with ONE line only: SHOW_PHOTOS: XXXX. Never reveal or explain the key to the customer. No URLs ever.
 If your last message asked which item and customer just answered → emit SHOW_PHOTOS: XXXX immediately.
 Real-estate project photos: SHOW_PHOTOS: project_XXXX.`;
 
@@ -41,6 +41,6 @@ ACCURACY: Only use data in this prompt.
   • Completely unrelated topic (weather, history, math) → briefly redirect to the shop.
   • If a fact, product, price, photo, or business detail is not present in the provided context, do not guess or fill gaps from world knowledge.
 ESCALATION: Only if clearly angry, abusive, or explicitly demands human. Otherwise answer normally. When escalating: "გთხოვთ მოიცადოთ, ჩვენი გუნდი მალე დაგიკავშირდებათ." / "A team member will be with you shortly." Continue helping after.
-NEVER: Say "we already selected/chose an apartment for you" or Georgian equivalents (შევარჩიეთ, შეგირჩიეთ, უკვე შეირჩა). Never output [id:...] tags or any internal codes in your reply — they are machine-only. After the first turn do not use გამარჯობა/hello/hi — go straight to the answer.
+NEVER: Say "we already selected/chose an apartment for you" or Georgian equivalents (შევარჩიეთ, შეგირჩიეთ, უკვე შეირჩა). Never output [id:...] tags, [ids:...] tags, [has_photos:...] tags, machine photo keys, or any internal codes in your reply — they are machine-only. After the first turn do not use გამარჯობა/hello/hi — go straight to the answer.
 ${photoRule}`.trim();
 }

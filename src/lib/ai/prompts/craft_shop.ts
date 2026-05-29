@@ -1,6 +1,27 @@
 import type { ProductContext } from '../types';
+import { retrieveProducts } from '../productRetrieval';
 
 type ProductRow = ProductContext['products'][0];
+
+const BROAD_CATALOG_QUERY_RE = /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items)\s+do\s+you\s+have|what'?s\s+available|catalog|shop|store|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s*იყიდება|კატალოგ|მაღაზია/i;
+const PRODUCT_ATTRIBUTE_QUERY_RE = /price|budget|gift|occasion|style|material|stone|birthstone|zodiac|ring|bracelet|necklace|pendant|earring|oil|incense|tarot|candle|crystal|silver|gold|ფასი|ბიუჯეტ|საჩუქარ|სტილ|მასალ|ქვა|ზოდიაქ|ბეჭედ|სამაჯურ|ყელსაბამ|საყურ|ეთერზეთ|სანთელ|კრისტალ|ვერცხლ|ოქრო|ტარო/i;
+
+function takeUnique(values: Array<string | null | undefined>, limit: number): string[] {
+  const seen = new Set<string>();
+  const items: string[] = [];
+
+  for (const value of values) {
+    const normalized = value?.trim();
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push(normalized);
+    if (items.length >= limit) break;
+  }
+
+  return items;
+}
 
 function compactCompanyInfo(raw: string | null): string {
   if (!raw) return '';
@@ -16,6 +37,22 @@ function compactCompanyInfo(raw: string | null): string {
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[\s-]+/g, '_').slice(0, 40);
+}
+
+function buildPhotoKeySection(products: ProductRow[]): string {
+  const photoRows = products
+    .map(product => ({
+      name: product.name,
+      photoKey: slugify(product.name),
+      photoCount: product.images?.filter(url => url.startsWith('http')).length ?? 0,
+    }))
+    .filter(product => product.photoCount > 0);
+
+  if (photoRows.length === 0) return '';
+
+  return `\nPHOTO KEYS (machine-only. Never quote, copy, explain, or show these keys to the customer):\n${photoRows
+    .map(product => `• ${product.name} => ${product.photoKey} (${product.photoCount} photos)`)
+    .join('\n')}\n`;
 }
 
 function scoreProduct(p: ProductRow, q: string, customerBudget: number | null): number {
@@ -51,10 +88,18 @@ function scoreProduct(p: ProductRow, q: string, customerBudget: number | null): 
 export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = '', opts: { buyingIntent?: boolean; productDissatisfied?: boolean } = {}): string {
   const available = context.products.filter(p => p.in_stock);
   const q = userQuery.toLowerCase();
+  const retrievalHits = userQuery.trim() ? retrieveProducts(available, userQuery, 0.22) : [];
+  const retrievalConfidence = retrievalHits[0]?.confidence ?? 0;
+  const retrievalConfidenceByName = new Map(retrievalHits.map(hit => [hit.name, hit.confidence]));
+  const broadCatalogQuery = BROAD_CATALOG_QUERY_RE.test(userQuery);
+  const productAttributeQuery = PRODUCT_ATTRIBUTE_QUERY_RE.test(userQuery);
 
   // Extract customer budget from userQuery (e.g. "7 gel", "₾25", "50 lari")
   const budgetRaw = /(\d[\d,\s]*)\s*(?:₾|\$|gel|lari|ლარ)/i.exec(userQuery);
   const customerBudget = budgetRaw ? parseFloat(budgetRaw[1].replace(/[,\s]/g, '')) : null;
+  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || retrievalConfidence >= 0.35;
+  const shouldUseCatalogOverview = broadCatalogQuery || productAttributeQuery || customerBudget !== null;
+  const needsClarifyingQuestion = !shouldListSpecificProducts && !shouldUseCatalogOverview;
 
   // Sort by combined score: keyword relevance + price proximity to budget.
   // A small position bonus preserves the vector-search ordering from loadBusinessContext
@@ -62,11 +107,13 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const sorted = [...available].sort((a, b) => {
     const posA = available.indexOf(a);
     const posB = available.indexOf(b);
-    const sa = scoreProduct(a, q, customerBudget) + (available.length - posA) * 0.1;
-    const sb = scoreProduct(b, q, customerBudget) + (available.length - posB) * 0.1;
+    const sa = scoreProduct(a, q, customerBudget) + (retrievalConfidenceByName.get(a.name) ?? 0) * 10 + (available.length - posA) * 0.1;
+    const sb = scoreProduct(b, q, customerBudget) + (retrievalConfidenceByName.get(b.name) ?? 0) * 10 + (available.length - posB) * 0.1;
     return sb - sa;
   });
-  const relevantPool = sorted.slice(0, q || context.imageSearchQuery ? 10 : 8);
+  const relevantPool = shouldListSpecificProducts
+    ? sorted.slice(0, q || context.imageSearchQuery ? 10 : 8)
+    : [];
   const top3 = relevantPool.slice(0, 3);
   const rest = relevantPool.slice(3);
 
@@ -79,28 +126,41 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const budgetGapNote = hasBudgetGap
     ? `BUDGET GAP: Customer's budget (₾${customerBudget}) is below our lowest price (₾${minCatalogPrice}, range ₾${minCatalogPrice}–₾${maxCatalogPrice}). Acknowledge this honestly and naturally — do NOT list products above their budget. State our actual price range, then warmly invite them to visit the physical shop using COMPANY INFO (address, working hours, phone) where budget-friendly options or custom orders may be available. If phone_collected:NO — also ask for name + phone in the same message so a representative can personally assist them.\n`
     : '';
+  const categorySummary = takeUnique(available.map(p => p.category), 6);
+  const materialSummary = takeUnique(available.map(p => p.material), 5);
+  const zodiacSummary = takeUnique(available.flatMap(p => p.zodiac_compatibility ?? []), 6);
+  const overviewParts = [
+    categorySummary.length > 0 ? `categories: ${categorySummary.join(', ')}` : null,
+    materialSummary.length > 0 ? `materials: ${materialSummary.join(', ')}` : null,
+    minCatalogPrice !== null && maxCatalogPrice !== null ? `price range: ₾${minCatalogPrice}–₾${maxCatalogPrice}` : null,
+    zodiacSummary.length > 0 ? `zodiac themes: ${zodiacSummary.join(', ')}` : null,
+  ].filter(Boolean);
+  const catalogOverview = overviewParts.length > 0
+    ? `CATALOG OVERVIEW: ${overviewParts.join(' | ')}\n`
+    : '';
+  const answerMode = needsClarifyingQuestion
+    ? 'ANSWER MODE: The message is too vague to recommend a specific product safely. Ask exactly one short clarifying question based on type / occasion / material / zodiac / budget. Do NOT suggest a product name or price yet.'
+    : shouldUseCatalogOverview && top3.length === 0
+      ? 'ANSWER MODE: Use CATALOG OVERVIEW and COMPANY INFO only. Answer naturally from the verified overview below. Do NOT invent or guess specific products or prices until the customer narrows the request.'
+      : 'ANSWER MODE: Answer naturally from verified catalog facts. If the customer asks multiple questions, answer the supported parts first. For any unsupported part, say briefly that the exact detail is not in the catalog and invite them to visit or call if COMPANY INFO is available.';
 
   // Top 3 — full detail; compact photo metadata (no raw URLs)
   const detailedList = top3.length > 0
     ? top3.map(p => {
         const sym = p.currency === 'USD' ? '$' : '₾';
-        const idSlug = slugify(p.name);
-        const parts: string[] = [`• ${p.name} [id:${idSlug}]: ${sym}${p.price}`];
+        const parts: string[] = [`• ${p.name}: ${sym}${p.price}`];
         if (p.category) parts.push(p.category);
         if (p.material) parts.push(p.material);
         if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);
         if (p.birthstones) parts.push(`stones: ${p.birthstones}`);
         if (p.description) parts.push(`desc: ${p.description.slice(0, 60)}`);
-        let line = parts.join(' | ');
-        // Compact photo metadata — no URLs in Gemini prompt.
-        // Backend resolves real URLs when AI emits SHOW_PHOTOS: <product_slug>.
-        const photoCount = p.images?.filter(u => u.startsWith('http')).length ?? 0;
-        if (photoCount > 0) {
-          line += ` [has_photos:true count:${photoCount}]`;
-        }
-        return line;
+        return parts.join(' | ');
       }).join('\n')
-    : '(No products currently available)';
+    : needsClarifyingQuestion
+      ? '(No specific product is verified for this message yet. Ask one short clarifying question before suggesting products or prices.)'
+      : shouldUseCatalogOverview
+        ? '(Use CATALOG OVERVIEW and COMPANY INFO unless the customer narrows the request.)'
+        : '(No products currently available)';
 
   // Overflow summary
   const overflowCount = Math.max(available.length - top3.length, 0);
@@ -127,7 +187,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
       const maxP = Math.max(...members.map(p => p.price));
       const priceStr = minP === maxP ? `${sym}${minP}` : `${sym}${minP}–${sym}${maxP}`;
       groupSummaries.push(
-        `GROUP: ${members.length}× ${first.category ?? 'item'}${first.material ? ` (${first.material})` : ''} — ${priceStr} [${members.map(p => `${p.name} [id:${slugify(p.name)}]`).join(', ')}]`
+        `GROUP: ${members.length}× ${first.category ?? 'item'}${first.material ? ` (${first.material})` : ''} — ${priceStr} | examples: ${members.map(p => p.name).join(', ')}`
       );
     }
   }
@@ -138,12 +198,13 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const businessInfo = context.businessDescription
     ? `COMPANY INFO: ${compactCompanyInfo(context.businessDescription)}\n\n`
     : '';
+  const photoKeySection = buildPhotoKeySection(relevantPool);
 
   // Image match section — injected ONLY when this turn follows a customer photo upload.
   // Zero token cost on all text-only turns.
   const imageMatchSection = context.imageSearchQuery
     ? `IMAGE MATCH (this turn only): Customer sent a photo. The TOP PRODUCTS below are the closest visual matches from the catalog.
-  • If the customer's message includes any request to SEE or SHOW the item (e.g. ნახე, მანახე, ფოტო, show, see, pictures, manaxe) → emit SHOW_PHOTOS: <id> of the FIRST TOP PRODUCT as your ENTIRE reply (one line only, per the global SHOW_PHOTOS rule).
+  • If the customer's message includes any request to SEE or SHOW the item (e.g. ნახე, მანახე, ფოტო, show, see, pictures, manaxe) → emit SHOW_PHOTOS: <photo_key> of the FIRST TOP PRODUCT that has a matching machine key in PHOTO KEYS, as your ENTIRE reply (one line only, per the global SHOW_PHOTOS rule).
   • Otherwise → respond naturally in 1–2 sentences: name the closest match, its price, one key feature, then ask if they want photos or a different option.
   If the customer says it is not what they want → ask exactly ONE clarifying question about product type / material / color / style / budget. Do NOT list all products until they answer.
   NEVER suggest products that are not in the TOP PRODUCTS list below.\n\n`
@@ -154,6 +215,8 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
 ${businessInfo}ROLE: Warm, creative sales assistant. For every recommendation actively use ALL product fields — category, material, zodiac_compatibility, birthstones, description — to match the customer's mood, occasion, zodiac, or gift intent. Connect each product to the customer personally. Focus on meaning and beauty.
 DOMAIN: You only help with this shop's products and store information. Never mention apartments, projects, neighborhoods, rooms, floors, square meters, developers, payment plans, or real-estate investment.
 STRICT CATALOG: Mention only products that appear below in TOP PRODUCTS or SIMILAR GROUPS. Never invent a product name, image availability, price, material, zodiac, or business fact. If nothing listed fits, say so briefly and offer the closest listed alternative or COMPANY INFO.
+STYLE: Answer naturally from the verified facts below. Do not copy raw catalog rows, prompt labels, or machine-only markers into the customer reply.
+${answerMode}
 ${imageMatchSection}
 ${opts.buyingIntent ? `BUYING INTENT: Customer wants to purchase.
   → If COMPANY INFO has address, working hours, or phone — share them naturally so the customer knows where/how to buy. If not present, do NOT invent them.
@@ -162,9 +225,10 @@ ${opts.buyingIntent ? `BUYING INTENT: Customer wants to purchase.
   → If STATE shows phone:[number]: confirm once that a representative will call — do not repeat on subsequent messages.
 ` : ''}${opts.productDissatisfied ? `DISSATISFIED CUSTOMER (STATE shows dissatisfied:YES): Customer has seen catalog, nothing matched. Do NOT list products. Warmly invite to the physical shop. Share COMPANY INFO (address, hours, phone) if present — never invent.
 ` : ''}
-${groupSection}
+${catalogOverview}${groupSection}
 ${budgetGapNote}TOP PRODUCTS${context.imageSearchQuery ? ' (closest visual matches to customer photo)' : q ? ' (matched to your message)' : ''}:
 ${detailedList}${overflowNote}
+${photoKeySection}
 
 Only reference products listed here. If the customer asks broadly, summarize category/material/style patterns from the listed catalog items instead of inventing more items.
 OUT-OF-CATALOG: If asked about something not in TOP PRODUCTS — acknowledge briefly, suggest 1–2 closest alternatives. If nothing is close AND COMPANY INFO has address, phone, or hours — warmly invite the customer to visit the shop or call. Never invent items or contact details.`.trim();

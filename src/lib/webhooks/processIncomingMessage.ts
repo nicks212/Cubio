@@ -11,12 +11,17 @@ import { detectIntent, detectPhotoType, classifyIntentAI } from '@/lib/ai/intent
 import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
 import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts } from '@/lib/ai/embeddings';
 import { persistAIUsage } from '@/lib/ai/usage';
+import { normalizeQuery, retrieveProducts } from '@/lib/ai/productRetrieval';
 import { redis } from '@/lib/redis';
 import { createHash } from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './types';
 import type { ApartmentContext, ProductContext, BusinessContext } from '@/lib/ai/types';
 import type { PhotoType } from '@/lib/ai/intentDetector';
+
+const CRAFT_BROAD_QUERY_RE = /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items)\s+do\s+you\s+have|what'?s\s+available|catalog|shop|store|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s*იყიდება|კატალოგ|მაღაზია/i;
+const CRAFT_ATTRIBUTE_QUERY_RE = /price|budget|gift|occasion|style|material|stone|birthstone|zodiac|ring|bracelet|necklace|pendant|earring|oil|incense|tarot|candle|crystal|silver|gold|ფასი|ბიუჯეტ|საჩუქარ|სტილ|მასალ|ქვა|ზოდიაქ|ბეჭედ|სამაჯურ|ყელსაბამ|საყურ|ეთერზეთ|სანთელ|კრისტალ|ვერცხლ|ოქრო|ტარო/i;
+const CRAFT_RECOMMENDATION_RE = /\b(?:recommend|suggest|offer|we\s+have|try|look\s+at|შემოგთავაზ|გირჩევ|გთავაზობთ|გვაქვს)\b/i;
 
 /**
  * Core processing pipeline — shared across all providers.
@@ -518,6 +523,7 @@ export async function processIncomingMessage(
   // Strip any role-label prefixes the AI may have mirrored from the history format.
   cleanReply = cleanReply.replace(/^\s*\[(AI|USER|ASSISTANT|CUSTOMER)\]\s*/i, '').trim();
   cleanReply = cleanReply.replace(/^\s*(?:Assistant|AI)\s*:\s*/i, '').trim();
+  cleanReply = stripInternalReplyArtifacts(cleanReply);
 
   // Safety check: if SHOW_PHOTOS still present after strip, something is very wrong — log and abort.
   if (/SHOW_PHOTOS/i.test(cleanReply)) {
@@ -576,6 +582,14 @@ export async function processIncomingMessage(
       ? `ამ პროდუქტის ფოტო ამჟამად ხელმიუწვდომელია.${companyLine ? `\n\nმაღაზიაში შეგიძლიათ ნახოთ პირდაპირ:${companyLine}` : ''}`
       : `We don't have photos for this item right now.${companyLine ? `\n\nYou're welcome to visit us:${companyLine}` : ''}`;
     console.info(`${label} No photos resolved for "${showPhotosMatch[1].trim()}" — sending no-photos fallback`);
+  }
+
+  if (integration.businessType === 'craft_shop' && cleanReply.length > 0) {
+    const guardedReply = guardCraftCatalogReply(cleanReply, combinedMessage, finalBusinessContext as ProductContext, history);
+    if (guardedReply.replaced) {
+      cleanReply = guardedReply.reply;
+      console.warn(`${label} Replaced unsupported craft reply with safe fallback (${guardedReply.reason})`);
+    }
   }
 
   // If we offered escalation this turn, persist the flag so next message can confirm it
@@ -725,6 +739,247 @@ function resolvePhotoUrls(
   }
 
   return [];
+}
+
+function stripInternalReplyArtifacts(text: string): string {
+  return text
+    .replace(/\[(?:id|ids|has_photos|photo_key|photo_keys?)[^\]]*\]/gi, '')
+    .replace(/\bphoto_keys?\s*:\s*[A-Za-z0-9_\-]+\b/gi, '')
+    .replace(/^\s*(?:TOP PRODUCTS|SIMILAR GROUPS|PHOTO KEYS|COMPANY INFO|GROUP)\s*:\s*/gim, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function guardCraftCatalogReply(
+  reply: string,
+  userMessage: string,
+  context: ProductContext,
+  history: MessageHistoryEntry[],
+): { reply: string; replaced: boolean; reason: string | null } {
+  if (!reply.trim() || context.products.length === 0) {
+    return { reply, replaced: false, reason: null };
+  }
+
+  const retrievalHits = retrieveProducts(context.products, userMessage, 0.22);
+  const topConfidence = retrievalHits[0]?.confidence ?? 0;
+  const budgetRaw = /(\d[\d,\s]*)\s*(?:₾|\$|gel|lari|ლარ)/i.exec(userMessage);
+  const customerBudget = budgetRaw ? parseFloat(budgetRaw[1].replace(/[,\s]/g, '')) : null;
+  const broadCatalogQuery = CRAFT_BROAD_QUERY_RE.test(userMessage);
+  const attributeQuery = CRAFT_ATTRIBUTE_QUERY_RE.test(userMessage);
+  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || topConfidence >= 0.35;
+  const shouldUseCatalogOverview = broadCatalogQuery || attributeQuery || customerBudget !== null;
+  const needsClarifyingQuestion = !shouldListSpecificProducts && !shouldUseCatalogOverview;
+  const mentionedAllowedProduct = replyMentionsCatalogProduct(reply, context.products);
+  const moneyValidation = validateCraftMoneyMentions(reply, context.products);
+  const companyInfo = extractCompactCompanyInfo(context.businessDescription);
+  const replyPhones = reply.match(/(?:\+?\d[\d\s\-()]{5,15}\d)/g) ?? [];
+  const invalidPhone = replyPhones.some(phone => normalizePhone(phone) !== normalizePhone(companyInfo.phone));
+  const suspiciousVagueRecommendation = needsClarifyingQuestion && (
+    moneyValidation.mentions.length > 0
+    || mentionedAllowedProduct
+    || CRAFT_RECOMMENDATION_RE.test(reply)
+  );
+  const unsupportedPrice = moneyValidation.invalidMentions.length > 0;
+
+  if (!invalidPhone && !suspiciousVagueRecommendation && !unsupportedPrice) {
+    return { reply, replaced: false, reason: null };
+  }
+
+  const reason = invalidPhone
+    ? 'unsupported_phone'
+    : unsupportedPrice
+      ? 'unsupported_price'
+      : 'vague_turn_recommendation';
+
+  return {
+    reply: buildSafeCraftReply(userMessage, context, retrievalHits, history, reason),
+    replaced: true,
+    reason,
+  };
+}
+
+function validateCraftMoneyMentions(
+  reply: string,
+  products: ProductContext['products'],
+): { mentions: Array<{ amount: number; currency: 'GEL' | 'USD'; raw: string }>; invalidMentions: Array<{ amount: number; currency: 'GEL' | 'USD'; raw: string }> } {
+  const mentions = extractMoneyMentions(reply);
+  const allowedPriceKeys = new Set(
+    products.map(product => `${product.currency === 'USD' ? 'USD' : 'GEL'}:${normalizeAmount(product.price)}`),
+  );
+
+  return {
+    mentions,
+    invalidMentions: mentions.filter(mention => !allowedPriceKeys.has(`${mention.currency}:${normalizeAmount(mention.amount)}`)),
+  };
+}
+
+function extractMoneyMentions(text: string): Array<{ amount: number; currency: 'GEL' | 'USD'; raw: string }> {
+  const rawMentions = text.match(/(?:₾|\$)\s*\d[\d\s,.]*|\d[\d\s,.]*\s*(?:₾|ლარი|lari|gel|usd|dollars?|\$)/gi) ?? [];
+  const mentions: Array<{ amount: number; currency: 'GEL' | 'USD'; raw: string }> = [];
+
+  for (const raw of rawMentions) {
+    const amountMatch = raw.match(/\d[\d\s,.]*/);
+    if (!amountMatch) continue;
+    const amount = parseFloat(amountMatch[0].replace(/[,\s]/g, ''));
+    if (!Number.isFinite(amount)) continue;
+    mentions.push({
+      amount,
+      currency: /\$|usd|dollar/i.test(raw) ? 'USD' : 'GEL',
+      raw,
+    });
+  }
+
+  return mentions;
+}
+
+function replyMentionsCatalogProduct(reply: string, products: ProductContext['products']): boolean {
+  const normalizedReply = normalizeQuery(reply);
+  return products.some(product => {
+    const normalizedName = normalizeQuery(product.name);
+    return normalizedName.length >= 3 && normalizedReply.includes(normalizedName);
+  });
+}
+
+function buildSafeCraftReply(
+  userMessage: string,
+  context: ProductContext,
+  retrievalHits: Array<{ name: string; confidence: number }>,
+  history: MessageHistoryEntry[],
+  reason: string,
+): string {
+  const isGeorgian = /[\u10D0-\u10FF]/.test(userMessage)
+    || history.some(message => /[\u10D0-\u10FF]/.test(message.content));
+  const products = context.products;
+  const companyInfo = extractCompactCompanyInfo(context.businessDescription);
+  const matchedProducts = retrievalHits
+    .slice(0, 2)
+    .map(hit => products.find(product => product.name === hit.name))
+    .filter(Boolean) as ProductContext['products'];
+  const categories = takeUniqueProductValues(products.map(product => product.category), 3);
+  const materials = takeUniqueProductValues(products.map(product => product.material), 3);
+  const prices = products.map(product => product.price);
+  const minPrice = prices.length > 0 ? Math.min(...prices) : null;
+  const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
+
+  if (reason === 'vague_turn_recommendation') {
+    return isGeorgian
+      ? 'ზუსტად რომ შეგირჩიო, მითხარი რა ტიპის ნივთს ეძებ — მაგალითად საჩუქარი, მასალა, ზოდიაქო თუ ბიუჯეტი.'
+      : 'To choose accurately, tell me what kind of item you want, for example a gift, material, zodiac theme, or budget.';
+  }
+
+  if (matchedProducts.length > 0) {
+    const productText = isGeorgian
+      ? matchedProducts.map(formatCraftProductSnippetGeorgian).join(' ასევე ')
+      : matchedProducts.map(formatCraftProductSnippetEnglish).join(' Also, ');
+    const invite = buildCraftInvite(companyInfo, isGeorgian);
+    return isGeorgian
+      ? `${productText}. ${invite}`.trim()
+      : `${productText}. ${invite}`.trim();
+  }
+
+  const overview = isGeorgian
+    ? buildCraftOverviewGeorgian(categories, materials, minPrice, maxPrice)
+    : buildCraftOverviewEnglish(categories, materials, minPrice, maxPrice);
+  const invite = buildCraftInvite(companyInfo, isGeorgian);
+  return [overview, invite].filter(Boolean).join(' ').trim();
+}
+
+function formatCraftProductSnippetGeorgian(product: ProductContext['products'][0]): string {
+  const parts = [`${product.name} გვაქვს ${formatCraftPrice(product)}-ად`];
+  if (product.material) parts.push(`${product.material} მასალაში`);
+  else if (product.category) parts.push(product.category);
+  return parts.join(', ');
+}
+
+function formatCraftProductSnippetEnglish(product: ProductContext['products'][0]): string {
+  const parts = [`We currently have ${product.name} for ${formatCraftPrice(product)}`];
+  if (product.material) parts.push(`in ${product.material}`);
+  else if (product.category) parts.push(product.category);
+  return parts.join(', ');
+}
+
+function buildCraftOverviewGeorgian(
+  categories: string[],
+  materials: string[],
+  minPrice: number | null,
+  maxPrice: number | null,
+): string {
+  const parts = ['კატალოგში'];
+  if (categories.length > 0) parts.push(`გვაქვს ${categories.join(', ')}`);
+  if (materials.length > 0) parts.push(`ძირითადად ${materials.join(', ')} მასალებში`);
+  if (minPrice !== null && maxPrice !== null) parts.push(`ფასები დაახლოებით ₾${minPrice}–₾${maxPrice}-ის ფარგლებშია`);
+  return `${parts.join(' ')}.`;
+}
+
+function buildCraftOverviewEnglish(
+  categories: string[],
+  materials: string[],
+  minPrice: number | null,
+  maxPrice: number | null,
+): string {
+  const parts = ['In the catalog'];
+  if (categories.length > 0) parts.push(`we currently have ${categories.join(', ')}`);
+  if (materials.length > 0) parts.push(`mainly in ${materials.join(', ')} materials`);
+  if (minPrice !== null && maxPrice !== null) parts.push(`with prices roughly in the ₾${minPrice}–₾${maxPrice} range`);
+  return `${parts.join(' ')}.`;
+}
+
+function buildCraftInvite(
+  companyInfo: { address: string | null; hours: string | null; phone: string | null },
+  isGeorgian: boolean,
+): string {
+  const facts = [companyInfo.address, companyInfo.hours, companyInfo.phone ? `phone ${companyInfo.phone}` : null].filter(Boolean);
+  if (facts.length > 0) {
+    return isGeorgian
+      ? `დანარჩენი დეტალებისთვის შეგიძლიათ მოგვწეროთ, დაგვირეკოთ ან გვესტუმროთ: ${facts.join(' | ')}.`
+      : `For the remaining details, you can message, call, or visit us: ${facts.join(' | ')}.`;
+  }
+
+  return isGeorgian
+    ? 'დანარჩენი დეტალებისთვის მოგვწერეთ ან გვესტუმრეთ მაღაზიაში.'
+    : 'For the remaining details, message us or visit the shop.';
+}
+
+function extractCompactCompanyInfo(raw: string | null): { address: string | null; hours: string | null; phone: string | null } {
+  if (!raw) return { address: null, hours: null, phone: null };
+
+  const normalized = raw.replace(/\s+/g, ' ').trim();
+  return {
+    phone: /(?:\+?\d[\d\s\-()]{5,15}\d)/.exec(normalized)?.[0]?.trim() ?? null,
+    hours: /(?:მუშაობს|working hours?|open)\s*[^,.\n]{0,80}/i.exec(normalized)?.[0]?.trim() ?? null,
+    address: /(?:მისამართი|address)\s*[:,-]?\s*[^,.\n]{3,80}/i.exec(normalized)?.[0]?.trim() ?? null,
+  };
+}
+
+function normalizePhone(phone: string | null): string {
+  return phone ? phone.replace(/\D/g, '') : '';
+}
+
+function takeUniqueProductValues(values: Array<string | null | undefined>, limit: number): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const normalized = value?.trim();
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+    if (result.length >= limit) break;
+  }
+
+  return result;
+}
+
+function formatCraftPrice(product: ProductContext['products'][0]): string {
+  const symbol = product.currency === 'USD' ? '$' : '₾';
+  return `${symbol}${product.price}`;
+}
+
+function normalizeAmount(amount: number): string {
+  return amount.toFixed(2);
 }
 
 function extractApartmentPhotos(

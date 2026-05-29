@@ -91,7 +91,7 @@ export async function loadBusinessContext(
     .eq('company_id', companyId)
     .eq('in_stock', true)
     .is('deleted_at', null)
-    .limit(30);
+    .order('name', { ascending: true });
 
   // Fallback: if `currency` column doesn't exist yet (migration pending), retry without it
   let finalProducts = products;
@@ -103,7 +103,7 @@ export async function loadBusinessContext(
       .eq('company_id', companyId)
       .eq('in_stock', true)
       .is('deleted_at', null)
-      .limit(30);
+      .order('name', { ascending: true });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     finalProducts = prodFallback as any;
   }
