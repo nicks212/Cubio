@@ -16,6 +16,7 @@
 
 import { CHAT_ONLY_RE, PHOTO_RE, APT_PHOTO_RE, PROJ_PHOTO_RE } from './signals';
 import { model } from './model';
+import { persistAIUsage, type AIUsageContext } from './usage';
 
 export type MessageIntent = 'chat' | 'photos' | 'search';
 export type PhotoType = 'apartment' | 'project' | 'any';
@@ -54,6 +55,7 @@ export function detectIntent(message: string): MessageIntent | null {
  */
 export async function classifyIntentAI(
   message: string,
+  usageContext?: Omit<AIUsageContext, 'feature' | 'model'>,
 ): Promise<{ intent: MessageIntent; wantsEscalation: boolean }> {
   // Compressed 4-label prompt — ~40 input tokens, 1-word output, 0 thinking
   const prompt = `Classify. One word only: PHOTOS, CHAT, SEARCH, or ESCALATE.
@@ -66,6 +68,10 @@ Message: "${message.replace(/"/g, "'")}"`;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       generationConfig: { maxOutputTokens: 5, temperature: 0, thinkingConfig: { thinkingBudget: 0 } } as any,
     });
+    await persistAIUsage(
+      usageContext ? { ...usageContext, feature: 'intent_classifier', model: 'gemini-2.5-flash' } : null,
+      result.response.usageMetadata,
+    );
     const raw = result.response.text().trim().toUpperCase();
     if (raw.includes('PHOTOS'))   return { intent: 'photos', wantsEscalation: false };
     if (raw.includes('CHAT'))     return { intent: 'chat',   wantsEscalation: false };

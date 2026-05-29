@@ -23,6 +23,7 @@
 
 import { GoogleGenerativeAI, TaskType } from '@google/generative-ai';
 import { createAdminClient } from '@/lib/supabase/server';
+import { persistAIUsage, type AIUsageContext } from './usage';
 import type { ApartmentContext, ProductContext } from './types';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
@@ -47,6 +48,7 @@ export async function describeImageForSearch(
   base64: string,
   mimeType: string,
   businessType: 'real_estate' | 'craft_shop',
+  usageContext?: Omit<AIUsageContext, 'feature' | 'model'>,
 ): Promise<string | null> {
   try {
     const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
@@ -59,6 +61,10 @@ export async function describeImageForSearch(
       { text: searchContext },
       { inlineData: { data: base64, mimeType } },
     ]);
+    await persistAIUsage(
+      usageContext ? { ...usageContext, feature: 'image_describe', model: 'gemini-2.5-flash' } : null,
+      result.response.usageMetadata,
+    );
 
     const description = result.response.text().trim();
     if (!description) return null;

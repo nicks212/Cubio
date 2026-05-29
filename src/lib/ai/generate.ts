@@ -4,6 +4,7 @@ import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
 import { extractConversationState, formatStateForPrompt } from './state';
 import { BUYING_INTENT_RE } from './signals';
+import { persistAIUsage, type AIUsageContext } from './usage';
 import type { BusinessContext, ApartmentContext, ProductContext } from './types';
 import type { MessageIntent } from './intentDetector';
 
@@ -50,6 +51,7 @@ export async function generateReply(
    * with a representative and ask if they'd like that. One sentence, no apologies.
    */
   offerEscalation = false,
+  usageContext?: Omit<AIUsageContext, 'feature' | 'model'>,
 ): Promise<string> {
   // ── Chat intent: lean micro-prompt, no business context ───────────────────
   if (intent === 'chat') {
@@ -74,7 +76,13 @@ export async function generateReply(
         const usage = result.response.usageMetadata;
         console.info(`[ai/generate] tokens (chat) — in:${usage?.promptTokenCount ?? '?'} out:${usage?.candidatesTokenCount ?? '?'} total:${usage?.totalTokenCount ?? '?'}`);
         const text = result.response.text().trim();
-        if (text) return text;
+        if (text) {
+          await persistAIUsage(
+            usageContext ? { ...usageContext, feature: 'reply_chat', model: 'gemini-2.5-flash' } : null,
+            usage,
+          );
+          return text;
+        }
       } catch (err) {
         console.error(`[ai/generate] chat attempt ${attempt + 1} error:`, err);
       }
@@ -184,7 +192,13 @@ export async function generateReply(
         `[ai/generate] tokens — in:${usage?.promptTokenCount ?? '?'} out:${usage?.candidatesTokenCount ?? '?'} total:${usage?.totalTokenCount ?? '?'} hist:${geminiHistory.length}t`,
       );
       const text = result.response.text().trim();
-      if (text) return text;
+      if (text) {
+        await persistAIUsage(
+          usageContext ? { ...usageContext, feature: 'reply_main', model: 'gemini-2.5-flash' } : null,
+          usage,
+        );
+        return text;
+      }
       console.warn(`[ai/generate] Attempt ${attempt + 1} — empty response, retrying`);
       lastErr = new Error('Empty response from Gemini');
       if (attempt === retryDelays.length) break;

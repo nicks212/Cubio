@@ -146,6 +146,18 @@ export interface Message {
   created_at: string;
 }
 
+export interface AIUsageEvent {
+  id: string;
+  company_id: string;
+  conversation_id: string | null;
+  feature: string;
+  model: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  created_at: string;
+}
+
 export interface Localization {
   id: string;
   keyword: string;

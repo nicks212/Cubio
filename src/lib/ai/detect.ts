@@ -1,4 +1,5 @@
 import { model } from './model';
+import { persistAIUsage, type AIUsageContext } from './usage';
 import type { LeadDetection, EscalationDetection } from './types';
 
 const EMPTY_LEAD: LeadDetection = {
@@ -25,6 +26,7 @@ export async function detectLeadAndEscalation(
   businessType: 'real_estate' | 'craft_shop',
   checkLead = true,
   checkEscalation = true,
+  usageContext?: Omit<AIUsageContext, 'feature' | 'model'>,
 ): Promise<{ lead: LeadDetection; escalation: EscalationDetection }> {
   // Fast-path: nothing to check
   if (!checkLead && !checkEscalation) {
@@ -65,6 +67,10 @@ Return exactly:
         // which would otherwise cause JSON.parse to throw and silently return no-escalation.
         generationConfig: { maxOutputTokens: 200, temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } } as never,
       });
+      await persistAIUsage(
+        usageContext ? { ...usageContext, feature: 'escalation_detect', model: 'gemini-2.5-flash' } : null,
+        result.response.usageMetadata,
+      );
       const raw = result.response.text().trim().replace(/```json\n?|\n?```/g, '').trim();
       let level = 1;
       let summary = '';
@@ -131,6 +137,12 @@ Return exactly:
 
   try {
     const result = await model.generateContent(prompt);
+    await persistAIUsage(
+      usageContext
+        ? { ...usageContext, feature: checkLead ? 'lead_detect' : 'escalation_detect', model: 'gemini-2.5-flash' }
+        : null,
+      result.response.usageMetadata,
+    );
     const raw = result.response.text().trim().replace(/```json\n?|\n?```/g, '');
     const p = JSON.parse(raw) as {
       isLead: boolean; summary: string; meetingDate: string | null;

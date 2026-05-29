@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useActionState, useCallback } from 'react';
-import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight, RotateCcw, Search, FileText } from 'lucide-react';
+import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight, RotateCcw, Search, FileText, BarChart3 } from 'lucide-react';
 import {
   toggleUserAdmin, upsertLocalization, deleteLocalization,
   createIntegration, updateIntegration, deleteIntegration, toggleIntegration,
@@ -11,7 +11,7 @@ import { formatDate } from '@/lib/utils';
 import { useT } from '@/components/TranslationsProvider';
 import RichTextEditor from '@/components/RichTextEditor';
 
-type Tab = 'users' | 'localizations' | 'integrations' | 'terms';
+type Tab = 'users' | 'localizations' | 'integrations' | 'terms' | 'usage';
 
 const PROVIDERS = ['facebook', 'instagram', 'telegram', 'whatsapp', 'viber'] as const;
 const providerIcons: Record<string, string> = { facebook: '📘', instagram: '📸', telegram: '✈️', whatsapp: '💬', viber: '📱' };
@@ -22,9 +22,12 @@ interface Props {
   localizations: Array<{ id: string | null; keyword: string; localization_text: string; localization_text_en: string }>;
   companies: Array<{ id: string; company_name: string }>;
   termsContent: Array<{ language: string; content: string; updated_at: string }>;
+  usageReport: Array<{ companyId: string; companyName: string; inputTokens: number; outputTokens: number; totalTokens: number; uniqueUsersServed: number }>;
+  selectedMonth: string;
+  usageTrackingReady: boolean;
 }
 
-export default function AdminClient({ users, integrations, localizations, companies, termsContent }: Props) {
+export default function AdminClient({ users, integrations, localizations, companies, termsContent, usageReport, selectedMonth, usageTrackingReady }: Props) {
   const t = useT();
   const [tab, setTab] = useState<Tab>('users');
   const [intModal, setIntModal] = useState(false);
@@ -84,6 +87,11 @@ export default function AdminClient({ users, integrations, localizations, compan
   };
 
   const filteredLocalizations = filterLocalizations(locSearch);
+  const fmt = new Intl.NumberFormat();
+  const totalInputTokens = usageReport.reduce((sum, row) => sum + row.inputTokens, 0);
+  const totalOutputTokens = usageReport.reduce((sum, row) => sum + row.outputTokens, 0);
+  const totalTokens = usageReport.reduce((sum, row) => sum + row.totalTokens, 0);
+  const totalUniqueUsers = usageReport.reduce((sum, row) => sum + row.uniqueUsersServed, 0);
 
   // Recompute when showBlanks or locSearch changes
   const blankCount = localizations.filter(l => !l.localization_text.trim() || !l.localization_text_en.trim()).length;
@@ -92,6 +100,7 @@ export default function AdminClient({ users, integrations, localizations, compan
     { id: 'users' as Tab, label: t['admin.tab_users'] ?? 'Users', icon: Users },
     { id: 'localizations' as Tab, label: t['admin.tab_localizations'] ?? 'Localizations', icon: Languages },
     { id: 'integrations' as Tab, label: t['admin.tab_integrations'] ?? 'Integrations', icon: Plug },
+    { id: 'usage' as Tab, label: 'Usage', icon: BarChart3 },
     { id: 'terms' as Tab, label: t['admin.tab_terms'] ?? 'წესები', icon: FileText },
   ];
 
@@ -302,6 +311,87 @@ export default function AdminClient({ users, integrations, localizations, compan
             </div>
           </div>
         </>
+      )}
+
+      {tab === 'usage' && (
+        <div className="space-y-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Company AI Usage</h2>
+              <p className="text-sm text-muted-foreground">UTC calendar month reporting across all companies.</p>
+            </div>
+            <form method="GET" className="flex items-end gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-2">Month</label>
+                <input
+                  type="month"
+                  name="month"
+                  defaultValue={selectedMonth}
+                  className="px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <button type="submit" className="px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm">
+                Load
+              </button>
+            </form>
+          </div>
+
+          {!usageTrackingReady && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              Usage tracking table is not available yet. Run the latest Supabase migration, then monthly token totals will appear here.
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <p className="text-sm text-muted-foreground mb-1">Total Input Tokens</p>
+              <p className="text-2xl font-bold text-foreground">{fmt.format(totalInputTokens)}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <p className="text-sm text-muted-foreground mb-1">Total Output Tokens</p>
+              <p className="text-2xl font-bold text-foreground">{fmt.format(totalOutputTokens)}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <p className="text-sm text-muted-foreground mb-1">Total Tokens</p>
+              <p className="text-2xl font-bold text-foreground">{fmt.format(totalTokens)}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <p className="text-sm text-muted-foreground mb-1">Total Unique Users Served</p>
+              <p className="text-2xl font-bold text-foreground">{fmt.format(totalUniqueUsers)}</p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-slate-200 bg-slate-50">
+                  <tr>
+                    {['Company name', 'Total input tokens', 'Total output tokens', 'Total tokens', 'Total unique users served'].map(h => (
+                      <th key={h} className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {usageReport.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 px-4 text-center text-muted-foreground">
+                        No company usage data for {selectedMonth}.
+                      </td>
+                    </tr>
+                  ) : usageReport.map(row => (
+                    <tr key={row.companyId} className="hover:bg-slate-50">
+                      <td className="py-3 px-4 text-sm font-medium">{row.companyName}</td>
+                      <td className="py-3 px-4 text-sm">{fmt.format(row.inputTokens)}</td>
+                      <td className="py-3 px-4 text-sm">{fmt.format(row.outputTokens)}</td>
+                      <td className="py-3 px-4 text-sm font-semibold">{fmt.format(row.totalTokens)}</td>
+                      <td className="py-3 px-4 text-sm">{fmt.format(row.uniqueUsersServed)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Terms Tab */}

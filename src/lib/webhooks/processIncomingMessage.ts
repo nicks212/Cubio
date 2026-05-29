@@ -10,6 +10,7 @@ import { bufferAndClaim, isStampHolder, acquireLock, drainBuffer, releaseLock, D
 import { detectIntent, detectPhotoType, classifyIntentAI } from '@/lib/ai/intentDetector';
 import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
 import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts } from '@/lib/ai/embeddings';
+import { persistAIUsage } from '@/lib/ai/usage';
 import { redis } from '@/lib/redis';
 import { createHash } from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -241,6 +242,7 @@ export async function processIncomingMessage(
       msg.provider,
       integration.accessToken,
       label,
+      { companyId: integration.companyId, conversationId },
     );
     if (transcript) {
       combinedMessage = transcript;
@@ -291,7 +293,12 @@ export async function processIncomingMessage(
     }
 
     imageSearchQuery = imageBase64 && imageMimeType
-      ? await describeImageForSearch(imageBase64, imageMimeType, integration.businessType)
+      ? await describeImageForSearch(
+          imageBase64,
+          imageMimeType,
+          integration.businessType,
+          { companyId: integration.companyId, conversationId },
+        )
       : null;
     if (imageSearchQuery) {
       console.info(`${label} Image search query: "${imageSearchQuery.slice(0, 80)}"`);
@@ -313,7 +320,7 @@ export async function processIncomingMessage(
   //     History was pre-loaded at step 3c (before message save) — no DB fetch here.
   const [aiIntent, businessContext] = await Promise.all([
     needsAIClassify
-      ? classifyIntentAI(combinedMessage).then(r => {
+      ? classifyIntentAI(combinedMessage, { companyId: integration.companyId, conversationId }).then(r => {
           console.info(`${label} AI intent classifier: '${r.intent}'${r.wantsEscalation ? ' [ESCALATE]' : ''} for: "${combinedMessage.slice(0, 60)}"`);
           return r;
         })
@@ -453,6 +460,7 @@ export async function processIncomingMessage(
     isFirstMessage,
     lastShownApt,
     offerEscalation,
+    { companyId: integration.companyId, conversationId },
   );
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);
@@ -755,7 +763,13 @@ async function detectAndPersistLeadOrEscalation(
       // Pass only the last 4 customer messages — frustration is always visible in recent tone.
       // Keeps input tiny (~100–200 tokens max) regardless of conversation length.
       const recentUserMessages = history.filter(m => m.role === 'user').slice(-4);
-      const { escalation: aiEsc } = await detectLeadAndEscalation(recentUserMessages, businessType, false, true);
+      const { escalation: aiEsc } = await detectLeadAndEscalation(
+        recentUserMessages,
+        businessType,
+        false,
+        true,
+        { companyId, conversationId },
+      );
       escalationSignal = aiEsc.isEscalation; // true when frustrationLevel >= 4
       if (aiEsc.frustrationLevel >= 2) {
         console.info(`[pipeline] Frustration score ${aiEsc.frustrationLevel}/5 for conversation ${conversationId}${
@@ -1061,6 +1075,7 @@ async function transcribeVoiceMessage(
   provider: string,
   accessToken: string,
   label: string,
+  usageContext?: { companyId: string; conversationId?: string | null },
 ): Promise<string | null> {
   try {
     // Step 1: resolve a direct download URL (provider-specific)
@@ -1130,6 +1145,10 @@ async function transcribeVoiceMessage(
       }],
       generationConfig: { maxOutputTokens: 300, temperature: 0, thinkingConfig: { thinkingBudget: 0 } } as never,
     });
+    await persistAIUsage(
+      usageContext ? { ...usageContext, feature: 'voice_transcribe', model: 'gemini-2.5-flash' } : null,
+      result.response.usageMetadata,
+    );
     const transcript = result.response.text().trim();
     return transcript || null;
   } catch (err) {
