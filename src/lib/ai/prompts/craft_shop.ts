@@ -2,6 +2,22 @@ import type { ProductContext } from '../types';
 
 type ProductRow = ProductContext['products'][0];
 
+function compactCompanyInfo(raw: string | null): string {
+  if (!raw) return '';
+
+  const normalized = raw.replace(/\s+/g, ' ').trim();
+  const phone = /(?:\+?\d[\d\s\-()]{5,15}\d)/.exec(normalized)?.[0]?.trim() ?? null;
+  const hours = /(?:მუშაობს|working hours?|open)\s*[^,.\n]{0,80}/i.exec(normalized)?.[0]?.trim() ?? null;
+  const address = /(?:მისამართი|address)\s*[:,-]?\s*[^,.\n]{3,80}/i.exec(normalized)?.[0]?.trim() ?? null;
+
+  const parts = [address, hours, phone ? `phone ${phone}` : null].filter(Boolean);
+  return parts.length > 0 ? parts.join(' | ') : normalized.slice(0, 140);
+}
+
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[\s-]+/g, '_').slice(0, 40);
+}
+
 function scoreProduct(p: ProductRow, q: string, customerBudget: number | null): number {
   let score = 0;
   // Keyword relevance — split query into individual words so "ტაროს კარტები" matches
@@ -50,8 +66,9 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
     const sb = scoreProduct(b, q, customerBudget) + (available.length - posB) * 0.1;
     return sb - sa;
   });
-  const top3 = sorted.slice(0, 3);
-  const rest = sorted.slice(3);
+  const relevantPool = sorted.slice(0, q || context.imageSearchQuery ? 10 : 8);
+  const top3 = relevantPool.slice(0, 3);
+  const rest = relevantPool.slice(3);
 
   // Budget gap: customer's stated budget is below the cheapest available item.
   // Backend detects this so AI never has to guess — it just follows the injected note.
@@ -67,13 +84,13 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const detailedList = top3.length > 0
     ? top3.map(p => {
         const sym = p.currency === 'USD' ? '$' : '₾';
-        const idSlug = p.name.toLowerCase().replace(/\s+/g, '_').slice(0, 40);
+        const idSlug = slugify(p.name);
         const parts: string[] = [`• ${p.name} [id:${idSlug}]: ${sym}${p.price}`];
         if (p.category) parts.push(p.category);
         if (p.material) parts.push(p.material);
         if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);
         if (p.birthstones) parts.push(`stones: ${p.birthstones}`);
-        if (p.description) parts.push(`desc: ${p.description.slice(0, 80)}`);
+        if (p.description) parts.push(`desc: ${p.description.slice(0, 60)}`);
         let line = parts.join(' | ');
         // Compact photo metadata — no URLs in Gemini prompt.
         // Backend resolves real URLs when AI emits SHOW_PHOTOS: <product_slug>.
@@ -86,14 +103,15 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
     : '(No products currently available)';
 
   // Overflow summary
-  const overflowNote = rest.length > 0
-    ? `\n+${rest.length} more available — ask for details or describe what you're looking for.`
+  const overflowCount = Math.max(available.length - top3.length, 0);
+  const overflowNote = overflowCount > 0
+    ? `\n+${overflowCount} more available in catalog — ask for a type, material, symbol, zodiac, or budget.`
     : '';
 
-  // Backend grouping: group products sharing the same category + similar price to avoid verbose lists
+  // Group only the most relevant overflow items so the prompt stays lean and grounded.
   type ProdGroupKey = string;
   const prodGroups = new Map<ProdGroupKey, ProductRow[]>();
-  for (const p of available) {
+  for (const p of rest) {
     const priceBucket = Math.round(p.price / 20); // group within ~20 unit buckets
     const key: ProdGroupKey = `${p.category ?? 'misc'}|${p.material ?? ''}|${priceBucket}`;
     const arr = prodGroups.get(key) ?? [];
@@ -108,18 +126,17 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
       const minP = Math.min(...members.map(p => p.price));
       const maxP = Math.max(...members.map(p => p.price));
       const priceStr = minP === maxP ? `${sym}${minP}` : `${sym}${minP}–${sym}${maxP}`;
-      const memberIdSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '_').slice(0, 40);
       groupSummaries.push(
-        `GROUP: ${members.length}× ${first.category ?? 'item'}${first.material ? ` (${first.material})` : ''} — ${priceStr} [${members.map(p => `${p.name} [id:${memberIdSlug(p.name)}]`).join(', ')}]`
+        `GROUP: ${members.length}× ${first.category ?? 'item'}${first.material ? ` (${first.material})` : ''} — ${priceStr} [${members.map(p => `${p.name} [id:${slugify(p.name)}]`).join(', ')}]`
       );
     }
   }
   const groupSection = groupSummaries.length > 0
-    ? `\nSIMILAR GROUPS (summarize these; do NOT list each item individually):\n${groupSummaries.join('\n')}\n`
+    ? `\nSIMILAR GROUPS (relevant overflow only; summarize, do NOT list all items):\n${groupSummaries.slice(0, 2).join('\n')}\n`
     : '';
 
   const businessInfo = context.businessDescription
-    ? `COMPANY INFO: ${context.businessDescription}\n\n`
+    ? `COMPANY INFO: ${compactCompanyInfo(context.businessDescription)}\n\n`
     : '';
 
   // Image match section — injected ONLY when this turn follows a customer photo upload.
@@ -135,6 +152,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   return `CRAFT SHOP SALES ASSISTANT
 
 ${businessInfo}ROLE: Warm, creative sales assistant. For every recommendation actively use ALL product fields — category, material, zodiac_compatibility, birthstones, description — to match the customer's mood, occasion, zodiac, or gift intent. Connect each product to the customer personally. Focus on meaning and beauty.
+STRICT CATALOG: Mention only products that appear below in TOP PRODUCTS or SIMILAR GROUPS. Never invent a product name, image availability, price, material, zodiac, or business fact. If nothing listed fits, say so briefly and offer the closest listed alternative or COMPANY INFO.
 ${imageMatchSection}
 ${opts.buyingIntent ? `BUYING INTENT: Customer wants to purchase.
   → If COMPANY INFO has address, working hours, or phone — share them naturally so the customer knows where/how to buy. If not present, do NOT invent them.
@@ -147,6 +165,6 @@ ${groupSection}
 ${budgetGapNote}TOP PRODUCTS${context.imageSearchQuery ? ' (closest visual matches to customer photo)' : q ? ' (matched to your message)' : ''}:
 ${detailedList}${overflowNote}
 
-Only reference products listed here. Do not invent products, prices, or availability.
+Only reference products listed here. If the customer asks broadly, summarize category/material/style patterns from the listed catalog items instead of inventing more items.
 OUT-OF-CATALOG: If asked about something not in TOP PRODUCTS — acknowledge briefly, suggest 1–2 closest alternatives. If nothing is close AND COMPANY INFO has address, phone, or hours — warmly invite the customer to visit the shop or call. Never invent items or contact details.`.trim();
 }

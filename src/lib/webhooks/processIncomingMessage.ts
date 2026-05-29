@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { generateReply } from '@/lib/ai';
 import { analyzeLeadState } from '@/lib/leads/detector';
-import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE } from '@/lib/ai/signals';
+import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE } from '@/lib/ai/signals';
 import { detectLeadAndEscalation } from '@/lib/ai/detect';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
@@ -468,10 +468,13 @@ export async function processIncomingMessage(
   // Character class extended to include \s so multi-word Georgian product names like
   // "მწვანე ტარა" are captured in full — previously truncated at the first space.
   const showPhotosRaw = reply.match(/SHOW_PHOTOS[:\s]+([A-Za-z0-9_\u10D0-\u10FF-][A-Za-z0-9_\u10D0-\u10FF\s-]*)/i);
-  if (showPhotosRaw && messageIntent !== 'photos') {
-    console.info(`${label} SHOW_PHOTOS detected with intent='${messageIntent}' — processing (intent may have been misclassified)`);
+  const explicitPhotoRequest = effectiveIntent === 'photos' || PHOTO_RE.test(combinedMessage);
+  if (showPhotosRaw && !explicitPhotoRequest) {
+    console.warn(`${label} Ignoring SHOW_PHOTOS on non-photo turn for message: "${combinedMessage.slice(0, 80)}"`);
+  } else if (showPhotosRaw && effectiveIntent !== 'photos') {
+    console.info(`${label} SHOW_PHOTOS detected outside photo intent but message contains explicit photo signal — processing`);
   }
-  const showPhotosMatch = showPhotosRaw ?? null;
+  const showPhotosMatch = explicitPhotoRequest ? (showPhotosRaw ?? null) : null;
 
   // photoType: apartment | project | any — determined by what the customer actually said.
   const photoType = detectPhotoType(combinedMessage);
@@ -503,6 +506,21 @@ export async function processIncomingMessage(
       ? (isGeoFallback ? 'აი ბინის ფოტოები! 📸' : 'Here are the photos! 📸')
       : (isGeoFallback ? 'გამოგიგზავნე! 📸' : 'Here you go! 📸');
     console.info(`${label} Empty reply after SHOW_PHOTOS strip — using fallback text`);
+  }
+
+  // If the model hallucinated a bare SHOW_PHOTOS marker on a non-photo turn, recover with
+  // a short grounded text reply instead of sending an empty message or photo fallback.
+  if (showPhotosRaw && !showPhotosMatch && cleanReply.length === 0) {
+    const isGeoFallback = /[\u10D0-\u10FF]/.test(combinedMessage)
+      || history.some(m => /[\u10D0-\u10FF]/.test(m.content));
+    cleanReply = integration.businessType === 'craft_shop'
+      ? (isGeoFallback
+        ? 'მითხარი რა ტიპის ნივთი გაინტერესებს და კატალოგიდან ზუსტ ვარიანტებს შეგირჩევ.'
+        : 'Tell me what type of item you want and I will pick exact options from the catalog.')
+      : (isGeoFallback
+        ? 'მითხარი რა ტიპის ბინა გაინტერესებს და ზუსტ ვარიანტებს შეგირჩევ.'
+        : 'Tell me what kind of apartment you want and I will pick exact options for you.');
+    console.info(`${label} Replaced invalid SHOW_PHOTOS-only reply with grounded fallback text`);
   }
 
   // Safety net: strip any raw URLs that leaked into the reply body despite the prompt rules.

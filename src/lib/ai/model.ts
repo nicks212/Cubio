@@ -16,8 +16,8 @@ export const model = genAI.getGenerativeModel({
   model: 'gemini-2.5-flash',
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   generationConfig: {
-    temperature: 0.7,
-    maxOutputTokens: 400,
+    temperature: 0.6,
+    maxOutputTokens: 700,
     thinkingConfig: { thinkingBudget: 0 },
   } as any,
 });
