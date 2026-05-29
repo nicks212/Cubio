@@ -53,6 +53,7 @@ const SHORTCUTS: Record<string, string> = {
   ring: 'bechedi', rings: 'bechedi',
   bracelet: 'samajuri', bracelets: 'samajuri',
   necklace: 'qelsabami', necklaces: 'qelsabami',
+  yelsabami: 'qelsabami', yelsabamebi: 'qelsabami', yelsabamis: 'qelsabami',
   earring: 'sayure', earrings: 'sayure',
   pendant: 'qelsabami',
   // Materials / metals

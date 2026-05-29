@@ -18,7 +18,7 @@
 
 /** Pure greeting / farewell / acknowledgement — nothing of business value. */
 export const CHAT_ONLY_RE =
-  /^[\s!.,?👍👋🙏💙❤️✅]*(?:hello|hi|hey|ok|okay|good|great|perfect|sure|yes|no|yep|nope|got\s*it|understood|thanks|thank\s*you|thx|ty|bye|goodbye|see\s*you|take\s*care|good\s*morning|good\s*afternoon|good\s*evening|good\s*night|madloba|gmadlob|naxvamdis|kargi|gamarjoba|salami|bodishi|გამარჯობა|მოგესალმებით|სალამი|ბოდიში|კარგი|მადლობა|გმადლობ|ნახვამდის|კი|არა|მიხვდი|მიხვდა|გასაგებია|გასაგები|ალბათ|ok!)[\s!.,?👍👋🙏💙❤️✅]*$/i;
+  /^[\s!.,?👍👋🙏💙❤️✅]*(?:hello|hi|hey|ok|okay|good|great|perfect|sure|yes|no|yep|nope|got\s*it|understood|thanks|thank\s*you|thx|ty|bye|goodbye|see\s*you|take\s*care|good\s*morning|good\s*afternoon|good\s*evening|good\s*night|madloba|gmadlob|naxvamdis|kargi|gamarjoba|salami|bodishi|araferi|jerjerobit|გამარჯობა|მოგესალემებით|სალამი|ბოდიში|კარგი|მადლობა|გმადლობ|ნახვამდის|კი|არა|მიხვდი|მიხვდა|გასაგებია|გასაგები|ალბათ|ok!)[\s!.,?👍👋🙏💙❤️✅]*$/i;
 
 /** Message contains a photo/image request anywhere.
  *  Covers Georgian script, romanized Georgian (latin chars), English, Russian. */

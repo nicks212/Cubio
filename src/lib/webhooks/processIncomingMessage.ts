@@ -465,7 +465,9 @@ export async function processIncomingMessage(
   // Character class covers: Latin alphanum + underscore + hyphen (apartment IDs like "0101", "project_0101")
   // AND Georgian Unicode range U+10D0–U+10FF (product slugs built from Georgian product names).
   // Hyphen included because Georgian product IDs like "ილანგ-ილანგის_ეთერზეთი" contain it.
-  const showPhotosRaw = reply.match(/SHOW_PHOTOS[:\s]+([A-Za-z0-9_\u10D0-\u10FF-]+)/i);
+  // Character class extended to include \s so multi-word Georgian product names like
+  // "მწვანე ტარა" are captured in full — previously truncated at the first space.
+  const showPhotosRaw = reply.match(/SHOW_PHOTOS[:\s]+([A-Za-z0-9_\u10D0-\u10FF-][A-Za-z0-9_\u10D0-\u10FF\s-]*)/i);
   if (showPhotosRaw && messageIntent !== 'photos') {
     console.info(`${label} SHOW_PHOTOS detected with intent='${messageIntent}' — processing (intent may have been misclassified)`);
   }
@@ -515,6 +517,19 @@ export async function processIncomingMessage(
       .replace(/\n{3,}/g, '\n\n')
       .trim();
     console.warn(`${label} Stripped ${leakedUrls.length} hallucinated URL(s) from AI reply — NOT forwarding as images`);
+  }
+
+  // No-photos fallback: AI emitted SHOW_PHOTOS but no images were resolved for that product.
+  // Override whatever text AI wrote — never leave the customer without any response.
+  if (showPhotosMatch && imageUrlsToSend.length === 0) {
+    const isGeo = /[\u10D0-\u10FF]/.test(combinedMessage)
+      || history.some(m => /[\u10D0-\u10FF]/.test(m.content));
+    const biz = (finalBusinessContext as { businessDescription?: string }).businessDescription ?? null;
+    const companyLine = biz ? `\n\n${biz.slice(0, 150)}` : '';
+    cleanReply = isGeo
+      ? `ამ პროდუქტის ფოტო ამჟამად ხელმიუწვდომელია.${companyLine ? `\n\nმაღაზიაში შეგიძლიათ ნახოთ პირდაპირ:${companyLine}` : ''}`
+      : `We don't have photos for this item right now.${companyLine ? `\n\nYou're welcome to visit us:${companyLine}` : ''}`;
+    console.info(`${label} No photos resolved for "${showPhotosMatch[1].trim()}" — sending no-photos fallback`);
   }
 
   // If we offered escalation this turn, persist the flag so next message can confirm it
@@ -648,11 +663,11 @@ function resolvePhotoUrls(
   }
 
   if (prodCtx.products?.length > 0) {
-    const slug = (name: string) => name.toLowerCase().replace(/\s+/g, '_').slice(0, 40);
-    const id = identifier.replace(/^prod_?/i, '').toLowerCase();
-    const prod = prodCtx.products.find(p =>
-      slug(p.name) === id || p.name.toLowerCase() === id.replace(/_/g, ' ')
-    );
+    // Normalise both sides: spaces AND hyphens → underscore so "მწვანე ტარა", "მწვანე_ტარა"
+    // and "ილანგ-ილანგი" all resolve to the same key.
+    const slug = (name: string) => name.toLowerCase().replace(/[\s-]+/g, '_').slice(0, 40);
+    const id = identifier.replace(/^prod_?/i, '').trim().toLowerCase();
+    const prod = prodCtx.products.find(p => slug(p.name) === slug(id));
     if (!prod) {
       console.warn(`${label} SHOW_PHOTOS: product "${identifier}" not found in loaded context — sending nothing`);
       return [];

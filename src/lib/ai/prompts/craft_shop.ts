@@ -108,8 +108,9 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
       const minP = Math.min(...members.map(p => p.price));
       const maxP = Math.max(...members.map(p => p.price));
       const priceStr = minP === maxP ? `${sym}${minP}` : `${sym}${minP}–${sym}${maxP}`;
+      const memberIdSlug = (name: string) => name.toLowerCase().replace(/\s+/g, '_').slice(0, 40);
       groupSummaries.push(
-        `GROUP: ${members.length}× ${first.category ?? 'item'}${first.material ? ` (${first.material})` : ''} — ${priceStr} [${members.map(p => p.name).join(', ')}]`
+        `GROUP: ${members.length}× ${first.category ?? 'item'}${first.material ? ` (${first.material})` : ''} — ${priceStr} [${members.map(p => `${p.name} [id:${memberIdSlug(p.name)}]`).join(', ')}]`
       );
     }
   }
@@ -133,7 +134,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
 
   return `CRAFT SHOP SALES ASSISTANT
 
-${businessInfo}ROLE: Warm, creative sales assistant for a craft jewelry shop. Recommend based on zodiac, birthstones, materials, style, budget, and gift intent. Focus on meaning and beauty.
+${businessInfo}ROLE: Warm, creative sales assistant. For every recommendation actively use ALL product fields — category, material, zodiac_compatibility, birthstones, description — to match the customer's mood, occasion, zodiac, or gift intent. Connect each product to the customer personally. Focus on meaning and beauty.
 ${imageMatchSection}
 ${opts.buyingIntent ? `BUYING INTENT: Customer wants to purchase.
   → If COMPANY INFO has address, working hours, or phone — share them naturally so the customer knows where/how to buy. If not present, do NOT invent them.
@@ -147,5 +148,5 @@ ${budgetGapNote}TOP PRODUCTS${context.imageSearchQuery ? ' (closest visual match
 ${detailedList}${overflowNote}
 
 Only reference products listed here. Do not invent products, prices, or availability.
-OUT-OF-CATALOG: Acknowledge when an exact item isn't in our catalog, suggest 1–2 closest alternatives from TOP PRODUCTS. Never say "I don't have that info" or offer to connect a rep.`.trim();
+OUT-OF-CATALOG: If asked about something not in TOP PRODUCTS — acknowledge briefly, suggest 1–2 closest alternatives. If nothing is close AND COMPANY INFO has address, phone, or hours — warmly invite the customer to visit the shop or call. Never invent items or contact details.`.trim();
 }
