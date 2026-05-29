@@ -20,6 +20,10 @@
 export const CHAT_ONLY_RE =
   /^[\s!.,?👍👋🙏💙❤️✅]*(?:hello|hi|hey|ok|okay|good|great|perfect|sure|yes|no|yep|nope|got\s*it|understood|thanks|thank\s*you|thx|ty|bye|goodbye|see\s*you|take\s*care|good\s*morning|good\s*afternoon|good\s*evening|good\s*night|madloba|gmadlob|naxvamdis|kargi|gamarjoba|salami|bodishi|araferi|jerjerobit|გამარჯობა|მოგესალემებით|სალამი|ბოდიში|კარგი|მადლობა|გმადლობ|ნახვამდის|კი|არა|მიხვდი|მიხვდა|გასაგებია|გასაგები|ალბათ|ok!)[\s!.,?👍👋🙏💙❤️✅]*$/i;
 
+/** High-confidence business queries that should always use the full business prompt, not chat. */
+export const BUSINESS_QUERY_RE =
+  /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items|services)\s+do\s+you\s+have|what'?s\s+available|address|where\s+are\s+you|working\s*hours?|open\s+today|price|cost|catalog|shop|store|buy|purchase|visit|რას\s*(?:ყიდით|ყიდი|გაქვთ)|რა\s*გაქვთ|რა\s*იყიდება|მისამართ|სად\s*(?:ხართ|არის)|სამუშაო\s*საათ|გრაფიკ|ფასი|კატალოგ|მაღაზია|ყიდვა|შეძენა|მაჩვენე|მანახე|რა\s*პროდუქტ/i;
+
 /** Message contains a photo/image request anywhere.
  *  Covers Georgian script, romanized Georgian (latin chars), English, Russian. */
 export const PHOTO_RE =

@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { generateReply } from '@/lib/ai';
 import { analyzeLeadState } from '@/lib/leads/detector';
-import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE } from '@/lib/ai/signals';
+import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE } from '@/lib/ai/signals';
 import { detectLeadAndEscalation } from '@/lib/ai/detect';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
@@ -379,11 +379,31 @@ export async function processIncomingMessage(
     console.info(`${label} Image-only message (no caption) — overriding intent to 'search'`);
   }
 
-  // For pure chat intent, replace context with empty stub (saves token budget).
+  const isFirstMeaningfulTurn = history.filter(m => m.role === 'user').length === 0;
+  const lastAiAskedBusinessQuestion = /\?/.test(lastAiMsg)
+    && /(address|hours|price|budget|product|item|style|material|zodiac|stone|photo|visit|buy|apartment|project|room|floor|catalog|shop|store|ფასი|მისამართ|პროდუქტ|ნივთ|მასალ|ზოდიაქ|ქვა|ფოტო|ბინა|პროექტ|ოთახ|სართულ|მაღაზ)/i.test(lastAiMsg);
+  const shortContextReply = combinedMessage.trim().length > 0 && combinedMessage.trim().length <= 20;
+
+  if (effectiveIntent === 'chat' && isFirstMeaningfulTurn && BUSINESS_QUERY_RE.test(combinedMessage)) {
+    effectiveIntent = 'search';
+    console.info(`${label} First-turn business query — overriding 'chat' to 'search'`);
+  }
+
+  if (effectiveIntent === 'chat' && lastAiAskedBusinessQuestion && shortContextReply) {
+    effectiveIntent = 'search';
+    console.info(`${label} Short reply to business question — overriding 'chat' to 'search'`);
+  }
+
+  // For pure chat intent, keep a minimal grounded context instead of a fully empty stub.
   // Must be computed AFTER all intent overrides above.
   const finalBusinessContext: BusinessContext = effectiveIntent === 'chat'
-    ? ({ apartments: [], products: [], businessDescription: null } as ApartmentContext)
+    ? (integration.businessType === 'real_estate'
+        ? ({ apartments: [], businessDescription: businessContext.businessDescription } as ApartmentContext)
+        : ({ products: [], businessDescription: businessContext.businessDescription } as ProductContext))
     : businessContext;
+  console.info(
+    `${label} [routing] company:${integration.companyId} biz:${integration.businessType} intent:${effectiveIntent} first:${isFirstMessage} regex:${regexIntent ?? 'null'} context:${effectiveIntent === 'chat' ? 'minimal-grounded' : 'full'}`,
+  );
 
   // ── Soft-escalation detection (deterministic, zero AI calls) ─────────────
   // Triggers: (1) explicit human/operator request

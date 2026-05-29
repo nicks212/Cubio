@@ -14,7 +14,7 @@
  * use classifyIntentAI() which runs a fast Gemini call in parallel with DB queries.
  */
 
-import { CHAT_ONLY_RE, PHOTO_RE, APT_PHOTO_RE, PROJ_PHOTO_RE } from './signals';
+import { CHAT_ONLY_RE, PHOTO_RE, APT_PHOTO_RE, PROJ_PHOTO_RE, BUSINESS_QUERY_RE } from './signals';
 import { model } from './model';
 import { persistAIUsage, type AIUsageContext } from './usage';
 
@@ -29,6 +29,7 @@ export type PhotoType = 'apartment' | 'project' | 'any';
 export function detectIntent(message: string): MessageIntent | null {
   const text = message.trim();
   if (!text) return 'chat';
+  if (BUSINESS_QUERY_RE.test(text)) return 'search';
   if (CHAT_ONLY_RE.test(text)) return 'chat';
   if (PHOTO_RE.test(text)) return 'photos';
 

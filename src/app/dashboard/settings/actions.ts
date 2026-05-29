@@ -25,13 +25,16 @@ export async function updateCompany(_prev: unknown, formData: FormData) {
   if (!profile?.company_id) return { error: 'No company' };
 
   const company_name = formData.get('company_name') as string;
+  const business_type_raw = formData.get('business_type') as string | null;
+  const business_type = z.enum(['real_estate', 'craft_shop']).safeParse(business_type_raw);
+  if (!business_type.success) return { error: 'Invalid business type' };
   const ai_enabled = formData.get('ai_enabled') === 'true';
   const business_description = ((formData.get('business_description') as string | null) ?? '').replace(/<[^>]*>/g, '').trim().slice(0, 1000) || null;
 
   // Save core fields — always safe
   const { error } = await supabase
     .from('companies')
-    .update({ company_name, ai_enabled })
+    .update({ company_name, business_type: business_type.data, ai_enabled })
     .eq('id', profile.company_id);
   if (error) return { error: error.message };
 

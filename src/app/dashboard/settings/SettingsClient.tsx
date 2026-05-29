@@ -72,6 +72,20 @@ export default function SettingsClient({ profile, company, email }: Props) {
             <label className="block text-sm font-medium mb-2">{t['settings.company_name']}</label>
             <input name="company_name" defaultValue={company?.company_name ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">{t['admin.users.business_type'] ?? 'Business Type'}</label>
+            <select
+              name="business_type"
+              defaultValue={company?.business_type ?? ''}
+              className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="real_estate">{t['onboarding.re_title'] ?? 'Real Estate Development'}</option>
+              <option value="craft_shop">{t['onboarding.craft_title'] ?? 'Craft Shop'}</option>
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">
+              Choose the business type that matches this company so AI uses the correct prompt and catalog.
+            </p>
+          </div>
           <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg">
             <input
               type="checkbox"

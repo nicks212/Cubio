@@ -60,10 +60,15 @@ export async function generateReply(
     // Truncated to 120 chars to keep the micro-prompt lean.
     const bizCtx = (context as { businessDescription?: string | null }).businessDescription;
     const bizHint = bizCtx ? ` for: ${bizCtx.slice(0, 120)}` : '';
+    const domainFence = businessType === 'real_estate'
+      ? 'You work only for a real-estate company. Never mention jewelry, gifts, zodiac, birthstones, candles, oils, incense, souvenirs, or craft-shop products.'
+      : 'You work only for a craft shop. Never mention apartments, projects, neighborhoods, rooms, floors, square meters, developers, investments, or real-estate services.';
     const chatSystemInstruction =
       `You are a warm, natural sales assistant${bizHint}. ` +
+      `${domainFence} ` +
       `${LANGUAGE_RULE} ` +
       `1–2 sentences max. Be conversational. ` +
+      `If company details are limited, ask one short clarifying question instead of guessing. ` +
       `If they mention seeing an ad or coming to inquire — warmly ask what they are looking for. ` +
       `If they say thanks, say you're welcome. If they say goodbye, wish them well.`;
     const isGeo = /[\u10D0-\u10FF]/.test(message);
