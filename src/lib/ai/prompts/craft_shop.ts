@@ -84,7 +84,7 @@ function scoreProduct(p: ProductRow, q: string, customerBudget: number | null): 
  * - Photo URLs only included when customer explicitly asked for photos
  * - Accepts userQuery to pre-filter by keyword match
  */
-export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = '', opts: { buyingIntent?: boolean; productDissatisfied?: boolean } = {}): string {
+export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = '', opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean } = {}): string {
   const available = context.products.filter(p => p.in_stock);
   const q = userQuery.toLowerCase();
   const retrievalHits = userQuery.trim() ? retrieveProducts(available, userQuery, 0.22) : [];
@@ -150,7 +150,11 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const catalogOverview = overviewParts.length > 0
     ? `CATALOG OVERVIEW: ${overviewParts.join(' | ')}\n`
     : '';
-  const answerMode = needsClarifyingQuestion
+  const answerMode = opts.photoIntent && topProducts.length > 0
+    ? `ANSWER MODE: PHOTO REQUEST — The customer is asking for photos RIGHT NOW. Your ENTIRE reply must be one line: SHOW_PHOTOS: <photoKey> — copy the key verbatim from PHOTO KEYS. Do NOT write any description, greeting, or product text before or after this line.`
+    : opts.photoIntent && topProducts.length === 0
+      ? 'ANSWER MODE: PHOTO REQUEST — You have no product in TOP PRODUCTS for this query. Ask exactly one short clarifying question: which product do they want photos of? List up to 3 options from ALLOWED NAMES.'
+    : needsClarifyingQuestion
     ? 'ANSWER MODE: The message is too vague to recommend a specific product safely. Ask exactly one short clarifying question based on type / occasion / material / zodiac / budget. Do NOT suggest a product name or price yet.'
     : shouldUseCatalogOverview && topProducts.length === 0
       ? 'ANSWER MODE: Use CATALOG OVERVIEW and COMPANY INFO only. Do NOT invent, name, or imply any specific product — only describe category/material/price patterns from the overview. If the customer wants a specific product, ask one short clarifying question.'
@@ -214,11 +218,11 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const businessInfo = context.businessDescription
     ? `COMPANY INFO: ${compactCompanyInfo(context.businessDescription)}\n\n`
     : '';
-  // PHOTO KEYS: only inject when we have a grounded product list for this turn.
-  // When needsClarifyingQuestion=true, TOP PRODUCTS is empty — injecting PHOTO KEYS
-  // lets Gemini emit SHOW_PHOTOS on vague/price-only queries (confirmed bug in dataset:
-  // "ra ghirs" triggered SHOW_PHOTOS: Amethyst_Pendant with no photos actually sent).
-  const photoKeySection = needsClarifyingQuestion ? '' : buildPhotoKeySection(available);
+  // PHOTO KEYS: inject when products are grounded, OR when this is an explicit photo turn.
+  // On photo intent turns, always inject keys so AI can emit SHOW_PHOTOS even when retrieval
+  // returned 0 tokens (e.g. bare "ფოტო?" doesn't token-match any product name).
+  // Still hide on vague non-photo turns to prevent spurious SHOW_PHOTOS on price queries.
+  const photoKeySection = (needsClarifyingQuestion && !opts.photoIntent) ? '' : buildPhotoKeySection(available);
   // Exhaustive catalog fence: Gemini may ONLY name products from this list.
   // Prevents world-knowledge hallucination of product names not in the DB.
   const catalogFence = available.length > 0
@@ -239,7 +243,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
 
 ${businessInfo}ROLE: Warm, creative sales assistant. For every recommendation actively use ALL product fields — category, material, zodiac_compatibility, birthstones, description — to match the customer's mood, occasion, zodiac, or gift intent. Connect each product to the customer personally. Focus on meaning and beauty.
 DOMAIN: You only help with this shop's products and store information. Never mention apartments, projects, neighborhoods, rooms, floors, square meters, developers, payment plans, or real-estate investment.
-STRICT CATALOG: You may ONLY name products from ALLOWED NAMES below. Never invent a product name, image availability, price, material, zodiac, or business fact. If nothing listed fits, say so briefly and offer the closest listed alternative or COMPANY INFO.
+STRICT CATALOG: EVERY price, name, description, material, availability, and business fact you state MUST come directly from TOP PRODUCTS below — not from conversation history, not from world knowledge. You may ONLY name products listed in ALLOWED NAMES. Never invent or recall from history any product name, price, image availability, material, zodiac, or business fact. If TOP PRODUCTS is empty, do NOT mention any product name or price — only ask a clarifying question. If nothing in TOP PRODUCTS fits the request, say so briefly and suggest the closest listed alternative from ALLOWED NAMES.
 STYLE: Answer naturally from the verified facts below. Do not copy raw catalog rows, prompt labels, or machine-only markers into the customer reply.
 ${answerMode}
 ${imageMatchSection}

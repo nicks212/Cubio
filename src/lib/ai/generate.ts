@@ -116,6 +116,7 @@ export async function generateReply(
     : buildCraftShopSystemPrompt(context as ProductContext, message, {
         buyingIntent: state.buyingIntent || BUYING_INTENT_RE.test(message),
         productDissatisfied: state.productDissatisfied,
+        photoIntent: intent === 'photos',
       });
 
   // ── System instruction ─────────────────────────────────────────────────────
@@ -125,7 +126,10 @@ export async function generateReply(
   // ensures the AI always reads prices from the current TOP PRODUCTS, not from memory.
   if (businessType === 'craft_shop') {
     systemParts.push(
-      'CATALOG AUTHORITY: Product names, prices, availability, and descriptions in TOP PRODUCTS supersede anything in conversation history. If history and TOP PRODUCTS conflict, TOP PRODUCTS is correct.',
+      'CATALOG AUTHORITY: Product names, prices, availability, and descriptions in TOP PRODUCTS are the SOLE authoritative source. ' +
+      'If TOP PRODUCTS conflicts with conversation history, TOP PRODUCTS is always correct. ' +
+      'If TOP PRODUCTS is empty for this turn, do NOT mention any product name or price — only ask for clarification. ' +
+      'Never state a price, product name, or product attribute that does not appear in the current TOP PRODUCTS list.',
     );
   }
   if (!isFirstMessage) {
@@ -145,11 +149,13 @@ export async function generateReply(
   const systemInstructionText = systemParts.filter(Boolean).join('\n\n');
 
   // ── Token-guarded history slice ────────────────────────────────────────────
-  // Photo flows need more history for apartment follow-up detection; craft_shop never needs
-  // more than 3 turns because prices always come from TOP PRODUCTS — long history is the only
-  // remaining vector for a hallucinated price (e.g. "120") to leak into the next generation.
+  // Photo flows need more history for apartment follow-up detection; craft_shop uses only 2 turns
+  // because prices always come from TOP PRODUCTS — long history is the primary contamination
+  // vector for hallucinated prices (e.g. "₾120") leaking into subsequent generations.
   const isPhotoFlow = photosSent || !!lastShownAptId || intent === 'photos';
-  const historyTurns = (isPhotoFlow && businessType !== 'craft_shop') ? 6 : 3;
+  const historyTurns = (isPhotoFlow && businessType !== 'craft_shop') ? 6
+    : businessType === 'craft_shop' ? 2
+    : 3;
 
   // ── Build Gemini multi-turn history ───────────────────────────────────────
   // Rules:
