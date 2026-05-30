@@ -49,7 +49,10 @@ export function geoToLatin(text: string): string {
  *
  * Sorted longest-first so greedy matching removes the longest applicable suffix.
  */
-const GEO_SUFFIXES = ['ebi', 'ebis', 'ebs', 'shi', 'its', 'ad', 'ze', 'is', 'it', 'eb', 's'];
+// Georgian morphological endings (longest-first for greedy stripping).
+// Includes the common nominative case ending 'i' (e.g. "კიტენი"→"kiteni"→"kiten")
+// so phonetic partial matches work for inflected Georgian brand-name spellings.
+const GEO_SUFFIXES = ['ebi', 'ebis', 'ebs', 'shi', 'its', 'ad', 'ze', 'is', 'it', 'eb', 's', 'i'];
 
 /**
  * Strips the longest known Georgian morphological suffix from a Latin-script token.
@@ -94,6 +97,38 @@ type ProductLike = {
 };
 
 /**
+ * Returns true when a and b are within edit distance 1 — i.e. identical, or differ
+ * by exactly one insertion, deletion, or substitution.  O(max(|a|,|b|)) — no DP matrix
+ * needed since we only care about whether the distance is ≤ 1.
+ *
+ * Used as a fuzzy fallback in countHits() to catch:
+ *   - One-character transliteration gaps: "kiten" ↔ "kitten" (single 't' insertion)
+ *   - Minor typos: "tarto" ↔ "tarot" (transposition reads as 2 substitutions but ED=2,
+ *     so those are correctly NOT matched — only genuine single-char errors qualify)
+ */
+export function withinEditDistance1(a: string, b: string): boolean {
+  const la = a.length, lb = b.length;
+  if (Math.abs(la - lb) > 1) return false;
+  if (la === lb) {
+    // Allow exactly 0 or 1 substitution
+    let diffs = 0;
+    for (let i = 0; i < la; i++) {
+      if (a[i] !== b[i] && ++diffs > 1) return false;
+    }
+    return true;
+  }
+  // Lengths differ by 1 — check if shorter is inside longer with one gap (1 insertion)
+  const [shorter, longer] = la < lb ? [a, b] : [b, a];
+  let si = 0, li = 0, skipped = 0;
+  while (si < shorter.length && li < longer.length) {
+    if (shorter[si] === longer[li]) { si++; li++; }
+    else if (++skipped > 1) return false;
+    else li++;
+  }
+  return true;
+}
+
+/**
  * Scores one product against a normalized query using stem-aware token matching.
  *
  * Matching strategy:
@@ -124,9 +159,17 @@ export function scoreProductRetrieval(
   const zodTokens  = (product.zodiac_compatibility ?? []).flatMap(z => stemTokens(z));
 
   // Helper: count how many query tokens have at least one stemmed field token that
-  // starts with them or equals them (stem-prefix match for partial coverage).
+  // matches exactly, matches by prefix (partial coverage), OR is within edit distance 1
+  // for tokens of length ≥ 4 (handles single-char transliteration gaps like kiten↔kitten).
   const countHits = (fieldTokens: string[]) =>
-    tokens.filter(qt => fieldTokens.some(ft => ft === qt || ft.startsWith(qt) || qt.startsWith(ft))).length;
+    tokens.filter(qt =>
+      fieldTokens.some(ft =>
+        ft === qt ||
+        ft.startsWith(qt) ||
+        qt.startsWith(ft) ||
+        (qt.length >= 4 && ft.length >= 4 && withinEditDistance1(qt, ft))
+      )
+    ).length;
 
   let score = 0;
   let reason = '';

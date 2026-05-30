@@ -522,12 +522,14 @@ export async function processIncomingMessage(
   // We always process a valid SHOW_PHOTOS: ID regardless of our own intent classification,
   // because intent detection can miss romanized Georgian photo requests ("Suratebi" etc).
   // Guard: only process if there is a valid identifier (prevents bare SHOW_PHOTOS with no id).
-  // Character class covers: Latin alphanum + underscore + hyphen (apartment IDs like "0101", "project_0101")
-  // AND Georgian Unicode range U+10D0–U+10FF (product slugs built from Georgian product names).
-  // Hyphen included because Georgian product IDs like "ილანგ-ილანგის_ეთერზეთი" contain it.
-  // Character class extended to include \s so multi-word Georgian product names like
-  // "მწვანე ტარა" are captured in full — previously truncated at the first space.
-  const showPhotosRaw = reply.match(/SHOW_PHOTOS[:\s]+([A-Za-z0-9_\u10D0-\u10FF-][A-Za-z0-9_\u10D0-\u10FF\s-]*)/i);
+  // Separator allows colon, space, or tab — NOT newline. This prevents capturing across a
+  // line break when the AI mistakenly writes "SHOW_PHOTOS\nKitten Tarot-ის ფოტოები..." —
+  // that malformed pattern produces no match, and the backend-driven fallback recovers instead.
+  // Identifier character class: Latin alphanum + underscore + hyphen (apartment IDs like
+  // "0101", "project_0101") AND Georgian Unicode range U+10D0–U+10FF (Georgian product names).
+  // Space and tab are allowed within the identifier so multi-word names like "Kitten Tarot"
+  // or "მწვანე ტარა" are captured in full — but newline is excluded to prevent over-capture.
+  const showPhotosRaw = reply.match(/SHOW_PHOTOS[: \t]+([A-Za-z0-9_\u10D0-\u10FF-][A-Za-z0-9_\u10D0-\u10FF \t-]*)/i);
   const explicitPhotoRequest = effectiveIntent === 'photos' || PHOTO_RE.test(combinedMessage);
   if (showPhotosRaw && !explicitPhotoRequest) {
     console.warn(`${label} Ignoring SHOW_PHOTOS on non-photo turn for message: "${combinedMessage.slice(0, 80)}"`);
@@ -542,6 +544,34 @@ export async function processIncomingMessage(
   const imageUrlsToSend: string[] = showPhotosMatch
     ? resolvePhotoUrls(finalBusinessContext, showPhotosMatch[1].trim(), photoType, label)
     : [];
+
+  // Backend-driven photo fallback — fires when:
+  //   1. Customer explicitly asked for photos (explicitPhotoRequest)
+  //   2. No images were resolved from the AI's SHOW_PHOTOS marker (AI used wrong format,
+  //      omitted the marker, or emitted a key that didn't slug-match any product)
+  //   3. Business is a craft_shop (apartment photos use a separate project/apt path)
+  // Action: run retrieval against the customer's message, find the top product with images,
+  //         and send those photos directly without depending on AI key generation.
+  if (
+    explicitPhotoRequest &&
+    imageUrlsToSend.length === 0 &&
+    integration.businessType === 'craft_shop'
+  ) {
+    const prodCtxFallback = finalBusinessContext as ProductContext;
+    if (prodCtxFallback.products?.length > 0) {
+      const isImg = (u: string) => /\.(webp|jpg|jpeg|png)/i.test(u);
+      const fallbackHits = retrieveProducts(prodCtxFallback.products, combinedMessage, 0.28);
+      for (const hit of fallbackHits) {
+        const p = prodCtxFallback.products.find(pr => pr.name === hit.name);
+        const photos = p?.images?.filter(u => u.startsWith('http') && isImg(u)) ?? [];
+        if (photos.length > 0) {
+          imageUrlsToSend.push(...photos);
+          console.info(`${label} [photo-fallback] Backend delivery for "${hit.name}" (conf:${hit.confidence.toFixed(2)}) — ${photos.length} photo(s)`);
+          break;
+        }
+      }
+    }
+  }
 
   // Always strip ALL SHOW_PHOTOS occurrences from text regardless of whether we acted on it.
   // Regex is intentionally broad: catches SHOW_PHOTOS with/without colon, with/without identifier.
@@ -760,9 +790,33 @@ function resolvePhotoUrls(
     // and "ილანგ-ილანგი" all resolve to the same key.
     const slug = (name: string) => name.toLowerCase().replace(/[\s-]+/g, '_').slice(0, 40);
     const id = identifier.replace(/^prod_?/i, '').trim().toLowerCase();
-    const prod = prodCtx.products.find(p => slug(p.name) === slug(id));
+    let prod = prodCtx.products.find(p => slug(p.name) === slug(id));
+
+    // Secondary: strip trailing Georgian characters — handles cases where the identifier
+    // contains a Georgian sentence fragment after the product name (e.g. captured from a
+    // malformed "SHOW_PHOTOS\nKitten Tarot-ის ფოტოები..." before the regex tightening).
     if (!prod) {
-      console.warn(`${label} SHOW_PHOTOS: product "${identifier}" not found in loaded context — sending nothing`);
+      const latinOnly = id.replace(/[\u10D0-\u10FF][\s\S]*/i, '').trim();
+      if (latinOnly && latinOnly !== id) {
+        prod = prodCtx.products.find(p => slug(p.name) === slug(latinOnly));
+        if (prod) console.info(`${label} SHOW_PHOTOS: latin-trim match "${id.slice(0, 40)}" → "${prod.name}"`);
+      }
+    }
+
+    // Tertiary: fuzzy retrieval using the same scoring engine as the prompt builder.
+    // Handles partial names, transliterations, and minor spelling differences.
+    if (!prod && id.length >= 3) {
+      const fuzzyHits = retrieveProducts(prodCtx.products, identifier, 0.25);
+      if (fuzzyHits.length > 0) {
+        prod = prodCtx.products.find(p => p.name === fuzzyHits[0].name);
+        if (prod) {
+          console.info(`${label} SHOW_PHOTOS: fuzzy match "${identifier.slice(0, 40)}" → "${prod.name}" (conf:${fuzzyHits[0].confidence.toFixed(2)})`);
+        }
+      }
+    }
+
+    if (!prod) {
+      console.warn(`${label} SHOW_PHOTOS: product "${identifier.slice(0, 40)}" not found in loaded context — sending nothing`);
       return [];
     }
     const isImg = (u: string) => /\.(webp|jpg|jpeg|png)/i.test(u);
