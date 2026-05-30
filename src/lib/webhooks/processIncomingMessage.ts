@@ -367,6 +367,18 @@ export async function processIncomingMessage(
     }
   }
 
+  // Stamp total vector-search hit count onto ProductContext so the prompt builder can
+  // surface those products even when token retrieval scores 0 — this happens whenever
+  // a Georgian product name (e.g. "ამეთვისტოს გულსაკიდი") doesn't transliterate to match
+  // its English DB name ("Amethyst Pendant"). Vector search handles the semantic gap;
+  // without this stamp, shouldListSpecificProducts stays false and TOP PRODUCTS is empty.
+  const totalVectorHits = similarProductNames.length
+    + textVectorNames.filter(n => !similarProductNames.some(s => s.toLowerCase() === n.toLowerCase())).length;
+  if (totalVectorHits > 0 && 'products' in businessContext) {
+    (businessContext as ProductContext).vectorHits = totalVectorHits;
+    console.info(`${label} [vectorHits] stamped ${totalVectorHits} on context — shouldListSpecificProducts will be true`);
+  }
+
   const messageIntent = regexIntent ?? (aiIntent?.intent ?? 'search') as import('@/lib/ai/intentDetector').MessageIntent;
 
   // Use the pre-loaded history snapshot (captured before current message was saved to DB).
@@ -602,6 +614,12 @@ export async function processIncomingMessage(
   cleanReply = cleanReply.replace(/^\s*\[(AI|USER|ASSISTANT|CUSTOMER)\]\s*/i, '').trim();
   cleanReply = cleanReply.replace(/^\s*(?:Assistant|AI)\s*:\s*/i, '').trim();
   cleanReply = stripInternalReplyArtifacts(cleanReply);
+
+  // BUG #4: Strip rogue greeting if Gemini emitted one despite NO GREETING instruction.
+  // Observed in dataset: reply starting with "გამარჯობა!" on a non-first turn.
+  if (!isFirstMessage) {
+    cleanReply = cleanReply.replace(/^\s*(?:გამარჯობ[ა!,. ]+|hello[!,. ]+|hi[!,. ]+)+/i, '').trim();
+  }
 
   // Safety check: if SHOW_PHOTOS still present after strip, something is very wrong — log and abort.
   if (/SHOW_PHOTOS/i.test(cleanReply)) {
@@ -878,7 +896,8 @@ function guardCraftCatalogReply(
   const budgetRaw = /(\d[\d,\s]*)\s*(?:₾|\$|gel|lari|ლარ)/i.exec(userMessage);
   const customerBudget = budgetRaw ? parseFloat(budgetRaw[1].replace(/[,\s]/g, '')) : null;
   const broadCatalogQuery = CRAFT_BROAD_QUERY_RE.test(userMessage);
-  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || retrievalHits.length > 0;
+  const vectorSearchHitGuard = (context.vectorHits ?? 0) > 0;
+  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || retrievalHits.length > 0 || vectorSearchHitGuard;
   const shouldUseCatalogOverview = broadCatalogQuery || customerBudget !== null;
   const needsClarifyingQuestion = !shouldListSpecificProducts && !shouldUseCatalogOverview;
   const mentionedAllowedProduct = replyMentionsCatalogProduct(reply, context.products);
@@ -962,13 +981,21 @@ function validateCraftProductPricePairing(
   products: ProductContext['products'],
 ): boolean {
   const replyLower = reply.toLowerCase();
+  // Normalize once for all products — converts Georgian script to Latin phonetics so
+  // transliterated names like "ტაროს" → "taros" can prefix-match "tarot".
+  const replyNorm = normalizeQuery(reply);
   for (const product of products) {
     const nameLower = product.name.toLowerCase();
     if (nameLower.length < 3) continue;
     const idx = replyLower.indexOf(nameLower);
-    if (idx === -1) continue;
-    // Scan text window starting from the product name mention
-    const windowText = reply.slice(idx, Math.min(reply.length, idx + nameLower.length + 80));
+    // Secondary: normalized Latin check for transliterated Georgian names
+    const nameNorm = normalizeQuery(product.name);
+    const normIdx = (idx === -1 && nameNorm.length >= 3) ? replyNorm.indexOf(nameNorm) : -1;
+    if (idx === -1 && normIdx === -1) continue;
+    // Use the matched window — prefer original text, fall back to normalized
+    const windowText = idx !== -1
+      ? reply.slice(idx, Math.min(reply.length, idx + nameLower.length + 80))
+      : replyNorm.slice(normIdx, Math.min(replyNorm.length, normIdx + nameNorm.length + 80));
     const moneyMentions = extractMoneyMentions(windowText);
     for (const mention of moneyMentions) {
       const sameUSD = (mention.currency === 'USD') === (product.currency === 'USD');

@@ -100,7 +100,12 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   // in the catalog but scored slightly below the high-confidence threshold.
   const hasRetrieval = retrievalHits.length > 0;
   const hasGoodRetrieval = retrievalConfidence >= 0.35;
-  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || hasRetrieval;
+  // vectorSearchHit: vector similarity search found products even when token retrieval scored 0.
+  // Critical for Georgian product names that don't transliterate to their English DB name
+  // (e.g. "ამეთვისტოსი" → "ametvistosi", which doesn't prefix-match "amethyst").
+  // vectorHits is stamped onto context in processIncomingMessage after parallel vector search.
+  const vectorSearchHit = (context.vectorHits ?? 0) > 0;
+  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || hasRetrieval || vectorSearchHit;
   const shouldUseCatalogOverview = broadCatalogQuery || customerBudget !== null;
   const needsClarifyingQuestion = !shouldListSpecificProducts && !shouldUseCatalogOverview;
 
@@ -209,9 +214,11 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const businessInfo = context.businessDescription
     ? `COMPANY INFO: ${compactCompanyInfo(context.businessDescription)}\n\n`
     : '';
-  // All in-stock products with images get a photo key so Gemini can emit SHOW_PHOTOS
-  // for any product it legitimately recommends — not just the top-3 relevantPool.
-  const photoKeySection = buildPhotoKeySection(available);
+  // PHOTO KEYS: only inject when we have a grounded product list for this turn.
+  // When needsClarifyingQuestion=true, TOP PRODUCTS is empty — injecting PHOTO KEYS
+  // lets Gemini emit SHOW_PHOTOS on vague/price-only queries (confirmed bug in dataset:
+  // "ra ghirs" triggered SHOW_PHOTOS: Amethyst_Pendant with no photos actually sent).
+  const photoKeySection = needsClarifyingQuestion ? '' : buildPhotoKeySection(available);
   // Exhaustive catalog fence: Gemini may ONLY name products from this list.
   // Prevents world-knowledge hallucination of product names not in the DB.
   const catalogFence = available.length > 0

@@ -35,6 +35,13 @@ export interface ProductContext {
   businessDescription: string | null;
   /** Non-null when context was loaded after an image similarity search. */
   imageSearchQuery?: string | null;
+  /**
+   * Number of distinct products returned by pgvector similarity search for this turn.
+   * When > 0, prompt builder shows those products even when token retrieval scored them
+   * below threshold — handles Georgian product names that don't transliterate to match
+   * English DB names (e.g. "ამეთვისტოს გულსაკიდი" vs DB name "Amethyst Pendant").
+   */
+  vectorHits?: number;
 }
 
 export type BusinessContext = ApartmentContext | ProductContext;
