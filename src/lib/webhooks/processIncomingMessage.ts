@@ -19,7 +19,7 @@ import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './ty
 import type { ApartmentContext, ProductContext, BusinessContext } from '@/lib/ai/types';
 import type { PhotoType } from '@/lib/ai/intentDetector';
 
-const CRAFT_BROAD_QUERY_RE = /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items)\s+do\s+you\s+have|what'?s\s+available|catalog|shop|store|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s*იყიდება|კატალოგ|მაღაზია/i;
+const CRAFT_BROAD_QUERY_RE = /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items)\s+do\s+you\s+have|what'?s\s+available|catalog|shop|store|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s+[\u10D0-\u10FF\w]+\s*გაქვთ|რა\s*იყიდება|კატალოგ|მაღაზია/i;
 const CRAFT_RECOMMENDATION_RE = /\b(?:recommend|suggest|offer|we\s+have|try|look\s+at|შემოგთავაზ|გირჩევ|გთავაზობთ|გვაქვს)\b/i;
 
 /**

@@ -145,10 +145,11 @@ export async function generateReply(
   const systemInstructionText = systemParts.filter(Boolean).join('\n\n');
 
   // ── Token-guarded history slice ────────────────────────────────────────────
-  // Photo flows need more history for follow-up detection; non-photo turns are lean —
-  // STATE captures all structured facts, 3 turns is enough for tone continuity.
+  // Photo flows need more history for apartment follow-up detection; craft_shop never needs
+  // more than 3 turns because prices always come from TOP PRODUCTS — long history is the only
+  // remaining vector for a hallucinated price (e.g. "120") to leak into the next generation.
   const isPhotoFlow = photosSent || !!lastShownAptId || intent === 'photos';
-  const historyTurns = isPhotoFlow ? 6 : 3;
+  const historyTurns = (isPhotoFlow && businessType !== 'craft_shop') ? 6 : 3;
 
   // ── Build Gemini multi-turn history ───────────────────────────────────────
   // Rules:

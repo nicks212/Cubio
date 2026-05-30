@@ -3,7 +3,7 @@ import { retrieveProducts } from '../productRetrieval';
 
 type ProductRow = ProductContext['products'][0];
 
-const BROAD_CATALOG_QUERY_RE = /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items)\s+do\s+you\s+have|what'?s\s+available|catalog|shop|store|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s*იყიდება|კატალოგ|მაღაზია/i;
+const BROAD_CATALOG_QUERY_RE = /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items)\s+do\s+you\s+have|what'?s\s+available|catalog|shop|store|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s+[\u10D0-\u10FF\w]+\s*გაქვთ|რა\s*იყიდება|კატალოგ|მაღაზია/i;
 
 function takeUnique(values: Array<string | null | undefined>, limit: number): string[] {
   const seen = new Set<string>();
@@ -114,9 +114,10 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
     const sb = scoreProduct(b, q, customerBudget) + (retrievalConfidenceByName.get(b.name) ?? 0) * 10 + (available.length - posB) * 0.1;
     return sb - sa;
   });
-  // When multiple products match, expand pool to show all of them (up to 6) so AI presents
+  // When multiple products match, expand pool to show all of them (up to 8) so AI presents
   // the full matched range. Single-hit or image queries get top-3 for focused recommendation.
-  const poolCap = retrievalHits.length >= 2 ? Math.min(retrievalHits.length, 6)
+  // 8 cap: shops with many variants (e.g. 10 tarot decks) all surface — customer gets the full picture.
+  const poolCap = retrievalHits.length >= 2 ? Math.min(retrievalHits.length, 8)
     : retrievalHits.length === 1 || !!context.imageSearchQuery ? 3
     : 5;
   const relevantPool = shouldListSpecificProducts ? sorted.slice(0, poolCap) : [];
@@ -163,7 +164,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
         if (p.material) parts.push(p.material);
         if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);
         if (p.birthstones) parts.push(`stones: ${p.birthstones}`);
-        if (p.description) parts.push(`desc: ${p.description.slice(0, 60)}`);
+        if (p.description) parts.push(`desc: ${p.description.slice(0, 120)}`);
         return parts.join(' | ');
       }).join('\n')
     : needsClarifyingQuestion

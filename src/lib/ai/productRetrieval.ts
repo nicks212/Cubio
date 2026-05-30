@@ -228,8 +228,12 @@ export function scoreProductRetrieval(
     if (!reason) reason = `${spdHits} stone/zodiac tokens`;
   }
 
-  // Confidence normalized against maximum possible score
-  const maxScore = 10 + tokens.length * 1.5;
+  // Confidence normalized against the fixed maximum achievable score (exact name match = 10).
+  // Using a fixed denominator ensures confidence is independent of query length — longer
+  // customer queries (more tokens) do NOT dilute the score of a valid match.
+  // Before this fix: "რა ტაროები გაქვთ" (3 tokens) → maxScore=14.5 → conf=0.172 → FILTERED OUT.
+  // After: maxScore=10 → conf=0.25 → passes threshold → all matching products surface.
+  const maxScore = 10;
   const confidence = Math.min(score / maxScore, 1.0);
 
   return { score, confidence, reason: reason || 'no match' };
