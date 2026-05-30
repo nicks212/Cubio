@@ -4,7 +4,6 @@ import { retrieveProducts } from '../productRetrieval';
 type ProductRow = ProductContext['products'][0];
 
 const BROAD_CATALOG_QUERY_RE = /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items)\s+do\s+you\s+have|what'?s\s+available|catalog|shop|store|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s*იყიდება|კატალოგ|მაღაზია/i;
-const PRODUCT_ATTRIBUTE_QUERY_RE = /price|budget|gift|occasion|style|material|stone|birthstone|zodiac|ring|bracelet|necklace|pendant|earring|oil|incense|tarot|candle|crystal|silver|gold|ფასი|ბიუჯეტ|საჩუქარ|სტილ|მასალ|ქვა|ზოდიაქ|ბეჭედ|სამაჯურ|ყელსაბამ|საყურ|ეთერზეთ|სანთელ|კრისტალ|ვერცხლ|ოქრო|ტარო/i;
 
 function takeUnique(values: Array<string | null | undefined>, limit: number): string[] {
   const seen = new Set<string>();
@@ -92,13 +91,17 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const retrievalConfidence = retrievalHits[0]?.confidence ?? 0;
   const retrievalConfidenceByName = new Map(retrievalHits.map(hit => [hit.name, hit.confidence]));
   const broadCatalogQuery = BROAD_CATALOG_QUERY_RE.test(userQuery);
-  const productAttributeQuery = PRODUCT_ATTRIBUTE_QUERY_RE.test(userQuery);
 
   // Extract customer budget from userQuery (e.g. "7 gel", "₾25", "50 lari")
   const budgetRaw = /(\d[\d,\s]*)\s*(?:₾|\$|gel|lari|ლარ)/i.exec(userQuery);
   const customerBudget = budgetRaw ? parseFloat(budgetRaw[1].replace(/[,\s]/g, '')) : null;
-  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || retrievalConfidence >= 0.35;
-  const shouldUseCatalogOverview = broadCatalogQuery || productAttributeQuery || customerBudget !== null;
+  // Show products whenever retrieval found any hit (≥ 0.22) — not just when confidence ≥ 0.35.
+  // This prevents the "catalog overview only" path from firing when a real product exists
+  // in the catalog but scored slightly below the high-confidence threshold.
+  const hasRetrieval = retrievalHits.length > 0;
+  const hasGoodRetrieval = retrievalConfidence >= 0.35;
+  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || hasRetrieval;
+  const shouldUseCatalogOverview = broadCatalogQuery || customerBudget !== null;
   const needsClarifyingQuestion = !shouldListSpecificProducts && !shouldUseCatalogOverview;
 
   // Sort by combined score: keyword relevance + price proximity to budget.
@@ -141,8 +144,10 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const answerMode = needsClarifyingQuestion
     ? 'ANSWER MODE: The message is too vague to recommend a specific product safely. Ask exactly one short clarifying question based on type / occasion / material / zodiac / budget. Do NOT suggest a product name or price yet.'
     : shouldUseCatalogOverview && top3.length === 0
-      ? 'ANSWER MODE: Use CATALOG OVERVIEW and COMPANY INFO only. Answer naturally from the verified overview below. Do NOT invent or guess specific products or prices until the customer narrows the request.'
-      : 'ANSWER MODE: Answer naturally from verified catalog facts. If the customer asks multiple questions, answer the supported parts first. For any unsupported part, say briefly that the exact detail is not in the catalog and invite them to visit or call if COMPANY INFO is available.';
+      ? 'ANSWER MODE: Use CATALOG OVERVIEW and COMPANY INFO only. Do NOT invent, name, or imply any specific product — only describe category/material/price patterns from the overview. If the customer wants a specific product, ask one short clarifying question.'
+      : !hasGoodRetrieval && hasRetrieval
+        ? 'ANSWER MODE: The TOP PRODUCTS below are the closest catalog matches found. Describe what is listed. If none fit perfectly, ask one short clarifying question (type / material / zodiac / budget). Never name a product not listed below.'
+        : 'ANSWER MODE: Answer naturally from verified catalog facts. If the customer asks multiple questions, answer the supported parts first. For any unsupported part, say briefly that the exact detail is not in the catalog and invite them to visit or call if COMPANY INFO is available.';
 
   // Top 3 — full detail; compact photo metadata (no raw URLs)
   const detailedList = top3.length > 0
@@ -198,7 +203,14 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
   const businessInfo = context.businessDescription
     ? `COMPANY INFO: ${compactCompanyInfo(context.businessDescription)}\n\n`
     : '';
-  const photoKeySection = buildPhotoKeySection(relevantPool);
+  // All in-stock products with images get a photo key so Gemini can emit SHOW_PHOTOS
+  // for any product it legitimately recommends — not just the top-3 relevantPool.
+  const photoKeySection = buildPhotoKeySection(available);
+  // Exhaustive catalog fence: Gemini may ONLY name products from this list.
+  // Prevents world-knowledge hallucination of product names not in the DB.
+  const catalogFence = available.length > 0
+    ? `ALLOWED NAMES (complete list — you may ONLY name these products; never invent a name not here):\n${available.map(p => p.name).join(' | ')}\n`
+    : '';
 
   // Image match section — injected ONLY when this turn follows a customer photo upload.
   // Zero token cost on all text-only turns.
@@ -214,7 +226,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
 
 ${businessInfo}ROLE: Warm, creative sales assistant. For every recommendation actively use ALL product fields — category, material, zodiac_compatibility, birthstones, description — to match the customer's mood, occasion, zodiac, or gift intent. Connect each product to the customer personally. Focus on meaning and beauty.
 DOMAIN: You only help with this shop's products and store information. Never mention apartments, projects, neighborhoods, rooms, floors, square meters, developers, payment plans, or real-estate investment.
-STRICT CATALOG: Mention only products that appear below in TOP PRODUCTS or SIMILAR GROUPS. Never invent a product name, image availability, price, material, zodiac, or business fact. If nothing listed fits, say so briefly and offer the closest listed alternative or COMPANY INFO.
+STRICT CATALOG: You may ONLY name products from ALLOWED NAMES below. Never invent a product name, image availability, price, material, zodiac, or business fact. If nothing listed fits, say so briefly and offer the closest listed alternative or COMPANY INFO.
 STYLE: Answer naturally from the verified facts below. Do not copy raw catalog rows, prompt labels, or machine-only markers into the customer reply.
 ${answerMode}
 ${imageMatchSection}
@@ -225,11 +237,11 @@ ${opts.buyingIntent ? `BUYING INTENT: Customer wants to purchase.
   → If STATE shows phone:[number]: confirm once that a representative will call — do not repeat on subsequent messages.
 ` : ''}${opts.productDissatisfied ? `DISSATISFIED CUSTOMER (STATE shows dissatisfied:YES): Customer has seen catalog, nothing matched. Do NOT list products. Warmly invite to the physical shop. Share COMPANY INFO (address, hours, phone) if present — never invent.
 ` : ''}
-${catalogOverview}${groupSection}
+${catalogFence}${catalogOverview}${groupSection}
 ${budgetGapNote}TOP PRODUCTS${context.imageSearchQuery ? ' (closest visual matches to customer photo)' : q ? ' (matched to your message)' : ''}:
 ${detailedList}${overflowNote}
 ${photoKeySection}
 
-Only reference products listed here. If the customer asks broadly, summarize category/material/style patterns from the listed catalog items instead of inventing more items.
-OUT-OF-CATALOG: If asked about something not in TOP PRODUCTS — acknowledge briefly, suggest 1–2 closest alternatives. If nothing is close AND COMPANY INFO has address, phone, or hours — warmly invite the customer to visit the shop or call. Never invent items or contact details.`.trim();
+Only reference products listed in ALLOWED NAMES above. If the customer asks broadly, summarize category/material/style patterns from the listed products instead of inventing more items.
+OUT-OF-CATALOG: If asked about something not in ALLOWED NAMES — acknowledge briefly, suggest 1–2 closest alternatives from the list. If nothing is close AND COMPANY INFO has address, phone, or hours — warmly invite the customer to visit the shop or call. Never invent items or contact details.`.trim();
 }

@@ -20,7 +20,6 @@ import type { ApartmentContext, ProductContext, BusinessContext } from '@/lib/ai
 import type { PhotoType } from '@/lib/ai/intentDetector';
 
 const CRAFT_BROAD_QUERY_RE = /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items)\s+do\s+you\s+have|what'?s\s+available|catalog|shop|store|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s*იყიდება|კატალოგ|მაღაზია/i;
-const CRAFT_ATTRIBUTE_QUERY_RE = /price|budget|gift|occasion|style|material|stone|birthstone|zodiac|ring|bracelet|necklace|pendant|earring|oil|incense|tarot|candle|crystal|silver|gold|ფასი|ბიუჯეტ|საჩუქარ|სტილ|მასალ|ქვა|ზოდიაქ|ბეჭედ|სამაჯურ|ყელსაბამ|საყურ|ეთერზეთ|სანთელ|კრისტალ|ვერცხლ|ოქრო|ტარო/i;
 const CRAFT_RECOMMENDATION_RE = /\b(?:recommend|suggest|offer|we\s+have|try|look\s+at|შემოგთავაზ|გირჩევ|გთავაზობთ|გვაქვს)\b/i;
 
 /**
@@ -800,9 +799,8 @@ function guardCraftCatalogReply(
   const budgetRaw = /(\d[\d,\s]*)\s*(?:₾|\$|gel|lari|ლარ)/i.exec(userMessage);
   const customerBudget = budgetRaw ? parseFloat(budgetRaw[1].replace(/[,\s]/g, '')) : null;
   const broadCatalogQuery = CRAFT_BROAD_QUERY_RE.test(userMessage);
-  const attributeQuery = CRAFT_ATTRIBUTE_QUERY_RE.test(userMessage);
-  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || topConfidence >= 0.35;
-  const shouldUseCatalogOverview = broadCatalogQuery || attributeQuery || customerBudget !== null;
+  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || retrievalHits.length > 0;
+  const shouldUseCatalogOverview = broadCatalogQuery || customerBudget !== null;
   const needsClarifyingQuestion = !shouldListSpecificProducts && !shouldUseCatalogOverview;
   const mentionedAllowedProduct = replyMentionsCatalogProduct(reply, context.products);
   const moneyValidation = validateCraftMoneyMentions(reply, context.products);
@@ -815,8 +813,9 @@ function guardCraftCatalogReply(
     || CRAFT_RECOMMENDATION_RE.test(reply)
   );
   const unsupportedPrice = moneyValidation.invalidMentions.length > 0;
+  const inventedProductName = replyContainsInventedProductName(reply, context.products);
 
-  if (!invalidPhone && !suspiciousVagueRecommendation && !unsupportedPrice) {
+  if (!invalidPhone && !suspiciousVagueRecommendation && !unsupportedPrice && !inventedProductName) {
     return { reply, replaced: false, reason: null };
   }
 
@@ -824,7 +823,9 @@ function guardCraftCatalogReply(
     ? 'unsupported_phone'
     : unsupportedPrice
       ? 'unsupported_price'
-      : 'vague_turn_recommendation';
+      : inventedProductName
+        ? 'invented_product_name'
+        : 'vague_turn_recommendation';
 
   return {
     reply: buildSafeCraftReply(userMessage, context, retrievalHits, history, reason),
@@ -865,6 +866,34 @@ function extractMoneyMentions(text: string): Array<{ amount: number; currency: '
   }
 
   return mentions;
+}
+
+/**
+ * Detects when a reply contains a title-case product-name phrase (English/Latin script)
+ * that is NOT present in the catalog but shares at least one significant word with it.
+ * This catches world-knowledge hallucinations like "Erotic Tarot" when only
+ * "Kitten Tarot" exists — without relying on hardcoded product-type keywords.
+ * Only fires on Latin-script product names; Georgian-script hallucinations are
+ * prevented by the ALLOWED NAMES prompt fence.
+ */
+function replyContainsInventedProductName(reply: string, products: ProductContext['products']): boolean {
+  // Match title-case sequences of 2+ words: "Erotic Tarot", "Dragon Crystal", etc.
+  const candidates = reply.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})+\b/g) ?? [];
+  if (candidates.length === 0) return false;
+
+  const catalogNormalized = products.map(p => normalizeQuery(p.name));
+  const catalogWords = new Set(
+    catalogNormalized.flatMap(n => n.split(/\s+/).filter(w => w.length >= 4)),
+  );
+
+  return candidates.some(candidate => {
+    const norm = normalizeQuery(candidate);
+    // Allowed: exact match or substring of a catalog name (e.g. abbreviated reference)
+    if (catalogNormalized.some(n => n === norm || n.includes(norm) || norm.includes(n))) return false;
+    // Suspicious: candidate shares a significant word with catalog vocabulary
+    // but is not itself a known catalog product — likely hallucinated
+    return norm.split(/\s+/).some(w => w.length >= 4 && catalogWords.has(w));
+  });
 }
 
 function replyMentionsCatalogProduct(reply: string, products: ProductContext['products']): boolean {
