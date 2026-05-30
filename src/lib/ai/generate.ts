@@ -3,7 +3,7 @@ import { buildGlobalSystemPrompt, LANGUAGE_RULE } from './prompts/global';
 import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
 import { extractConversationState, formatStateForPrompt } from './state';
-import { BUYING_INTENT_RE } from './signals';
+import { BUYING_INTENT_RE, PHOTO_RE } from './signals';
 import { persistAIUsage, type AIUsageContext } from './usage';
 import type { BusinessContext, ApartmentContext, ProductContext } from './types';
 import type { MessageIntent } from './intentDetector';
@@ -97,7 +97,12 @@ export async function generateReply(
   }
 
   // ── Layer 1: Global rules ──────────────────────────────────────────────────
-  const globalPrompt = buildGlobalSystemPrompt(intent === 'photos' ? false : photosSent);
+  // When the message contains any photo signal, always tell the AI "no photos sent yet"
+  // so it emits SHOW_PHOTOS rather than saying "photos were already sent".
+  // Backend delivery is unconditional when explicitPhotoRequest=true anyway.
+  const globalPrompt = buildGlobalSystemPrompt(
+    (intent === 'photos' || PHOTO_RE.test(message)) ? false : photosSent,
+  );
 
   // ── Conversation state (deterministic, zero AI calls) ───────────────────────────────────────────
   const state = extractConversationState(conversationHistory);
@@ -115,6 +120,14 @@ export async function generateReply(
 
   // ── System instruction ─────────────────────────────────────────────────────
   const systemParts: string[] = [`${globalPrompt}\n\n${businessPrompt}`, stateLine];
+  // Catalog grounding: injected into every non-chat turn to counter history contamination.
+  // Previous AI turns may contain wrong prices from earlier hallucinations; this rule
+  // ensures the AI always reads prices from the current TOP PRODUCTS, not from memory.
+  if (businessType === 'craft_shop') {
+    systemParts.push(
+      'CATALOG AUTHORITY: Product names, prices, availability, and descriptions in TOP PRODUCTS supersede anything in conversation history. If history and TOP PRODUCTS conflict, TOP PRODUCTS is correct.',
+    );
+  }
   if (!isFirstMessage) {
     // Hard constraint — injected FIRST so it overrides the model's tendency to greet
     systemParts.unshift('NO GREETING: Do NOT use გამარჯობა, hello, hi, or any greeting. Start directly with your answer.');

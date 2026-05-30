@@ -892,9 +892,10 @@ function guardCraftCatalogReply(
     || CRAFT_RECOMMENDATION_RE.test(reply)
   );
   const unsupportedPrice = moneyValidation.invalidMentions.length > 0;
+  const wrongProductPrice = validateCraftProductPricePairing(reply, context.products);
   const inventedProductName = replyContainsInventedProductName(reply, context.products);
 
-  if (!invalidPhone && !suspiciousVagueRecommendation && !unsupportedPrice && !inventedProductName) {
+  if (!invalidPhone && !suspiciousVagueRecommendation && !unsupportedPrice && !wrongProductPrice && !inventedProductName) {
     return { reply, replaced: false, reason: null };
   }
 
@@ -902,9 +903,11 @@ function guardCraftCatalogReply(
     ? 'unsupported_phone'
     : unsupportedPrice
       ? 'unsupported_price'
-      : inventedProductName
-        ? 'invented_product_name'
-        : 'vague_turn_recommendation';
+      : wrongProductPrice
+        ? 'wrong_product_price'
+        : inventedProductName
+          ? 'invented_product_name'
+          : 'vague_turn_recommendation';
 
   return {
     reply: buildSafeCraftReply(userMessage, context, retrievalHits, history, reason),
@@ -945,6 +948,36 @@ function extractMoneyMentions(text: string): Array<{ amount: number; currency: '
   }
 
   return mentions;
+}
+
+/**
+ * Detects when a reply pairs a known product name with the wrong price.
+ * Example: reply says "Kitten Tarot — ₾120" but Kitten Tarot costs ₾33.
+ * For each catalog product mentioned by name, scans the 80 chars following it
+ * for a money mention and compares against the catalog price.
+ * Returns true when a mismatch is found.
+ */
+function validateCraftProductPricePairing(
+  reply: string,
+  products: ProductContext['products'],
+): boolean {
+  const replyLower = reply.toLowerCase();
+  for (const product of products) {
+    const nameLower = product.name.toLowerCase();
+    if (nameLower.length < 3) continue;
+    const idx = replyLower.indexOf(nameLower);
+    if (idx === -1) continue;
+    // Scan text window starting from the product name mention
+    const windowText = reply.slice(idx, Math.min(reply.length, idx + nameLower.length + 80));
+    const moneyMentions = extractMoneyMentions(windowText);
+    for (const mention of moneyMentions) {
+      const sameUSD = (mention.currency === 'USD') === (product.currency === 'USD');
+      if (sameUSD && Math.round(mention.amount) !== Math.round(product.price)) {
+        return true; // this product was paired with the wrong price
+      }
+    }
+  }
+  return false;
 }
 
 /**

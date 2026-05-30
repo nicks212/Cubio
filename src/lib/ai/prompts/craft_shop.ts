@@ -114,11 +114,14 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
     const sb = scoreProduct(b, q, customerBudget) + (retrievalConfidenceByName.get(b.name) ?? 0) * 10 + (available.length - posB) * 0.1;
     return sb - sa;
   });
-  const relevantPool = shouldListSpecificProducts
-    ? sorted.slice(0, retrievalHits.length > 0 || context.imageSearchQuery ? 3 : 5)
-    : [];
-  const top3 = relevantPool.slice(0, 3);
-  const rest = relevantPool.slice(3);
+  // When multiple products match, expand pool to show all of them (up to 6) so AI presents
+  // the full matched range. Single-hit or image queries get top-3 for focused recommendation.
+  const poolCap = retrievalHits.length >= 2 ? Math.min(retrievalHits.length, 6)
+    : retrievalHits.length === 1 || !!context.imageSearchQuery ? 3
+    : 5;
+  const relevantPool = shouldListSpecificProducts ? sorted.slice(0, poolCap) : [];
+  const topProducts = relevantPool.slice(0, poolCap);
+  const rest = relevantPool.slice(poolCap);
 
   // Budget gap: customer's stated budget is below the cheapest available item.
   // Backend detects this so AI never has to guess — it just follows the injected note.
@@ -143,15 +146,17 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
     : '';
   const answerMode = needsClarifyingQuestion
     ? 'ANSWER MODE: The message is too vague to recommend a specific product safely. Ask exactly one short clarifying question based on type / occasion / material / zodiac / budget. Do NOT suggest a product name or price yet.'
-    : shouldUseCatalogOverview && top3.length === 0
+    : shouldUseCatalogOverview && topProducts.length === 0
       ? 'ANSWER MODE: Use CATALOG OVERVIEW and COMPANY INFO only. Do NOT invent, name, or imply any specific product — only describe category/material/price patterns from the overview. If the customer wants a specific product, ask one short clarifying question.'
-      : !hasGoodRetrieval && hasRetrieval
-        ? 'ANSWER MODE: The TOP PRODUCTS below are the closest catalog matches found. Describe what is listed. If none fit perfectly, ask one short clarifying question (type / material / zodiac / budget). Never name a product not listed below.'
-        : 'ANSWER MODE: Answer naturally from verified catalog facts. If the customer asks multiple questions, answer the supported parts first. For any unsupported part, say briefly that the exact detail is not in the catalog and invite them to visit or call if COMPANY INFO is available.';
+      : retrievalHits.length >= 2
+        ? `ANSWER MODE: ${retrievalHits.length} matching products found. Present EVERY item in TOP PRODUCTS individually with its name and price — do NOT summarize, group, or omit any of them.`
+        : !hasGoodRetrieval && hasRetrieval
+          ? 'ANSWER MODE: The TOP PRODUCTS below are the closest catalog matches found. Describe what is listed. If none fit perfectly, ask one short clarifying question (type / material / zodiac / budget). Never name a product not listed below.'
+          : 'ANSWER MODE: Answer naturally from verified catalog facts. If the customer asks multiple questions, answer the supported parts first. For any unsupported part, say briefly that the exact detail is not in the catalog and invite them to visit or call if COMPANY INFO is available.';
 
-  // Top 3 — full detail; compact photo metadata (no raw URLs)
-  const detailedList = top3.length > 0
-    ? top3.map(p => {
+  // All retrieved products — full detail; compact photo metadata (no raw URLs)
+  const detailedList = topProducts.length > 0
+    ? topProducts.map(p => {
         const sym = p.currency === 'USD' ? '$' : '₾';
         const parts: string[] = [`• ${p.name}: ${sym}${p.price}`];
         if (p.category) parts.push(p.category);
@@ -168,7 +173,7 @@ export function buildCraftShopSystemPrompt(context: ProductContext, userQuery = 
         : '(No products currently available)';
 
   // Overflow summary
-  const overflowCount = Math.max(available.length - top3.length, 0);
+  const overflowCount = Math.max(available.length - topProducts.length, 0);
   const overflowNote = overflowCount > 0
     ? `\n+${overflowCount} more available in catalog — ask for a type, material, symbol, zodiac, or budget.`
     : '';
