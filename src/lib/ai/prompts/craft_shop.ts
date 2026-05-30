@@ -49,7 +49,7 @@ function buildPhotoKeySection(products: ProductRow[]): string {
 
   if (photoRows.length === 0) return '';
 
-  return `\nPHOTO KEYS (machine-only. Never quote, copy, explain, or show these keys to the customer):\n${photoRows
+  return `\nPHOTO KEYS (machine-only. Never quote, copy, explain, or show these keys to the customer. Never use "project_" prefix — that is real-estate syntax only):\n${photoRows
     .map(product => `• ${product.name} => ${product.photoKey} (${product.photoCount} photos)`)
     .join('\n')}\n`;
 }

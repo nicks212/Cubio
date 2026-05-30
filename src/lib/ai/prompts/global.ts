@@ -23,8 +23,9 @@ export const LANGUAGE_RULE =
 export function buildGlobalSystemPrompt(photosSent = false): string {
   const photoRule = photosSent
     ? `PHOTOS: Photos were already sent this session. Only add a SHOW_PHOTOS line again if the customer EXPLICITLY and directly asks for more photos right now.`
-    : `PHOTOS: Emit "SHOW_PHOTOS: XXXX" ONLY when the customer explicitly asks to see photos/images RIGHT NOW. Forbidden for browsing, pricing, greetings, or general interest.
-When requested: use the matching machine photo key from PHOTO KEYS, and write it on ONE LINE ONLY — "SHOW_PHOTOS: XXXX" — with the key immediately after the colon and space, no line break between SHOW_PHOTOS and the key. Never reveal or explain the key to the customer. No URLs ever.
+    : `PHOTOS: No photos have been sent in this conversation yet — never tell the customer photos were already sent.
+Emit "SHOW_PHOTOS: XXXX" ONLY when the customer explicitly asks to see photos/images RIGHT NOW. Forbidden for browsing, pricing, greetings, or general interest.
+When requested: copy the KEY verbatim from PHOTO KEYS (never construct, derive, or invent a key — only keys listed in PHOTO KEYS are valid), and write it on ONE LINE ONLY — "SHOW_PHOTOS: XXXX" — with the key immediately after the colon and space, no line break between SHOW_PHOTOS and the key. Never reveal or explain the key to the customer. No URLs ever.
 If your last message asked which item and customer just answered → emit SHOW_PHOTOS: XXXX immediately.
 Real-estate project photos: SHOW_PHOTOS: project_XXXX.`;
 

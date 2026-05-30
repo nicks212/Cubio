@@ -552,6 +552,11 @@ export async function processIncomingMessage(
   //   3. Business is a craft_shop (apartment photos use a separate project/apt path)
   // Action: run retrieval against the customer's message, find the top product with images,
   //         and send those photos directly without depending on AI key generation.
+  //
+  // NOTE: isImg check intentionally omitted — buildPhotoKeySection uses startsWith('http')
+  //       only; adding an extension filter here causes a silent mismatch where PHOTO KEYS
+  //       reports N photos but none resolve (Supabase/CDN URLs often omit extensions).
+  let fallbackProductName: string | null = null;
   if (
     explicitPhotoRequest &&
     imageUrlsToSend.length === 0 &&
@@ -559,15 +564,31 @@ export async function processIncomingMessage(
   ) {
     const prodCtxFallback = finalBusinessContext as ProductContext;
     if (prodCtxFallback.products?.length > 0) {
-      const isImg = (u: string) => /\.(webp|jpg|jpeg|png)/i.test(u);
-      const fallbackHits = retrieveProducts(prodCtxFallback.products, combinedMessage, 0.28);
+      // Use a low threshold (0.12) so romanized/transliterated queries still match.
+      // e.g. "ki, katebis foto" scores 0.122 for Kitten Tarot via prefix hit on "ki"→"kitten".
+      const fallbackHits = retrieveProducts(prodCtxFallback.products, combinedMessage, 0.12);
       for (const hit of fallbackHits) {
         const p = prodCtxFallback.products.find(pr => pr.name === hit.name);
-        const photos = p?.images?.filter(u => u.startsWith('http') && isImg(u)) ?? [];
+        const photos = p?.images?.filter(u => u.startsWith('http')) ?? [];
         if (photos.length > 0) {
           imageUrlsToSend.push(...photos);
-          console.info(`${label} [photo-fallback] Backend delivery for "${hit.name}" (conf:${hit.confidence.toFixed(2)}) — ${photos.length} photo(s)`);
+          fallbackProductName = p!.name;
+          console.info(`${label} [photo-fallback] Retrieval match "${hit.name}" (conf:${hit.confidence.toFixed(2)}) — ${photos.length} photo(s)`);
           break;
+        }
+      }
+      // Last resort: use the top context product (already vector-ranked as most relevant).
+      // Fires when token retrieval scores every product below 0.12 (e.g. pure Georgian script
+      // with no token overlap) but vector search already identified the correct product.
+      if (imageUrlsToSend.length === 0) {
+        const topProd = prodCtxFallback.products.find(p =>
+          p.images?.some(u => u.startsWith('http'))
+        );
+        if (topProd) {
+          const photos = (topProd.images ?? []).filter(u => u.startsWith('http'));
+          imageUrlsToSend.push(...photos);
+          fallbackProductName = topProd.name;
+          console.info(`${label} [photo-fallback] Context-top product "${topProd.name}" — ${photos.length} photo(s)`);
         }
       }
     }
@@ -685,10 +706,13 @@ export async function processIncomingMessage(
       integration.accessToken,
       integration.providerAccountId,
     );
-    // Persist which apartment was shown + mark photos_sent for next turn's state
+    // Persist which product/apt was shown + mark photos_sent for next turn's state.
+    // showPhotosMatch is null when the backend-driven fallback sent photos (AI didn't emit
+    // SHOW_PHOTOS), so use fallbackProductName as the identifier in that case.
+    const shownIdentifier = showPhotosMatch ? showPhotosMatch[1].trim() : (fallbackProductName ?? '');
     await supabase.from('conversations').update({
       photos_sent: true,
-      last_shown_apt: showPhotosMatch![1].trim(),
+      last_shown_apt: shownIdentifier,
     }).eq('id', conversationId);
   }
 
@@ -819,8 +843,9 @@ function resolvePhotoUrls(
       console.warn(`${label} SHOW_PHOTOS: product "${identifier.slice(0, 40)}" not found in loaded context — sending nothing`);
       return [];
     }
-    const isImg = (u: string) => /\.(webp|jpg|jpeg|png)/i.test(u);
-    const photos = prod.images?.filter(u => u.startsWith('http') && isImg(u)) ?? [];
+    // isImg extension check intentionally omitted — URLs stored by Supabase/CDN uploads
+    // may omit the extension. buildPhotoKeySection already counts all http URLs.
+    const photos = (prod.images ?? []).filter(u => u.startsWith('http'));
     console.info(`${label} SHOW_PHOTOS: resolved ${photos.length} image(s) for product ${prod.name}`);
     return photos;
   }
