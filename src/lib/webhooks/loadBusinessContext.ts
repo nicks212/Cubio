@@ -122,8 +122,10 @@ export async function loadBusinessContext(
 
   // Deterministic text retrieval — catches romanized/transliterated queries that
   // vector search may miss (e.g. "taro" vs ტარო, "silver ring" vs ვერცხლის ბეჭედი).
-  // Merges retrieval hits into the priority front without displacing vector-search results.
-  if (options.textQuery?.trim()) {
+  // Runs ONLY when vector search found nothing — vector is primary, token is fallback.
+  // If vector already returned matches, those are already at the front; running token
+  // retrieval on top would mix a 3rd ranking signal and potentially displace better matches.
+  if (!options.priorityProductNames?.length && options.textQuery?.trim()) {
     const retrievalHits = retrieveProducts(allProducts, options.textQuery);
     if (retrievalHits.length > 0) {
       const top = retrievalHits[0];
