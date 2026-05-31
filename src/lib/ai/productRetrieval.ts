@@ -37,77 +37,6 @@ export function geoToLatin(text: string): string {
 
 /**
  * Common transliterated Georgian suffix endings that change a word's grammatical
- * form without changing its semantic root.
- *
- * These are the Latin-script equivalents that geoToLatin() produces from Georgian
- * grammatical suffixes: plural (-ები), genitive (-ის/-ს), instrumental (-ით),
- * locative (-ში/-ზე), dative (-ს), adverbial (-ად).
- *
- * Stripping them allows "chxirebi" (plural) to match product "chxiri" (singular),
- * "samajuris" (genitive) to match "samajuri", etc. — without any hardcoded
- * synonym mappings specific to a business type.
- *
- * Sorted longest-first so greedy matching removes the longest applicable suffix.
- */
-// Georgian morphological endings (longest-first for greedy stripping).
-// Includes the common nominative case ending 'i' (e.g. "კიტენი"→"kiteni"→"kiten")
-// so phonetic partial matches work for inflected Georgian brand-name spellings.
-const GEO_SUFFIXES = ['ebi', 'ebis', 'ebs', 'shi', 'its', 'ad', 'ze', 'is', 'it', 'eb', 's', 'i'];
-
-/**
- * Strips the longest known Georgian morphological suffix from a Latin-script token.
- * Returns the stemmed token (or the original if no suffix matches).
- * Requires the stem to be at least 3 characters after stripping.
- */
-function stemGeoToken(token: string): string {
-  for (const suffix of GEO_SUFFIXES) {
-    if (token.endsWith(suffix) && token.length - suffix.length >= 3) {
-      return token.slice(0, token.length - suffix.length);
-    }
-  }
-  return token;
-}
-
-/**
- * Normalizes a raw query string to a canonical Latin form for cross-script matching:
- *  1. Lowercase
- *  2. Convert Georgian script via geoToLatin
- *  3. Strip non-alphanumeric except hyphens
- *
- * Synonym/shortcut mappings are intentionally absent — semantic matching is
- * handled by the pgvector embedding layer (searchSimilarProducts).  This function
- * is responsible only for script normalization so token-based matching can work
- * across Georgian script, romanized Georgian, and Latin queries.
- */
-export function normalizeQuery(query: string): string {
-  let q = query.toLowerCase().trim();
-  q = geoToLatin(q);
-  q = q.replace(/[^a-z0-9\s-]/g, ' ').replace(/\s+/g, ' ').trim();
-  return q;
-}
-
-type ProductLike = {
-  name: string;
-  category?: string | null;
-  description?: string | null;
-  material?: string | null;
-  birthstones?: string | null;
-  zodiac_compatibility?: string[] | null;
-};
-
-/**
- * Returns true when a and b are within edit distance 1 — i.e. identical, or differ
- * by exactly one insertion, deletion, or substitution.  O(max(|a|,|b|)) — no DP matrix
- * needed since we only care about whether the distance is ≤ 1.
- *
- * Used as a fuzzy fallback in countHits() to catch:
- *   - One-character transliteration gaps: "kiten" ↔ "kitten" (single 't' insertion)
- *   - Minor typos: "tarto" ↔ "tarot" (transposition reads as 2 substitutions but ED=2,
- *     so those are correctly NOT matched — only genuine single-char errors qualify)
- */
-export function withinEditDistance1(a: string, b: string): boolean {
-  const la = a.length, lb = b.length;
-  if (Math.abs(la - lb) > 1) return false;
   if (la === lb) {
     // Allow exactly 0 or 1 substitution
     let diffs = 0;
@@ -116,31 +45,18 @@ export function withinEditDistance1(a: string, b: string): boolean {
     }
     return true;
   }
-  // Lengths differ by 1 — check if shorter is inside longer with one gap (1 insertion)
-  const [shorter, longer] = la < lb ? [a, b] : [b, a];
-  let si = 0, li = 0, skipped = 0;
-  while (si < shorter.length && li < longer.length) {
-    if (shorter[si] === longer[li]) { si++; li++; }
-    else if (++skipped > 1) return false;
-    else li++;
-  }
-  return true;
-}
 
-/**
- * Scores one product against a normalized query using stem-aware token matching.
- *
- * Matching strategy:
- * 1. Both query tokens and product field tokens are stemmed via stemGeoToken()
- *    before comparison.  This lets inflected forms ("chxirebi") match base forms
- *    ("chxiri") without any hardcoded synonym tables.
- * 2. Fields are weighted by specificity: name > category/material > description/keywords > zodiac
- * 3. Confidence is normalized to 0–1 against the theoretical maximum score.
- */
-export function scoreProductRetrieval(
-  product: ProductLike,
-  normalizedQuery: string,
-): { score: number; confidence: number; reason: string } {
+// ...existing code...
+
+// When returning product matches for craft_shop, always cap at 3 results for prompt efficiency
+export function getTopProductMatches(matches: RetrievalMatch[], products: ProductLike[], max = 3): ProductLike[] {
+  const sorted = matches
+    .sort((a, b) => b.confidence - a.confidence)
+    .map(m => products.find(p => p.name === m.name))
+    .filter(Boolean) as ProductLike[];
+  return sorted.slice(0, max);
+}
+// ...existing code...
   const tokens = (normalizedQuery.match(/[a-z0-9]{2,}/g) ?? []).map(stemGeoToken);
   if (!tokens.length) return { score: 0, confidence: 0, reason: 'empty' };
 

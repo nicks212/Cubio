@@ -26,8 +26,37 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { persistAIUsage, type AIUsageContext } from './usage';
 import type { ApartmentContext, ProductContext } from './types';
 
+// ─── Embedding Model Health Check (Startup) ───────────────────────────────
+let embeddingModelHealthy = false;
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
-const embeddingModel = genAI.getGenerativeModel({ model: 'models/embedding-001' });
+let embeddingModel: ReturnType<GoogleGenerativeAI['getGenerativeModel']> | undefined;
+try {
+  embeddingModel = genAI.getGenerativeModel({ model: 'models/embedding-001' });
+  // Run a test embedding call at startup
+  (async () => {
+    try {
+      const result = await embeddingModel!.embedContent({
+        content: { parts: [{ text: 'health check' }], role: 'user' },
+        taskType: TaskType.RETRIEVAL_QUERY,
+      });
+      if (result && result.embedding && Array.isArray(result.embedding.values)) {
+        embeddingModelHealthy = true;
+        console.info('[embeddings] Embedding model health check: OK');
+      } else {
+        embeddingModelHealthy = false;
+        console.error('[embeddings] Embedding model health check: Unexpected result structure', result);
+      }
+    } catch (err) {
+      embeddingModelHealthy = false;
+      console.error('[embeddings] Embedding model health check failed:', err);
+    }
+  })();
+} catch (err) {
+  embeddingModelHealthy = false;
+  console.error('[embeddings] Failed to initialize embedding model:', err);
+}
+
+// (moved above)
 
 // ─── Image description ────────────────────────────────────────────────────────
 
@@ -80,21 +109,33 @@ export async function describeImageForSearch(
 // ─── Text embedding ───────────────────────────────────────────────────────────
 
 /**
- * Generates a 768-dimensional text embedding using Google's text-embedding-004.
- * Returns null on failure.
+ * Generates a 768-dimensional text embedding using Google's embedding-001.
+ * Returns null on failure. Logs detailed errors.
  */
 export async function generateTextEmbedding(
   text: string,
   taskType: TaskType = TaskType.RETRIEVAL_QUERY,
 ): Promise<number[] | null> {
+  if (!embeddingModelHealthy || !embeddingModel) {
+    console.error('[embeddings] generateTextEmbedding: Embedding model is not healthy. Check API key, quota, or model availability.');
+    return null;
+  }
   try {
     const result = await embeddingModel.embedContent({
       content: { parts: [{ text }], role: 'user' },
       taskType,
     });
+    if (!result || !result.embedding || !Array.isArray(result.embedding.values)) {
+      console.error('[embeddings] generateTextEmbedding: Unexpected result structure', result);
+      return null;
+    }
     return result.embedding.values;
   } catch (err) {
-    console.warn('[embeddings] generateTextEmbedding failed (non-fatal):', err);
+    if (err && typeof err === 'object' && 'message' in err) {
+      console.error('[embeddings] generateTextEmbedding failed:', err.message, err);
+    } else {
+      console.error('[embeddings] generateTextEmbedding failed:', err);
+    }
     return null;
   }
 }

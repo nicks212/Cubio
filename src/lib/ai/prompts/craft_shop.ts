@@ -46,10 +46,10 @@ export function buildCraftShopSystemPrompt(
   userQuery = '',
   opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean } = {},
 ): string {
-  // context.products is pre-ranked: vector hits first, token hits second, rest last.
-  // Top 6 covers multi-product queries like "what tarots do you have?".
+
+  // Only show top 3 products, only essential fields
   const available = context.products.filter(p => p.in_stock);
-  const products = available.slice(0, 6);
+  const products = available.slice(0, 3);
   const hasProducts = products.length > 0;
 
   const productLines = hasProducts
@@ -57,10 +57,11 @@ export function buildCraftShopSystemPrompt(
         const sym = p.currency === 'USD' ? '$' : '₾';
         const parts: string[] = [`• ${p.name}: ${sym}${p.price}`];
         if (p.category) parts.push(p.category);
-        if (p.material) parts.push(p.material);
-        if (p.zodiac_compatibility?.length) parts.push(`zodiac: ${p.zodiac_compatibility.join(', ')}`);
-        if (p.birthstones) parts.push(`stones: ${p.birthstones}`);
-        if (p.description) parts.push(`desc: ${p.description.slice(0, 150)}`);
+        // Only include a short description if present
+        if (p.description) parts.push(`desc: ${p.description.slice(0, 200)}`);
+        // Indicate image availability
+        if (p.images && p.images.length > 0) parts.push('image: yes');
+        else parts.push('image: no');
         return parts.join(' | ');
       }).join('\n')
     : '(no products matched this message)';

@@ -129,7 +129,8 @@ export async function generateReply(
       'CATALOG AUTHORITY: The PRODUCTS section in the craft shop prompt is the SOLE authoritative source for names, prices, availability, and attributes. ' +
       'If PRODUCTS conflicts with conversation history, PRODUCTS is always correct. ' +
       'If PRODUCTS shows "(no products matched this message)", do NOT mention any product name or price — only ask for clarification. ' +
-      'Never state a price, product name, or attribute that does not appear in the current PRODUCTS list.',
+      'Never state a price, product name, or attribute that does not appear in the current PRODUCTS list. ' +
+      'You may only reference products present in the PRODUCTS section. Do not invent, estimate, or suggest products not listed.'
     );
   }
   if (!isFirstMessage) {

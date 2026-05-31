@@ -85,9 +85,11 @@ export async function loadBusinessContext(
     return { apartments: allApartments, businessDescription };
   }
 
+
+  // Only select essential fields for prompt efficiency
   const { data: products, error: prodError } = await supabase
     .from('products')
-    .select('name, price, currency, category, zodiac_compatibility, birthstones, material, in_stock, images, description')
+    .select('name, price, currency, category, in_stock, images, description')
     .eq('company_id', companyId)
     .eq('in_stock', true)
     .is('deleted_at', null)
