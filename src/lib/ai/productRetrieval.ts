@@ -93,7 +93,6 @@ type ProductLike = {
   material?: string | null;
   birthstones?: string | null;
   zodiac_compatibility?: string[] | null;
-  keywords?: string | null;
 };
 
 /**
@@ -154,7 +153,6 @@ export function scoreProductRetrieval(
   const catTokens  = stemTokens(product.category ?? '');
   const matTokens  = stemTokens(product.material ?? '');
   const dscTokens  = stemTokens(product.description ?? '');
-  const kwTokens   = stemTokens(product.keywords ?? '');
   const stTokens   = stemTokens(product.birthstones ?? '');
   const zodTokens  = (product.zodiac_compatibility ?? []).flatMap(z => stemTokens(z));
 
@@ -207,12 +205,7 @@ export function scoreProductRetrieval(
     if (!reason) reason = `${matHits} material tokens`;
   }
 
-  // 4. Keywords — 1.5 each (business-provided search terms)
-  const kwHits = countHits(kwTokens);
-  if (kwHits > 0) {
-    score += kwHits * 1.5;
-    if (!reason) reason = `${kwHits} keyword tokens`;
-  }
+  // (keywords removed)
 
   // 5. Description tokens — 1.0 each, capped at 3
   const dscHits = Math.min(countHits(dscTokens), 3);

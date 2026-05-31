@@ -389,10 +389,6 @@ export default function ProductsClient({
                 <label className="block text-sm font-medium mb-2">{t('products.description')}</label>
                 <textarea name="description" rows={3} defaultValue={editing?.description ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none" />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">{t('products.keywords')}</label>
-                <input name="keywords" defaultValue={editing?.keywords ?? ''} placeholder={t('products.keywords_placeholder')} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
-              </div>
               <div className="flex items-center gap-3">
                 <input name="in_stock" type="checkbox" id="in_stock" value="true" defaultChecked={editing?.in_stock ?? true} className="w-4 h-4 accent-primary" />
                 <label htmlFor="in_stock" className="text-sm font-medium">{t('products.in_stock')}</label>

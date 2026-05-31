@@ -6,4 +6,3 @@
 -- so retrieval quality improves automatically when the field is populated — with
 -- no code changes required per business type.
 
-ALTER TABLE products ADD COLUMN IF NOT EXISTS keywords TEXT;

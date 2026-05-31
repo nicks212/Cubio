@@ -87,7 +87,7 @@ export async function loadBusinessContext(
 
   const { data: products, error: prodError } = await supabase
     .from('products')
-    .select('name, price, currency, category, zodiac_compatibility, birthstones, material, in_stock, images, description, keywords')
+    .select('name, price, currency, category, zodiac_compatibility, birthstones, material, in_stock, images, description')
     .eq('company_id', companyId)
     .eq('in_stock', true)
     .is('deleted_at', null)
@@ -99,7 +99,7 @@ export async function loadBusinessContext(
     console.warn('[loadBusinessContext] product query failed, retrying without currency:', prodError.message);
     const { data: prodFallback } = await supabase
       .from('products')
-      .select('name, price, category, zodiac_compatibility, birthstones, material, in_stock, images, description, keywords')
+      .select('name, price, category, zodiac_compatibility, birthstones, material, in_stock, images, description')
       .eq('company_id', companyId)
       .eq('in_stock', true)
       .is('deleted_at', null)

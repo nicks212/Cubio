@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 
   const { data: products, error } = await supabase
     .from('products')
-    .select('id, name, price, currency, category, material, birthstones, zodiac_compatibility, in_stock, images, description, keywords')
+    .select('id, name, price, currency, category, material, birthstones, zodiac_compatibility, in_stock, images, description')
     .is('deleted_at', null);
 
   if (error) {
@@ -48,7 +48,6 @@ export async function GET(request: Request) {
     in_stock: boolean;
     images: string[];
     description: string | null;
-    keywords: string | null;
   }>;
 
   let success = 0;
@@ -66,7 +65,6 @@ export async function GET(request: Request) {
       in_stock: row.in_stock,
       images: row.images,
       description: row.description,
-      keywords: row.keywords,
     });
     if (ok) { success++; } else { failed++; }
   }
