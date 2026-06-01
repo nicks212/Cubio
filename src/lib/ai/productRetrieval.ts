@@ -43,15 +43,33 @@ export function withinEditDistance2(a: string, b: string): boolean {
 // Georgian morphological endings (longest-first for greedy stripping).
 const GEO_SUFFIXES = ['ebi', 'ebis', 'ebs', 'shi', 'its', 'ad', 'ze', 'is', 'it', 'eb', 's', 'i'];
 
+// Latin vowels used for consonant-cluster detection in stemGeoToken.
+const LATIN_VOWELS = new Set(['a', 'e', 'i', 'o', 'u']);
+
 /**
  * Strips the longest known Georgian morphological suffix from a Latin-script token.
  * Returns the stemmed token (or the original if no suffix matches).
  * Requires the stem to be at least 3 characters after stripping.
+ *
+ * Consonant-cluster guard: if stripping a suffix leaves the stem ending in two
+ * consecutive non-vowels (e.g. 'ebi' from "santlebi" → "santl", ending in CC 'tl'),
+ * that suffix is skipped and the next candidate is tried.  This prevents over-stripping
+ * that produces misleading short stems — e.g. "santl" which ed-1 matches "santa".
  */
 export function stemGeoToken(token: string): string {
   for (const suffix of GEO_SUFFIXES) {
     if (token.endsWith(suffix) && token.length - suffix.length >= 3) {
-      return token.slice(0, token.length - suffix.length);
+      const stem = token.slice(0, token.length - suffix.length);
+      // Reject stems that end in a consonant cluster (CC at tail).
+      // A valid Georgian morphological stem ends in a vowel or single consonant.
+      if (
+        stem.length >= 2 &&
+        !LATIN_VOWELS.has(stem[stem.length - 1]) &&
+        !LATIN_VOWELS.has(stem[stem.length - 2])
+      ) {
+        continue; // try the next shorter suffix
+      }
+      return stem;
     }
   }
   return token;
