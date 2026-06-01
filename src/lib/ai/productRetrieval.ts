@@ -19,6 +19,27 @@ export function withinEditDistance1(a: string, b: string): boolean {
   }
   return true;
 }
+// Returns true when a and b are within edit distance 2.
+// Used for Georgian oblique-stem metathesis where a vowel and consonant swap position
+// (e.g. santleb ↔ santel: transposition + deletion = ed 2, beyond withinEditDistance1).
+// Only applied to tokens ≥ 5 chars to keep false-positive risk low.
+export function withinEditDistance2(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 2) return false;
+  if (withinEditDistance1(a, b)) return true;
+  const m = a.length, n = b.length;
+  const row = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = i - 1;
+    row[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const val = row[j];
+      row[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, row[j], row[j - 1]);
+      prev = val;
+    }
+    if (Math.min(...row) > 2) return false; // early exit
+  }
+  return row[n] <= 2;
+}
 // Georgian morphological endings (longest-first for greedy stripping).
 const GEO_SUFFIXES = ['ebi', 'ebis', 'ebs', 'shi', 'its', 'ad', 'ze', 'is', 'it', 'eb', 's', 'i'];
 
@@ -52,15 +73,17 @@ export function scoreProductRetrieval(product: ProductLike, normalizedQuery: str
   const zodTokens  = (product.zodiac_compatibility ?? []).flatMap(z => stemTokens(z));
 
   // Helper: count how many query tokens have at least one stemmed field token that
-  // matches exactly, matches by prefix (partial coverage), OR is within edit distance 1
-  // for tokens of length ≥ 4 (handles single-char transliteration gaps like kiten↔kitten).
+  // matches exactly, matches by prefix (partial coverage), is within edit distance 1
+  // for tokens of length ≥ 4, OR is within edit distance 2 for tokens of length ≥ 5.
+  // The ed-2 arm catches Georgian oblique-stem metathesis (e.g. santleb ↔ santel).
   const countHits = (fieldTokens: string[]) =>
     tokens.filter(qt =>
       fieldTokens.some(ft =>
         ft === qt ||
         ft.startsWith(qt) ||
         qt.startsWith(ft) ||
-        (qt.length >= 4 && ft.length >= 4 && withinEditDistance1(qt, ft))
+        (qt.length >= 4 && ft.length >= 4 && withinEditDistance1(qt, ft)) ||
+        (qt.length >= 5 && ft.length >= 5 && withinEditDistance2(qt, ft))
       )
     ).length;
 
@@ -215,15 +238,17 @@ export function getTopProductMatches(matches: RetrievalMatch[], products: Produc
   const zodTokens  = (product.zodiac_compatibility ?? []).flatMap(z => stemTokens(z));
 
   // Helper: count how many query tokens have at least one stemmed field token that
-  // matches exactly, matches by prefix (partial coverage), OR is within edit distance 1
-  // for tokens of length ≥ 4 (handles single-char transliteration gaps like kiten↔kitten).
+  // matches exactly, matches by prefix (partial coverage), is within edit distance 1
+  // for tokens of length ≥ 4, OR is within edit distance 2 for tokens of length ≥ 5.
+  // The ed-2 arm catches Georgian oblique-stem metathesis (e.g. santleb ↔ santel).
   const countHits = (fieldTokens: string[]) =>
     tokens.filter(qt =>
       fieldTokens.some(ft =>
         ft === qt ||
         ft.startsWith(qt) ||
         qt.startsWith(ft) ||
-        (qt.length >= 4 && ft.length >= 4 && withinEditDistance1(qt, ft))
+        (qt.length >= 4 && ft.length >= 4 && withinEditDistance1(qt, ft)) ||
+        (qt.length >= 5 && ft.length >= 5 && withinEditDistance2(qt, ft))
       )
     ).length;
 
