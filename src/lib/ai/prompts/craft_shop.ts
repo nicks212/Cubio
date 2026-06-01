@@ -47,9 +47,9 @@ export function buildCraftShopSystemPrompt(
   opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean } = {},
 ): string {
 
-  // Only show top 3 products, only essential fields
+  // Show top 6 pre-ranked products — compact fields only
   const available = context.products.filter(p => p.in_stock);
-  const products = available.slice(0, 3);
+  const products = available.slice(0, 6);
   const hasProducts = products.length > 0;
 
   const productLines = hasProducts
@@ -57,11 +57,7 @@ export function buildCraftShopSystemPrompt(
         const sym = p.currency === 'USD' ? '$' : '₾';
         const parts: string[] = [`• ${p.name}: ${sym}${p.price}`];
         if (p.category) parts.push(p.category);
-        // Only include a short description if present
-        if (p.description) parts.push(`desc: ${p.description.slice(0, 200)}`);
-        // Indicate image availability
-        if (p.images && p.images.length > 0) parts.push('image: yes');
-        else parts.push('image: no');
+        if (p.description) parts.push(p.description.slice(0, 120));
         return parts.join(' | ');
       }).join('\n')
     : '(no products matched this message)';
@@ -79,7 +75,7 @@ export function buildCraftShopSystemPrompt(
   // returned 0 results (e.g. bare "ფოტო?" with no product keyword in the message).
   // Hidden on non-photo turns when retrieval found nothing — prevents SHOW_PHOTOS on
   // vague queries like "რა ღირს" (price question with no specific product in context).
-  const photoKeys = (hasProducts || opts.photoIntent) ? buildPhotoKeySection(available) : '';
+  const photoKeys = (hasProducts || opts.photoIntent) ? buildPhotoKeySection(products) : '';
 
   // ── Conditional instruction blocks ──────────────────────────────────────────
   const modeLines: string[] = [];

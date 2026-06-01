@@ -31,7 +31,7 @@ let embeddingModelHealthy = false;
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
 let embeddingModel: ReturnType<GoogleGenerativeAI['getGenerativeModel']> | undefined;
 try {
-  embeddingModel = genAI.getGenerativeModel({ model: 'models/embedding-001' });
+  embeddingModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
   // Run a test embedding call at startup
   (async () => {
     try {

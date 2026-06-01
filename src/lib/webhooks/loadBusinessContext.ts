@@ -86,14 +86,16 @@ export async function loadBusinessContext(
   }
 
 
-  // Only select essential fields for prompt efficiency
+  // Fetch up to 20 products — enough for retrieval ranking without loading the entire catalog.
+  // Vector/token retrieval promotes the best matches to the front; prompt builder slices to 6.
   const { data: products, error: prodError } = await supabase
     .from('products')
     .select('name, price, currency, category, in_stock, images, description')
     .eq('company_id', companyId)
     .eq('in_stock', true)
     .is('deleted_at', null)
-    .order('name', { ascending: true });
+    .order('name', { ascending: true })
+    .limit(20);
 
   // Fallback: if `currency` column doesn't exist yet (migration pending), retry without it
   let finalProducts = products;
@@ -101,11 +103,12 @@ export async function loadBusinessContext(
     console.warn('[loadBusinessContext] product query failed, retrying without currency:', prodError.message);
     const { data: prodFallback } = await supabase
       .from('products')
-      .select('name, price, category, zodiac_compatibility, birthstones, material, in_stock, images, description')
+      .select('name, price, category, in_stock, images, description')
       .eq('company_id', companyId)
       .eq('in_stock', true)
       .is('deleted_at', null)
-      .order('name', { ascending: true });
+      .order('name', { ascending: true })
+      .limit(20);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     finalProducts = prodFallback as any;
   }
