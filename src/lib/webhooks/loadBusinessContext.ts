@@ -88,14 +88,17 @@ export async function loadBusinessContext(
 
   // Fetch up to 20 products — enough for retrieval ranking without loading the entire catalog.
   // Vector/token retrieval promotes the best matches to the front; prompt builder slices to 6.
+  // Load up to 200 products without an alphabetical ordering bias.
+  // ORDER BY name ASC caused Latin-script products (tarot, crystals) to always precede
+  // Georgian-script products (jewelry, candles) in the 20-item window, silently
+  // excluding entire categories before retrieval even started.
   const { data: products, error: prodError } = await supabase
     .from('products')
     .select('name, price, currency, category, in_stock, images, description')
     .eq('company_id', companyId)
     .eq('in_stock', true)
     .is('deleted_at', null)
-    .order('name', { ascending: true })
-    .limit(20);
+    .limit(200);
 
   // Fallback: if `currency` column doesn't exist yet (migration pending), retry without it
   let finalProducts = products;
@@ -107,8 +110,7 @@ export async function loadBusinessContext(
       .eq('company_id', companyId)
       .eq('in_stock', true)
       .is('deleted_at', null)
-      .order('name', { ascending: true })
-      .limit(20);
+      .limit(200);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     finalProducts = prodFallback as any;
   }
@@ -130,9 +132,11 @@ export async function loadBusinessContext(
   // Runs ONLY when vector search found nothing — vector is primary, token is fallback.
   // If vector already returned matches, those are already at the front; running token
   // retrieval on top would mix a 3rd ranking signal and potentially displace better matches.
+  let tokenRetrievalHitCount = 0;
   if (!options.priorityProductNames?.length && options.textQuery?.trim()) {
     const retrievalHits = retrieveProducts(allProducts, options.textQuery);
     if (retrievalHits.length > 0) {
+      tokenRetrievalHitCount = retrievalHits.length;
       const top = retrievalHits[0];
       console.info(
         `[loadBusinessContext] retrieval: ${retrievalHits.length} match(es) for "${options.textQuery.slice(0, 40)}" — top: "${top.name}" (conf: ${top.confidence.toFixed(2)}, reason: ${top.reason})`,
@@ -162,5 +166,10 @@ export async function loadBusinessContext(
     }
   }
 
-  return { products: allProducts, businessDescription, imageSearchQuery: options.imageSearchQuery ?? null };
+  return {
+    products: allProducts,
+    businessDescription,
+    imageSearchQuery: options.imageSearchQuery ?? null,
+    ...(tokenRetrievalHitCount > 0 ? { tokenRetrievalHits: tokenRetrievalHitCount } : {}),
+  };
 }

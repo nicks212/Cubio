@@ -22,7 +22,14 @@ export const CHAT_ONLY_RE =
 
 /** High-confidence business queries that should always use the full business prompt, not chat. */
 export const BUSINESS_QUERY_RE =
-  /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items|services)\s+do\s+you\s+have|what'?s\s+available|address|where\s+are\s+you|working\s*hours?|open\s+today|price|cost|catalog|shop|store|buy|purchase|visit|რას\s*(?:ყიდით|ყიდი|გაქვთ)|რა\s*გაქვთ|რა\s*იყიდება|მისამართ|სად\s*(?:ხართ|არის)|სამუშაო\s*საათ|გრაფიკ|ფასი|კატალოგ|მაღაზია|ყიდვა|შეძენა|მაჩვენე|მანახე|რა\s*პროდუქტ/i;
+  /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items|services)\s+do\s+you\s+have|what'?s\s+available|address|where\s+are\s+you|working\s*hours?|open\s+today|price|cost|catalog|shop|store|buy|purchase|visit|რას\s*(?:ყიდით|ყიდი|გაქვთ)|რა\s*გაქვთ|რა\s*იყიდება|მისამართ|სად\s*(?:ხართ|არის)|სამუშაო\s*საათ|გრაფიკ|ფასი|კატალოგ|მაღაზია|ყიდვა|შეძენა|მაჩვენე|მანახე|რა\s*პროდუქტ|\bgaqvt\b|\bgaqvs\b/i;
+
+/** Broad catalog inquiry — no specific product asked, customer wants to browse.
+ *  Used by the prompt builder to distinguish "what do you sell?" (show catalog)
+ *  from a specific category query with no retrieval hit (ask clarifying question).
+ *  Exported here so both processIncomingMessage and the prompt builder share one source. */
+export const CRAFT_BROAD_QUERY_RE =
+  /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items)\s+do\s+you\s+have|what'?s\s+available|catalog|shop|store|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s+[\u10D0-\u10FF\w]+\s*გაქვთ|რა\s*იყიდება|კატალოგ|მაღაზია/i;
 
 /** Message contains a photo/image request anywhere.
  *  Covers Georgian script, romanized Georgian (latin chars), English, Russian. */

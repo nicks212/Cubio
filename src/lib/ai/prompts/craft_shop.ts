@@ -1,4 +1,5 @@
 import type { ProductContext } from '../types';
+import { CRAFT_BROAD_QUERY_RE } from '../signals';
 
 type ProductRow = ProductContext['products'][0];
 
@@ -50,7 +51,23 @@ export function buildCraftShopSystemPrompt(
   // Show top 6 pre-ranked products — compact fields only
   const available = context.products.filter(p => p.in_stock);
   const products = available.slice(0, 6);
-  const hasProducts = products.length > 0;
+
+  // hasProducts: true only when the products in context are query-RELEVANT.
+  // Prevents presenting unrelated products (e.g. tarot) when the customer asked
+  // about a different category (e.g. jewelry, candles) and retrieval found nothing.
+  //
+  // A signal is present when:
+  //   • token retrieval found specific matches (tokenRetrievalHits > 0)
+  //   • vector search found semantic matches   (vectorHits > 0)
+  //   • customer sent a product image          (imageSearchQuery != null)
+  //   • query is a broad catalog browse        ("what do you sell?", "catalog")
+  //     → broad queries always show top products; no specific category is implied.
+  const hasRetrievalSignal =
+    CRAFT_BROAD_QUERY_RE.test(userQuery) ||
+    (context.tokenRetrievalHits ?? 0) > 0 ||
+    (context.vectorHits ?? 0) > 0 ||
+    context.imageSearchQuery != null;
+  const hasProducts = products.length > 0 && hasRetrievalSignal;
 
   const productLines = hasProducts
     ? products.map(p => {

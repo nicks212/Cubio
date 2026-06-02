@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { generateReply } from '@/lib/ai';
 import { analyzeLeadState } from '@/lib/leads/detector';
-import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE } from '@/lib/ai/signals';
+import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE, CRAFT_BROAD_QUERY_RE } from '@/lib/ai/signals';
 import { detectLeadAndEscalation } from '@/lib/ai/detect';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
@@ -19,7 +19,7 @@ import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './ty
 import type { ApartmentContext, ProductContext, BusinessContext } from '@/lib/ai/types';
 import type { PhotoType } from '@/lib/ai/intentDetector';
 
-const CRAFT_BROAD_QUERY_RE = /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items)\s+do\s+you\s+have|what'?s\s+available|catalog|shop|store|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s+[\u10D0-\u10FF\w]+\s*გაქვთ|რა\s*იყიდება|კატალოგ|მაღაზია/i;
+// CRAFT_BROAD_QUERY_RE imported from signals.ts
 const CRAFT_RECOMMENDATION_RE = /\b(?:recommend|suggest|offer|we\s+have|try|look\s+at|შემოგთავაზ|გირჩევ|გთავაზობთ|გვაქვს)\b/i;
 
 /**
@@ -498,6 +498,27 @@ export async function processIncomingMessage(
   }
 
   // 8. Generate AI reply — multi-turn structured history, system instruction includes state
+
+  // Temporary retrieval diagnostics — verify full retrieval pipeline state per craft_shop turn.
+  // Shows: how many products were loaded, how many matched retrieval, and what goes into the prompt.
+  if (integration.businessType === 'craft_shop' && 'products' in finalBusinessContext) {
+    const prodCtx = finalBusinessContext as ProductContext;
+    const tokenHits  = prodCtx.tokenRetrievalHits ?? 0;
+    const vectorHitsN = prodCtx.vectorHits ?? 0;
+    const totalHits  = tokenHits + vectorHitsN;
+    const candidates = prodCtx.products.slice(0, totalHits).map(p => p.name);
+    const finalTop6  = prodCtx.products.slice(0, 6).map(p => p.name);
+    console.info(
+      `${label} [retrieval-trace] ` +
+      `query="${combinedMessage.slice(0, 60)}" ` +
+      `intent=${effectiveIntent} ` +
+      `loadedProductCount=${prodCtx.products.length} ` +
+      `retrievalCandidateCount=${totalHits} ` +
+      `retrievalCandidates=${JSON.stringify(candidates)} ` +
+      `finalProductsPassedToPrompt=${JSON.stringify(finalTop6)}`,
+    );
+  }
+
   // Pre-reply signal snapshot logged for every turn — shows lead/frustration balance in server logs.
   // Uses lightweight inline patterns (no extra imports needed) since this is diagnostic only.
   {

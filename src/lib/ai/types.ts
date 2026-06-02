@@ -41,6 +41,8 @@ export interface ProductContext {
    * English DB names (e.g. "ამეთვისტოს გულსაკიდი" vs DB name "Amethyst Pendant").
    */
   vectorHits?: number;
+  /** Number of products matched by deterministic token retrieval for this turn. */
+  tokenRetrievalHits?: number;
 }
 
 export type BusinessContext = ApartmentContext | ProductContext;
