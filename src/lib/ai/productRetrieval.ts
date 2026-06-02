@@ -74,13 +74,17 @@ export function stemGeoToken(token: string): string {
   }
   return token;
 }
-// Score a single product for a query (was previously present, now restored)
-export function scoreProductRetrieval(product: ProductLike, normalizedQuery: string): { score: number; confidence: number; reason: string } {
+// Score a single product for a query.
+// Returns score, confidence, reason, and matchedFields (["field:token"] pairs) for diagnostics.
+export function scoreProductRetrieval(
+  product: ProductLike,
+  normalizedQuery: string,
+): { score: number; confidence: number; reason: string; matchedFields: string[] } {
   const tokens = (normalizedQuery.match(/[a-z0-9]{2,}/g) ?? []).map(stemGeoToken);
-  if (!tokens.length) return { score: 0, confidence: 0, reason: 'empty' };
+  if (!tokens.length) return { score: 0, confidence: 0, reason: 'empty', matchedFields: [] };
 
   const nq = (s: string) => normalizeQuery(s);
-  // Pre-stem all field tokens once — avoids stemming on every token comparison.
+  // Pre-stem all field tokens once — avoids re-stemming on every comparison.
   const stemTokens = (s: string) => (nq(s).match(/[a-z0-9]{2,}/g) ?? []).map(stemGeoToken);
 
   const nameTokens = stemTokens(product.name);
@@ -90,11 +94,9 @@ export function scoreProductRetrieval(product: ProductLike, normalizedQuery: str
   const stTokens   = stemTokens(product.birthstones ?? '');
   const zodTokens  = (product.zodiac_compatibility ?? []).flatMap(z => stemTokens(z));
 
-  // Helper: count how many query tokens have at least one stemmed field token that
-  // matches exactly, matches by prefix (partial coverage), is within edit distance 1
-  // for tokens of length ≥ 4, OR is within edit distance 2 for tokens of length ≥ 5.
-  // The ed-2 arm catches Georgian oblique-stem metathesis (e.g. santleb ↔ santel).
-  const countHits = (fieldTokens: string[]) =>
+  // Returns the subset of query tokens that match at least one token in fieldTokens.
+  // Match modes: exact, prefix, ed-1 (len≥4), ed-2 (len≥5 — Georgian oblique-stem metathesis).
+  const getMatchedTokens = (fieldTokens: string[]): string[] =>
     tokens.filter(qt =>
       fieldTokens.some(ft =>
         ft === qt ||
@@ -103,13 +105,15 @@ export function scoreProductRetrieval(product: ProductLike, normalizedQuery: str
         (qt.length >= 4 && ft.length >= 4 && withinEditDistance1(qt, ft)) ||
         (qt.length >= 5 && ft.length >= 5 && withinEditDistance2(qt, ft))
       )
-    ).length;
+    );
 
+  const matchedFields: string[] = [];
   let score = 0;
   let reason = '';
 
   // 1. Name match — highest weight
-  const nameHits = countHits(nameTokens);
+  const nameMatched = getMatchedTokens(nameTokens);
+  const nameHits = nameMatched.length;
   const nameJoined = nameTokens.join(' ');
   const queryJoined = tokens.join(' ');
   if (nameJoined === queryJoined) {
@@ -122,9 +126,11 @@ export function scoreProductRetrieval(product: ProductLike, normalizedQuery: str
     score += nameHits * 2.5;
     reason = `${nameHits}/${tokens.length} name tokens`;
   }
+  matchedFields.push(...nameMatched.map(t => `name:${t}`));
 
-  // 2. Category tokens — full match equivalent to name match; partial at 2.5 each
-  const catHits = countHits(catTokens);
+  // 2. Category tokens — full match at 7, partial at 2.5 each
+  const catMatched = getMatchedTokens(catTokens);
+  const catHits = catMatched.length;
   if (catHits > 0) {
     if (catHits === tokens.length) {
       score += 7; if (!reason) reason = 'all tokens match category';
@@ -132,38 +138,45 @@ export function scoreProductRetrieval(product: ProductLike, normalizedQuery: str
       score += catHits * 2.5;
       if (!reason) reason = `${catHits} category tokens`;
     }
+    matchedFields.push(...catMatched.map(t => `category:${t}`));
   }
 
   // 3. Material tokens — 2.0 each
-  const matHits = countHits(matTokens);
+  const matMatched = getMatchedTokens(matTokens);
+  const matHits = matMatched.length;
   if (matHits > 0) {
     score += matHits * 2.0;
     if (!reason) reason = `${matHits} material tokens`;
+    matchedFields.push(...matMatched.map(t => `material:${t}`));
   }
 
-  // 5. Description tokens — 1.0 each, capped at 3
-  const dscHits = Math.min(countHits(dscTokens), 3);
+  // 5. Description tokens — 1.5 per hit (up from 1.0 cap-3 previously), no cap.
+  // Multi-concept co-occurrence bonus: if ≥ 2 distinct query concepts match the description,
+  // add +4.0 bonus. A product describing BOTH "inner strength" AND "transformation" ranks
+  // far above one that only matches a broad category token like "spiritual" or "meditation".
+  const dscMatched = getMatchedTokens(dscTokens);
+  const dscHits = dscMatched.length;
   if (dscHits > 0) {
-    score += dscHits;
-    if (!reason) reason = `${dscHits} description tokens`;
+    score += dscHits * 1.5;
+    if (dscHits >= 2) score += 4.0; // co-occurrence bonus
+    if (!reason) reason = `${dscHits} description tokens${dscHits >= 2 ? ' (+co-occurrence)' : ''}`;
+    matchedFields.push(...dscMatched.map(t => `description:${t}`));
   }
 
   // 6. Birthstones / zodiac — 1.0 each
-  const spdHits = countHits([...stTokens, ...zodTokens]);
+  const spdMatched = getMatchedTokens([...stTokens, ...zodTokens]);
+  const spdHits = spdMatched.length;
   if (spdHits > 0) {
     score += spdHits;
     if (!reason) reason = `${spdHits} stone/zodiac tokens`;
+    matchedFields.push(...spdMatched.map(t => `specialty:${t}`));
   }
 
-  // Confidence normalized against the fixed maximum achievable score (exact name match = 10).
-  // Using a fixed denominator ensures confidence is independent of query length — longer
-  // customer queries (more tokens) do NOT dilute the score of a valid match.
-  // Before this fix: "რა ტაროები გაქვთ" (3 tokens) → maxScore=14.5 → conf=0.172 → FILTERED OUT.
-  // After: maxScore=10 → conf=0.25 → passes threshold → all matching products surface.
+  // Confidence normalized against fixed max 10 — independent of query length.
   const maxScore = 10;
   const confidence = Math.min(score / maxScore, 1.0);
 
-  return { score, confidence, reason: reason || 'no match' };
+  return { score, confidence, reason: reason || 'no match', matchedFields };
 }
 // Minimal product type for retrieval logic
 export type ProductLike = {
@@ -198,6 +211,8 @@ export interface RetrievalMatch {
   /** Normalized 0.0–1.0 confidence value. */
   confidence: number;
   reason: string;
+  /** Per-field match evidence — entries like "name:shiva", "description:shinagani". Used for retrieval diagnostics. */
+  matchedFields: string[];
 }
 
 // ── Georgian character → Latin phonetic mapping ──────────────────────────────
@@ -219,123 +234,17 @@ export function geoToLatin(text: string): string {
 }
 
 /**
- * Common transliterated Georgian suffix endings that change a word's grammatical
-  if (la === lb) {
-    // Allow exactly 0 or 1 substitution
-    let diffs = 0;
-    for (let i = 0; i < la; i++) {
-      if (a[i] !== b[i] && ++diffs > 1) return false;
-    }
-    return true;
-  }
-
-// ...existing code...
-
-// When returning product matches for craft_shop, always cap at 3 results for prompt efficiency
-export function getTopProductMatches(matches: RetrievalMatch[], products: ProductLike[], max = 3): ProductLike[] {
-  const sorted = matches
-    .sort((a, b) => b.confidence - a.confidence)
-    .map(m => products.find(p => p.name === m.name))
-    .filter(Boolean) as ProductLike[];
-  return sorted.slice(0, max);
-}
-// ...existing code...
-  const tokens = (normalizedQuery.match(/[a-z0-9]{2,}/g) ?? []).map(stemGeoToken);
-  if (!tokens.length) return { score: 0, confidence: 0, reason: 'empty' };
-
-  const nq = (s: string) => normalizeQuery(s);
-
-  // Pre-stem all field tokens once — avoids stemming on every token comparison.
-  const stemTokens = (s: string) => (nq(s).match(/[a-z0-9]{2,}/g) ?? []).map(stemGeoToken);
-
-  const nameTokens = stemTokens(product.name);
-  const catTokens  = stemTokens(product.category ?? '');
-  const matTokens  = stemTokens(product.material ?? '');
-  const dscTokens  = stemTokens(product.description ?? '');
-  const stTokens   = stemTokens(product.birthstones ?? '');
-  const zodTokens  = (product.zodiac_compatibility ?? []).flatMap(z => stemTokens(z));
-
-  // Helper: count how many query tokens have at least one stemmed field token that
-  // matches exactly, matches by prefix (partial coverage), is within edit distance 1
-  // for tokens of length ≥ 4, OR is within edit distance 2 for tokens of length ≥ 5.
-  // The ed-2 arm catches Georgian oblique-stem metathesis (e.g. santleb ↔ santel).
-  const countHits = (fieldTokens: string[]) =>
-    tokens.filter(qt =>
-      fieldTokens.some(ft =>
-        ft === qt ||
-        ft.startsWith(qt) ||
-        qt.startsWith(ft) ||
-        (qt.length >= 4 && ft.length >= 4 && withinEditDistance1(qt, ft)) ||
-        (qt.length >= 5 && ft.length >= 5 && withinEditDistance2(qt, ft))
-      )
-    ).length;
-
-  let score = 0;
-  let reason = '';
-
-  // 1. Name match — highest weight
-  const nameHits = countHits(nameTokens);
-  const nameJoined = nameTokens.join(' ');
-  const queryJoined = tokens.join(' ');
-  if (nameJoined === queryJoined) {
-    score += 10; reason = 'exact name';
-  } else if (nameJoined.includes(queryJoined) || queryJoined.includes(nameJoined)) {
-    score += 8; reason = 'name contains query';
-  } else if (nameHits === tokens.length) {
-    score += 7; reason = 'all tokens in name';
-  } else if (nameHits > 0) {
-    score += nameHits * 2.5;
-    reason = `${nameHits}/${tokens.length} name tokens`;
-  }
-
-  // 2. Category tokens — full match equivalent to name match; partial at 2.5 each
-  const catHits = countHits(catTokens);
-  if (catHits > 0) {
-    if (catHits === tokens.length) {
-      score += 7; if (!reason) reason = 'all tokens match category';
-    } else {
-      score += catHits * 2.5;
-      if (!reason) reason = `${catHits} category tokens`;
-    }
-  }
-
-  // 3. Material tokens — 2.0 each
-  const matHits = countHits(matTokens);
-  if (matHits > 0) {
-    score += matHits * 2.0;
-    if (!reason) reason = `${matHits} material tokens`;
-  }
-
-  // (keywords removed)
-
-  // 5. Description tokens — 1.0 each, capped at 3
-  const dscHits = Math.min(countHits(dscTokens), 3);
-  if (dscHits > 0) {
-    score += dscHits;
-    if (!reason) reason = `${dscHits} description tokens`;
-  }
-
-  // 6. Birthstones / zodiac — 1.0 each
-  const spdHits = countHits([...stTokens, ...zodTokens]);
-  if (spdHits > 0) {
-    score += spdHits;
-    if (!reason) reason = `${spdHits} stone/zodiac tokens`;
-  }
-
-  // Confidence normalized against the fixed maximum achievable score (exact name match = 10).
-  // Using a fixed denominator ensures confidence is independent of query length — longer
-  // customer queries (more tokens) do NOT dilute the score of a valid match.
-  // Before this fix: "რა ტაროები გაქვთ" (3 tokens) → maxScore=14.5 → conf=0.172 → FILTERED OUT.
-  // After: maxScore=10 → conf=0.25 → passes threshold → all matching products surface.
-  const maxScore = 10;
-  const confidence = Math.min(score / maxScore, 1.0);
-
-  return { score, confidence, reason: reason || 'no match' };
-}
-
-/**
  * Ranks all products by retrieval score against the raw user query.
  * Returns matches sorted descending by score, filtered to minConfidence.
+ *
+ * Logs two diagnostic entries per call:
+ *   [retrieval-score]  — per-candidate score, confidence, and matched fields
+ *   [retrieval-score] final — top-10 ranked names after gap filter
+ *
+ * Score-gap filter: when the top candidate is significantly stronger than the second
+ * (top ≥ second × 1.5 + 1.5), restrict results to candidates with score ≥ top × 0.5.
+ * Prevents weak generic matches (category-only "spiritual", "meditation") from filling
+ * top slots alongside a product that specifically matches the queried concepts.
  *
  * @param products      All available products
  * @param query         Raw user query (any script/language)
@@ -348,8 +257,43 @@ export function retrieveProducts(
 ): RetrievalMatch[] {
   if (!query.trim()) return [];
   const nq = normalizeQuery(query);
-  return products
+  const all = products
     .map(p => ({ name: p.name, ...scoreProductRetrieval(p, nq) }))
     .filter(r => r.confidence >= minConfidence)
     .sort((a, b) => b.score - a.score);
+
+  // Per-candidate score log — proves exactly why each product was retrieved.
+  if (all.length > 0) {
+    const lines = all.map(
+      r =>
+        `  "${r.name}" score=${r.score.toFixed(1)} conf=${r.confidence.toFixed(2)}` +
+        (r.matchedFields.length ? ` matches=[${r.matchedFields.join(', ')}]` : ''),
+    );
+    console.info(
+      `[retrieval-score] query="${query.slice(0, 60)}" — ${all.length} candidates above threshold:\n` +
+      lines.join('\n'),
+    );
+  }
+
+  // Score-gap filter.
+  let filtered = all;
+  if (all.length >= 2 && all[0].score >= all[1].score * 1.5 + 1.5) {
+    const threshold = all[0].score * 0.5;
+    filtered = all.filter(r => r.score >= threshold);
+    console.info(
+      `[retrieval-score] gap-filter: top=${all[0].score.toFixed(1)} ` +
+      `second=${all[1].score.toFixed(1)} → keeping score≥${threshold.toFixed(1)} ` +
+      `(${filtered.length}/${all.length} candidates remain)`,
+    );
+  }
+
+  // Final ranking summary — what loadBusinessContext receives.
+  if (filtered.length > 0) {
+    console.info(
+      `[retrieval-score] final: ` +
+      filtered.slice(0, 10).map((r, i) => `#${i + 1} "${r.name}"=${r.score.toFixed(1)}`).join(' | '),
+    );
+  }
+
+  return filtered;
 }
