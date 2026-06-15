@@ -140,6 +140,12 @@ export function buildCraftShopSystemPrompt(
     sections.push(`COMPANY INFO: ${compactCompanyInfo(context.businessDescription)}`);
   }
 
+  // Detect English query — used to inject translation instruction so AI doesn't
+  // return raw Georgian script (e.g. "შივას ქანდაკება") to an English-speaking customer.
+  const isEnglishQuery = userQuery.length > 0 &&
+    !/[\u10D0-\u10FF]/.test(userQuery) &&
+    /[a-zA-Z]/.test(userQuery);
+
   sections.push(
     `ROLE: Warm, knowledgeable sales assistant. Use all product attributes — material, zodiac, stones, description — to connect each product to the customer's needs personally.`,
     `DOMAIN: Only discuss this shop's products and store info. Never mention real estate, apartments, or unrelated topics.`,
@@ -148,8 +154,26 @@ export function buildCraftShopSystemPrompt(
       `  • Quote prices exactly as listed — never recall a price from conversation history.`,
       `  • Only name products in the PRODUCTS list — never invent or recall a product not listed here.`,
       `  • If PRODUCTS shows "(no products matched this message)" — ask one clarifying question before naming any product or price.`,
+      `CATEGORY FALLBACK: If the customer asked for a specific item that is not present in PRODUCTS:`,
+      `  • Identify the semantic category of what they requested (e.g. stone → crystals/minerals; candle → candles; tarot → tarot decks).`,
+      `  • Suggest ONLY alternatives from that same category found in PRODUCTS.`,
+      `  • Never suggest products from an unrelated category as a substitute.`,
+      `  • If no same-category products exist in PRODUCTS, briefly acknowledge the item is unavailable and ask if the customer would like to see other categories.`,
     ].join('\n'),
   );
+
+  if (isEnglishQuery) {
+    sections.push(
+      [
+        `TRANSLATION (this turn): Customer is writing in English — translate all Georgian text in your reply.`,
+        `  • Product names: "შივას ქანდაკება" → "Shiva Statue" | "ტარო" → "Tarot Deck" | "კრიშნა" → "Krishna Statue" | "ქანდაკება" → "Statue".`,
+        `  • Company info: "მისამართი ია კარგარეთელი 11" → "Address: Ia Kargareteli 11" | "მუშაობს შუადღის 3 საათიდან საღამოს 9 საათამდე" → "Open daily from 3 PM to 9 PM".`,
+        `  • Do NOT translate branded English titles ("The Wild Wood Tarot", "I am not a Doll" → unchanged).`,
+        `  • Transliterate personal/place names ("Ia Kargareteli" stays as-is — do not translate the meaning).`,
+        `  • Never output raw Georgian script characters in an English reply.`,
+      ].join('\n'),
+    );
+  }
 
   if (modeLines.length > 0) {
     sections.push(modeLines.join('\n'));

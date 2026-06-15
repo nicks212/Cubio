@@ -18,7 +18,17 @@ export const LANGUAGE_RULE =
   '(e.g. "bina", "gamarjoba", "salami", "minda", "rame"). ' +
   'For ANY other language — Russian, Arabic, Turkish, or anything else — respond in English only. ' +
   'NEVER respond in Russian or any other language even if the customer explicitly asks you to. ' +
-  'The only allowed output languages are Georgian and English.';
+  'The only allowed output languages are Georgian and English. ' +
+  'TRANSLATION (when responding in English): Never copy raw Georgian script into an English reply. ' +
+  'Translate Georgian product names, category names, descriptions, addresses, and hours naturally into English. ' +
+  'Examples: "შივას ქანდაკება" → "Shiva Statue" | "ტარო" → "Tarot Deck" | ' +
+  '"ქანდაკება" → "Statue" | "კრიშნა" → "Krishna Statue" | ' +
+  '"მისამართი ია კარგარეთელი 11" → "Address: Ia Kargareteli 11" | ' +
+  '"მუშაობს შუადღის 3 საათიდან საღამოს 9 საათამდე" → "Open daily from 3 PM to 9 PM". ' +
+  'Exception — do NOT translate: branded product titles already written in English ' +
+  '(e.g. "The Wild Wood Tarot", "I am not a Doll" stay unchanged). ' +
+  'Transliterate personal and place names rather than translating them ' +
+  '(e.g. "Ia Kargareteli" stays as "Ia Kargareteli", not translated to a meaning).';
 
 export function buildGlobalSystemPrompt(photosSent = false): string {
   const photoRule = photosSent
