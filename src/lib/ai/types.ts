@@ -43,6 +43,13 @@ export interface ProductContext {
   vectorHits?: number;
   /** Number of products matched by deterministic token retrieval for this turn. */
   tokenRetrievalHits?: number;
+  /**
+   * Number of products promoted by category-level fallback retrieval.
+   * Set when full-text retrieval returned 0 results but a primary product category
+   * was identified from the query (e.g. "square shaped candles" → category = candle).
+   * When > 0, the first N entries in context.products are all same-category alternatives.
+   */
+  categoryFallbackHits?: number;
 }
 
 export type BusinessContext = ApartmentContext | ProductContext;

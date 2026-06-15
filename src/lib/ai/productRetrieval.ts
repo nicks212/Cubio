@@ -194,6 +194,141 @@ export function normalizeQuery(query: string): string {
   q = q.replace(/[^a-z0-9\s-]/g, ' ').replace(/\s+/g, ' ').trim();
   return q;
 }
+
+// ─── Category-level fallback retrieval ────────────────────────────────────────
+// Used when full-text retrieval returns 0 results for a query that contains a
+// recognisable product category keyword (e.g. "square shaped candles" → candle).
+//
+// The map: English query keywords → field-pattern strings (what normalizeQuery()
+// produces from product name/category/description fields — both English values
+// AND Georgian transliterations).  This bridges English→Georgian cross-language
+// matching that the token engine cannot handle (English "candle" ≠ Georgian
+// transliteration "santel").
+//
+// Pattern matching uses String.includes() on the normalised field text.
+// Patterns are deliberately kept ≥ 4 chars to avoid spurious sub-string hits.
+
+const EN_CATEGORY_MAP: Array<{ queryKeywords: string[]; fieldPatterns: string[] }> = [
+  {
+    queryKeywords: ['candle', 'candles', 'taper', 'wax'],
+    // 'sant' matches სანთელი (santeli) and სანთლები (santlebi) via prefix
+    fieldPatterns: ['candle', 'sant'],
+  },
+  {
+    queryKeywords: [
+      'stone', 'stones', 'crystal', 'crystals', 'gem', 'gems',
+      'quartz', 'amethyst', 'emerald', 'mineral', 'minerals',
+      'jasper', 'obsidian', 'tourmaline', 'lapis', 'agate', 'onyx', 'jade',
+      'ruby', 'sapphire', 'topaz', 'garnet',
+    ],
+    // 'kva' = ქვა (stone), 'krist' = კრისტალი (crystal), 'ametv' = ამეთვისტო,
+    // 'kvar' = კვარცი (quartz), 'aven' = ავენტური (aventurine), 'lazul' = ლაჟვარდი
+    fieldPatterns: ['stone', 'crystal', 'quartz', 'amethyst', 'gem', 'mineral',
+                    'kva', 'krist', 'ametv', 'kvar', 'aven', 'lazul', 'agat', 'obsid'],
+  },
+  {
+    queryKeywords: ['tarot', 'oracle', 'deck', 'tarot deck', 'oracle deck'],
+    fieldPatterns: ['tarot', 'taro', 'oracle', 'deck'],
+  },
+  {
+    queryKeywords: [
+      'statue', 'statues', 'figurine', 'figurines', 'idol', 'idols',
+      'shiva', 'buddha', 'krishna', 'ganesh', 'lakshmi', 'kali',
+    ],
+    // 'kand' = ქანდაკება (statue)
+    fieldPatterns: ['statue', 'figurine', 'kand', 'shiva', 'buddha', 'krishna', 'ganesh', 'kali'],
+  },
+  {
+    queryKeywords: ['ring', 'rings', 'band'],
+    // 'bech' = ბეჭედი (ring)
+    fieldPatterns: ['ring', 'bech'],
+  },
+  {
+    queryKeywords: ['necklace', 'necklaces', 'pendant', 'pendants', 'choker'],
+    // 'yels' = ყელსაბამი (necklace), 'guls' = გულსაკიდი (pendant)
+    fieldPatterns: ['necklace', 'pendant', 'yels', 'guls'],
+  },
+  {
+    queryKeywords: ['bracelet', 'bracelets', 'bangle'],
+    // 'samaj' = სამაჯური (bracelet)
+    fieldPatterns: ['bracelet', 'samaj'],
+  },
+  {
+    queryKeywords: ['earring', 'earrings'],
+    // 'sayu' = საყურე (earrings)
+    fieldPatterns: ['earring', 'sayu'],
+  },
+  {
+    queryKeywords: ['jewelry', 'jewellery', 'jewel', 'jewels', 'accessory', 'accessories'],
+    // 'samka' = სამკაული (jewel/jewelry)
+    fieldPatterns: ['jewelry', 'jewel', 'accessory', 'samka'],
+  },
+  {
+    queryKeywords: ['incense', 'incenses', 'stick', 'sticks', 'joss'],
+    // 'kmel' = კმელი (incense), 'surne' = სურნელი (fragrant)
+    fieldPatterns: ['incense', 'kmel', 'surne'],
+  },
+  {
+    queryKeywords: ['oil', 'oils', 'essential oil', 'essential oils', 'aroma'],
+    // 'zeti' = ზეთი (oil), 'eterov' = ეთეროვანი (essential)
+    fieldPatterns: ['oil', 'essential', 'zeti', 'eterov', 'arom'],
+  },
+  {
+    queryKeywords: ['mala', 'malas', 'bead', 'beads', 'prayer beads', 'rosary'],
+    // 'mdziv' = მძივი (bead)
+    fieldPatterns: ['mala', 'bead', 'mdziv', 'rosary'],
+  },
+];
+
+/**
+ * Extracts the primary product category from a query string.
+ * Returns the matching row's fieldPatterns array, or null if no category is recognised.
+ *
+ * How it works: normalises the query, tokenises, checks each token against the
+ * EN_CATEGORY_MAP queryKeywords list. The first matching row wins (ordered by
+ * specificity — e.g. "tarot deck" before "deck").
+ */
+export function extractCategoryKeywords(query: string): string[] | null {
+  const qNorm = normalizeQuery(query);
+  const tokens = (qNorm.match(/[a-z0-9]{2,}/g) ?? []).map(stemGeoToken);
+  for (const { queryKeywords, fieldPatterns } of EN_CATEGORY_MAP) {
+    if (tokens.some(t => queryKeywords.some(k => t === k || t.startsWith(k) || k.startsWith(t)))) {
+      return fieldPatterns;
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns all products whose normalised name + category + description field text
+ * contains at least one of the provided fieldPatterns (substring match).
+ *
+ * Used as the second-pass retrieval step when full-text retrieval returns 0 results.
+ * Results are assigned a fixed confidence of 0.25 (above minConfidence threshold
+ * but below any specific-token match score) so they are clearly tagged as
+ * category-level alternatives, not exact matches.
+ */
+export function retrieveProductsByCategory(
+  products: ProductLike[],
+  fieldPatterns: string[],
+): RetrievalMatch[] {
+  return products
+    .filter(p => {
+      const fieldText = [
+        normalizeQuery(p.name),
+        normalizeQuery(p.category    ?? ''),
+        normalizeQuery(p.description ?? ''),
+      ].join(' ');
+      return fieldPatterns.some(pat => fieldText.includes(pat));
+    })
+    .map(p => ({
+      name:          p.name,
+      score:         2.5,
+      confidence:    0.25,
+      reason:        'category fallback',
+      matchedFields: [`category:fallback`],
+    }));
+}
 /**
  * Deterministic product retrieval with transliteration normalization,
  * fuzzy token matching across all searchable fields, and confidence scoring.

@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import type { BusinessContext } from '@/lib/ai';
-import { retrieveProducts } from '@/lib/ai/productRetrieval';
+import { retrieveProducts, extractCategoryKeywords, retrieveProductsByCategory } from '@/lib/ai/productRetrieval';
 
 /** Options for context loading — used when vector similarity search pre-filtered results. */
 export interface LoadContextOptions {
@@ -166,10 +166,40 @@ export async function loadBusinessContext(
     }
   }
 
+  // Category-level fallback — fires ONLY when full-text retrieval returned 0 results.
+  // Extracts the primary product category from the query (e.g. "square shaped candles"
+  // → category = candle) and promotes all same-category products to the front.
+  // This enables "we don't have square candles but here are other candles" behaviour
+  // instead of the incorrect "we don't have that, here are some tarot cards".
+  let categoryFallbackHitCount = 0;
+  if (tokenRetrievalHitCount === 0 && options.textQuery?.trim()) {
+    const catPatterns = extractCategoryKeywords(options.textQuery);
+    if (catPatterns) {
+      const catHits = retrieveProductsByCategory(allProducts, catPatterns);
+      if (catHits.length > 0) {
+        categoryFallbackHitCount = catHits.length;
+        console.info(
+          `[loadBusinessContext] category-fallback: ${catHits.length} product(s) for ` +
+          `"${options.textQuery.slice(0, 40)}" — patterns: [${catPatterns.slice(0, 3).join(', ')}]`,
+        );
+        const catNames = new Set(catHits.map(h => h.name.toLowerCase()));
+        const catProds  = allProducts.filter(p => catNames.has(p.name.toLowerCase()));
+        const restProds = allProducts.filter(p => !catNames.has(p.name.toLowerCase()));
+        allProducts = [...catProds, ...restProds];
+      } else {
+        console.info(
+          `[loadBusinessContext] category-fallback: no products matched patterns ` +
+          `[${catPatterns.slice(0, 3).join(', ')}] for "${options.textQuery.slice(0, 40)}"`,
+        );
+      }
+    }
+  }
+
   return {
     products: allProducts,
     businessDescription,
     imageSearchQuery: options.imageSearchQuery ?? null,
-    ...(tokenRetrievalHitCount > 0 ? { tokenRetrievalHits: tokenRetrievalHitCount } : {}),
+    ...(tokenRetrievalHitCount   > 0 ? { tokenRetrievalHits:   tokenRetrievalHitCount   } : {}),
+    ...(categoryFallbackHitCount > 0 ? { categoryFallbackHits: categoryFallbackHitCount } : {}),
   };
 }

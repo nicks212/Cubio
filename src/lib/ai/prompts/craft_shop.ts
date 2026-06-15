@@ -1,5 +1,6 @@
 import type { ProductContext } from '../types';
 import { CRAFT_BROAD_QUERY_RE } from '../signals';
+import { translateProductForEnglish, compactCompanyInfoForEnglish } from '../geoTranslation';
 
 type ProductRow = ProductContext['products'][0];
 
@@ -7,17 +8,19 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/[\s-]+/g, '_').slice(0, 40);
 }
 
-function buildPhotoKeySection(products: ProductRow[]): string {
+function buildPhotoKeySection(products: ProductRow[], translatedNames?: Map<string, string>): string {
   const rows = products
     .map(p => ({
-      name: p.name,
-      key: slugify(p.name),
+      displayName: translatedNames?.get(p.name) ?? p.name,
+      // Key is ALWAYS derived from the original (untranslated) name so that
+      // resolvePhotoUrls() can match it via slug(p.name) === slug(identifier).
+      key:  slugify(p.name),
       count: p.images?.filter(u => u.startsWith('http')).length ?? 0,
     }))
     .filter(r => r.count > 0);
 
   if (rows.length === 0) return '';
-  return `PHOTO KEYS (machine-only — never show to customer):\n${rows.map(r => `• ${r.name} => ${r.key}`).join('\n')}`;
+  return `PHOTO KEYS (machine-only — never show to customer):\n${rows.map(r => `• ${r.displayName} => ${r.key}`).join('\n')}`;
 }
 
 function compactCompanyInfo(raw: string | null): string {
@@ -48,33 +51,56 @@ export function buildCraftShopSystemPrompt(
   opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean } = {},
 ): string {
 
-  // Show top 6 pre-ranked products — compact fields only
-  const available = context.products.filter(p => p.in_stock);
-  const products = available.slice(0, 6);
+  // ── Language detection (done first — affects preprocessing of all data below) ──
+  // True when customer message has Latin letters but no Georgian script.
+  // Covers English and romanized European languages (all routed to English output).
+  const isEnglishQuery = userQuery.length > 0 &&
+    !/[\u10D0-\u10FF]/.test(userQuery) &&
+    /[a-zA-Z]/.test(userQuery);
 
-  // hasProducts: true only when the products in context are query-RELEVANT.
-  // Prevents presenting unrelated products (e.g. tarot) when the customer asked
-  // about a different category (e.g. jewelry, candles) and retrieval found nothing.
+  // Show top N products — category fallback narrows the slice to same-category products
+  // only, so unrelated products (e.g. tarot) cannot bleed into candle/stone responses.
+  const available = context.products.filter(p => p.in_stock);
+  const catFallbackHits = context.categoryFallbackHits ?? 0;
+  const productSliceCount = catFallbackHits > 0 ? Math.min(catFallbackHits, 6) : 6;
+  const products = available.slice(0, productSliceCount);
+
+  // ── Translation preprocessing — architecture-level fix for Bug 1 ─────────
+  // When the customer writes in English, all Georgian text fields are translated
+  // to English BEFORE injection into the prompt.  Gemini copies structured data
+  // verbatim (it is a data quoter, not a translator for structured facts).  The
+  // only reliable fix is to ensure the PRODUCTS section contains English text.
   //
+  // Photo keys use the ORIGINAL Georgian-derived slug so resolvePhotoUrls() still
+  // matches (slug comparison: slug(p.name) === slug(identifier emitted by Gemini)).
+  const displayProducts = isEnglishQuery
+    ? products.map(translateProductForEnglish)
+    : products;
+  const photoNameMap: Map<string, string> | undefined = isEnglishQuery
+    ? new Map(products.map(p => [p.name, translateProductForEnglish(p).name]))
+    : undefined;
+  // hasProducts: true only when the products in context are query-RELEVANT.
   // A signal is present when:
   //   • token retrieval found specific matches (tokenRetrievalHits > 0)
   //   • vector search found semantic matches   (vectorHits > 0)
+  //   • category fallback found same-category alternatives (categoryFallbackHits > 0)
   //   • customer sent a product image          (imageSearchQuery != null)
   //   • query is a broad catalog browse        ("what do you sell?", "catalog")
   //     → broad queries always show top products; no specific category is implied.
   const hasRetrievalSignal =
     CRAFT_BROAD_QUERY_RE.test(userQuery) ||
-    (context.tokenRetrievalHits ?? 0) > 0 ||
-    (context.vectorHits ?? 0) > 0 ||
+    (context.tokenRetrievalHits  ?? 0) > 0 ||
+    (context.vectorHits          ?? 0) > 0 ||
+    catFallbackHits > 0 ||
     context.imageSearchQuery != null;
-  const hasProducts = products.length > 0 && hasRetrievalSignal;
+  const hasProducts = displayProducts.length > 0 && hasRetrievalSignal;
 
   const productLines = hasProducts
-    ? products.map(p => {
+    ? displayProducts.map(p => {
         const sym = p.currency === 'USD' ? '$' : '₾';
         const parts: string[] = [`• ${p.name}: ${sym}${p.price}`];
         if (p.category) parts.push(p.category);
-        if (p.description) parts.push(p.description.slice(0, 120));
+        if (p.description) parts.push((p.description as string).slice(0, 120));
         return parts.join(' | ');
       }).join('\n')
     : '(no products matched this message)';
@@ -92,13 +118,26 @@ export function buildCraftShopSystemPrompt(
   // returned 0 results (e.g. bare "ფოტო?" with no product keyword in the message).
   // Hidden on non-photo turns when retrieval found nothing — prevents SHOW_PHOTOS on
   // vague queries like "რა ღირს" (price question with no specific product in context).
-  const photoKeys = (hasProducts || opts.photoIntent) ? buildPhotoKeySection(products) : '';
+  const photoKeys = (hasProducts || opts.photoIntent) ? buildPhotoKeySection(products, photoNameMap) : '';
 
   // ── Conditional instruction blocks ──────────────────────────────────────────
   const modeLines: string[] = [];
 
   if (hasProducts && products.length >= 2) {
     modeLines.push(`PRESENT ALL: ${products.length} products matched. List every one individually with its name and price — do not omit, group, or summarize any.`);
+  }
+
+  // Category alternatives — fires when category fallback promoted same-category products
+  // but no specific token/vector match existed.  The PRODUCTS section at this point
+  // contains ONLY same-category items (slice capped at catFallbackHits above), making it
+  // structurally impossible for Gemini to suggest unrelated categories.
+  if (catFallbackHits > 0 && (context.tokenRetrievalHits ?? 0) === 0 && (context.vectorHits ?? 0) === 0) {
+    modeLines.push(
+      `CATEGORY ALTERNATIVES: The specific item requested is not in stock. ` +
+      `The PRODUCTS listed below are same-category alternatives only. ` +
+      `Acknowledge the requested item is unavailable, then present ONLY these alternatives. ` +
+      `FORBIDDEN: Do not name or suggest products from any other category.`,
+    );
   }
 
   if (opts.photoIntent) {
@@ -137,14 +176,13 @@ export function buildCraftShopSystemPrompt(
   ];
 
   if (context.businessDescription) {
-    sections.push(`COMPANY INFO: ${compactCompanyInfo(context.businessDescription)}`);
+    // Use English-formatted company info when customer writes English.
+    // compactCompanyInfoForEnglish() deterministically translates address/hours patterns.
+    const infoText = isEnglishQuery
+      ? compactCompanyInfoForEnglish(context.businessDescription)
+      : compactCompanyInfo(context.businessDescription);
+    sections.push(`COMPANY INFO: ${infoText}`);
   }
-
-  // Detect English query — used to inject translation instruction so AI doesn't
-  // return raw Georgian script (e.g. "შივას ქანდაკება") to an English-speaking customer.
-  const isEnglishQuery = userQuery.length > 0 &&
-    !/[\u10D0-\u10FF]/.test(userQuery) &&
-    /[a-zA-Z]/.test(userQuery);
 
   sections.push(
     `ROLE: Warm, knowledgeable sales assistant. Use all product attributes — material, zodiac, stones, description — to connect each product to the customer's needs personally.`,
@@ -165,12 +203,11 @@ export function buildCraftShopSystemPrompt(
   if (isEnglishQuery) {
     sections.push(
       [
-        `TRANSLATION (this turn): Customer is writing in English — translate all Georgian text in your reply.`,
-        `  • Product names: "შივას ქანდაკება" → "Shiva Statue" | "ტარო" → "Tarot Deck" | "კრიშნა" → "Krishna Statue" | "ქანდაკება" → "Statue".`,
-        `  • Company info: "მისამართი ია კარგარეთელი 11" → "Address: Ia Kargareteli 11" | "მუშაობს შუადღის 3 საათიდან საღამოს 9 საათამდე" → "Open daily from 3 PM to 9 PM".`,
-        `  • Do NOT translate branded English titles ("The Wild Wood Tarot", "I am not a Doll" → unchanged).`,
-        `  • Transliterate personal/place names ("Ia Kargareteli" stays as-is — do not translate the meaning).`,
-        `  • Never output raw Georgian script characters in an English reply.`,
+        `DATA LANGUAGE (this turn): All product data above has been pre-translated to English.`,
+        `  • Do NOT output any raw Georgian script characters in your reply.`,
+        `  • If any Georgian text remains in the data, translate it naturally (e.g. "შივას ქანდაკება" → "Shiva Statue").`,
+        `  • Branded English titles like "The Wild Wood Tarot" or "I am not a Doll" stay unchanged.`,
+        `  • Transliterate proper names: "Ia Kargareteli" stays as-is (do not translate the meaning).`,
       ].join('\n'),
     );
   }
