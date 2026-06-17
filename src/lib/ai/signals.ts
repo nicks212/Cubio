@@ -97,6 +97,23 @@ export const PRODUCT_DISSATISFIED_RE =
   /\b(?:not\s+(?:what\s+i|quite\s+right|satisfied|happy|quite)|nothing\s+(?:match|suit|work)|looking\s+for\s+something\s+(?:else|different|other)|don'?t\s+(?:have|see)\s+what\s+i|something\s+(?:else|different|other|more\s+unique)|different\s+(?:style|design|type|option)|doesn'?t\s+(?:match|suit|work)|can'?t\s+find|not\s+finding\s+it|none\s+of\s+(?:these|them)|not\s+in\s+stock|out\s+of\s+stock|don'?t\s+like\s+(?:any|these|those))|(?:არ\s*(?:მომწონს|მაქვს\s*სასურველი|მიხდება)|ეს\s*(?:არ\s*არის|არ\s*ვარგა)|ვეძებ\s*სხვ|სხვ(?:ა|ანაირ)\s*(?:რამ|დიზაინ|სტილ|ვარიანტ|ნიმუშ)|სხვა\s*(?:მინდა|მჭირდება|ვეძებ)|ვეძებ\s*(?:სხვა|განსხვავებულ|უნიკალ)|ვერ\s*ვპოულობ|ვერ\s*ვხედავ\s*(?:სასურველს|სასურ)|არ\s*მომდის|ასეთი\s*(?:არ|ვერ))|(?:ar\s+momwons|ar\s+maq?vs\s*sasurv|es\s+ar\s+aris|vedzieb\s+sxva|sxva\s+(?:ram|diz|stil|varia|nimu)|sxva\s+minda|sxva\s+mchirdeba|ver\s+vpoulob|ar\s+momdia)/i;
 
 /**
+ * Follow-up that REFERS to an already-discussed product rather than naming one
+ * ("what's the price?", "I like it", "show me another", "do you have similar?").
+ * Pure linguistic cues (pronouns / price words / "more" words) — no product names.
+ * Used to decide when to re-surface the recently-discussed product into context.
+ * Covers English, Georgian script, romanized Georgian.
+ */
+export const REFERENCE_FOLLOWUP_RE =
+  /\b(?:it|this|that|these|those|them|the\s+one|another|other|others|similar|same|more|price|cost|how\s+much|cheaper|cheapest|expensive|first|second|third|like\s+it|love\s+it)\b|(?:ეს|ის|იგი|მაგ|სხვა|კიდევ|ფას|ღირ|მსგავ|იგივ|მომწონ)|(?:\bes\b|\bis\b|\bsxva\b|\bkide|\bfas(?:i|ad)?\b|\bghir|\bmsgav|momwon)/i;
+
+/**
+ * Subset of REFERENCE_FOLLOWUP_RE asking for DIFFERENT / more items — signals that
+ * same-category alternatives (not just the one product) should be surfaced.
+ */
+export const MORE_LIKE_RE =
+  /\b(?:another|other|others|similar|more|different|else)\b|(?:სხვა|კიდევ|მსგავ|განსხვავ)|(?:\bsxva\b|\bkide|\bmsgav)/i;
+
+/**
  * Customer requests a custom deal, price negotiation, or off-plan arrangement
  * that the AI cannot resolve alone.
  */

@@ -147,12 +147,14 @@ export async function generateReply(
   const systemInstructionText = systemParts.filter(Boolean).join('\n\n');
 
   // ── Token-guarded history slice ────────────────────────────────────────────
-  // Photo flows need more history for apartment follow-up detection; craft_shop uses only 2 turns
-  // because prices always come from TOP PRODUCTS — long history is the primary contamination
-  // vector for hallucinated prices (e.g. "₾120") leaking into subsequent generations.
+  // Photo flows need more history for apartment follow-up detection. craft_shop uses 4 turns:
+  // enough to follow multi-turn references ("show me another", "do you have similar?", "I like
+  // this") without bloating tokens. Price contamination is no longer a concern — the current
+  // price is always re-injected into PRODUCTS (reference resolution) and CATALOG AUTHORITY
+  // forbids quoting history prices, so a slightly longer window is safe.
   const isPhotoFlow = photosSent || !!lastShownAptId || intent === 'photos';
   const historyTurns = (isPhotoFlow && businessType !== 'craft_shop') ? 6
-    : businessType === 'craft_shop' ? 2
+    : businessType === 'craft_shop' ? 4
     : 3;
 
   // ── Build Gemini multi-turn history ───────────────────────────────────────

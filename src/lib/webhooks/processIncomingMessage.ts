@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { generateReply } from '@/lib/ai';
 import { analyzeLeadState } from '@/lib/leads/detector';
-import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE, CRAFT_BROAD_QUERY_RE } from '@/lib/ai/signals';
+import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE, CRAFT_BROAD_QUERY_RE, REFERENCE_FOLLOWUP_RE, MORE_LIKE_RE } from '@/lib/ai/signals';
 import { detectLeadAndEscalation } from '@/lib/ai/detect';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
@@ -470,6 +470,33 @@ export async function processIncomingMessage(
     `${label} [routing] company:${integration.companyId} biz:${integration.businessType} intent:${effectiveIntent} first:${isFirstMessage} regex:${regexIntent ?? 'null'} context:${effectiveIntent === 'chat' ? 'minimal-grounded' : 'full'}`,
   );
 
+  // ── Reference resolution (conversational entity tracking) ────────────────────
+  // When the customer refers to something already discussed ("what's the price?",
+  // "I like it", "show me another", "do you have similar?") the message names no
+  // product, so retrieval surfaces nothing and the prompt would say "(no products
+  // matched)". Re-surface the recently-discussed product(s) — derived from the last
+  // shown product and the products named in the last AI message (matched against the
+  // catalog) — so the AI answers with real catalog data (price from DB, zero
+  // hallucination). For "another/similar", also include same-category alternatives.
+  // Fully scalable: no hardcoded product names; gated to genuine reference turns only.
+  if (
+    integration.businessType === 'craft_shop' &&
+    effectiveIntent !== 'chat' &&
+    'products' in finalBusinessContext &&
+    !((finalBusinessContext as ProductContext).matchedProducts?.length) &&
+    REFERENCE_FOLLOWUP_RE.test(combinedMessage)
+  ) {
+    const pc = finalBusinessContext as ProductContext;
+    const resolved = resolveDiscussedProducts(pc.products, history, lastShownApt, MORE_LIKE_RE.test(combinedMessage));
+    if (resolved.length > 0) {
+      pc.matchedProducts = resolved;
+      pc.tokenRetrievalHits = resolved.length;
+      console.info(`${label} [reference] resolved ${resolved.length} product(s) from prior context: ${JSON.stringify(resolved.map(p => p.name))}`);
+    } else {
+      console.info(`${label} [reference] follow-up detected but no prior product found to resolve`);
+    }
+  }
+
   // ── Soft-escalation detection (deterministic, zero AI calls) ─────────────
   // Triggers: (1) explicit human/operator request
   // Flow: offer human help this turn → on next turn check Redis key → if confirmed
@@ -928,6 +955,56 @@ function stripInternalReplyArtifacts(text: string): string {
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/**
+ * Resolves the product(s) a follow-up message implicitly refers to, for conversational
+ * reference resolution ("what's the price?", "I like it", "show me another").
+ * Sources (NO hardcoded names): (1) the last shown product, (2) products named in the
+ * most recent AI message, matched against the catalog in original OR English-translated
+ * form. When `wantAlternatives` is set, same-category siblings are appended so
+ * "another/similar" surfaces real alternatives. Returns up to 6 products, discussed-first.
+ */
+function resolveDiscussedProducts(
+  products: ProductContext['products'],
+  history: MessageHistoryEntry[],
+  lastShownId: string | null,
+  wantAlternatives: boolean,
+): ProductContext['products'] {
+  const out: ProductContext['products'] = [];
+  const seen = new Set<string>();
+  const add = (p?: ProductContext['products'][0]) => {
+    if (p && !seen.has(p.name.toLowerCase())) { seen.add(p.name.toLowerCase()); out.push(p); }
+  };
+  const slug = (s: string) => s.toLowerCase().replace(/[\s-]+/g, '_').slice(0, 40);
+
+  // 1. The product whose photo/details were last shown (stored identifier is original-name derived).
+  if (lastShownId) {
+    const id = slug(lastShownId.replace(/^prod_?/i, ''));
+    add(products.find(p => slug(p.name) === id));
+  }
+  // 2. Products the assistant named in its most recent message (original OR translated form).
+  const lastAi = history.filter(m => m.role === 'ai').slice(-1)[0]?.content ?? '';
+  if (lastAi.trim()) {
+    const hay = normalizeQuery(lastAi);
+    for (const p of products) {
+      if (out.length >= 6) break;
+      const n1 = normalizeQuery(p.name);
+      const n2 = normalizeQuery(translateProductForEnglish(p).name);
+      if ((n1.length >= 3 && hay.includes(n1)) || (n2.length >= 3 && hay.includes(n2))) add(p);
+    }
+  }
+  // 3. "another / similar / more" → append same-category siblings of the first discussed product.
+  if (wantAlternatives && out.length > 0) {
+    const cat = (out[0].category ?? '').trim().toLowerCase();
+    if (cat) {
+      for (const p of products) {
+        if (out.length >= 6) break;
+        if ((p.category ?? '').trim().toLowerCase() === cat) add(p);
+      }
+    }
+  }
+  return out.slice(0, 6);
 }
 
 function guardCraftCatalogReply(
