@@ -116,6 +116,10 @@ const GEO_EN: Record<string, string> = {
   'ახალი':     'New',
   'სპეციალური':'Special',
 
+  // ── Connectors / function words ────────────────────────────────────────────
+  'და':        'and',
+  'ან':        'or',
+
   // ── Company-info structural words ──────────────────────────────────────────
   'მისამართი': 'Address:',
   'ტელეფონი':  'Phone:',
@@ -149,9 +153,48 @@ export function containsGeorgian(text: string): boolean {
   return GEO_SCRIPT_RE.test(text);
 }
 
+// Georgian nominative vowels stripped during stemming (Latin-comment safe constant).
+const GEO_VOWELS = ['ა', 'ე', 'ი', 'ო', 'უ']; // ა ე ი ო უ
+
+/**
+ * Reduces a Georgian word to a comparable root for stem-level vocabulary lookup.
+ * Removes ONE inflectional suffix if present, otherwise strips a single trailing
+ * nominative vowel.  This unifies oblique/declined forms with their nominative
+ * dictionary entry WITHOUT per-word or per-phrase mappings — e.g. the oblique
+ * "for strength" form stems to the same root as the nominative "strength" key,
+ * and "for transformation" stems to the same root as "transformation".
+ *
+ * Minimum-length guards keep roots >= 3 chars to avoid short-stem collisions.
+ */
+function geoStem(word: string): string {
+  for (const suffix of GEO_LOOKUP_SUFFIXES) {
+    if (word.endsWith(suffix) && word.length - suffix.length >= 3) {
+      return word.slice(0, word.length - suffix.length);
+    }
+  }
+  if (word.length >= 4 && GEO_VOWELS.includes(word[word.length - 1])) {
+    return word.slice(0, word.length - 1);
+  }
+  return word;
+}
+
+// Stem -> English index, precomputed once from the GEO_EN vocabulary.
+// Lets inflected descriptor words resolve to their English meaning via
+// linguistic normalization instead of phonetic transliteration.
+// First entry wins on collision (dictionary is ordered nominative-first).
+const GEO_EN_STEMS: Record<string, string> = (() => {
+  const idx: Record<string, string> = {};
+  for (const [geo, en] of Object.entries(GEO_EN)) {
+    const stem = geoStem(geo);
+    if (stem.length >= 3 && !(stem in idx)) idx[stem] = en;
+  }
+  return idx;
+})();
+
 /**
  * Translates a single Georgian-script word to English.
- * (1) Direct dictionary, (2) suffix-stripped dictionary, (3) geoToLatin() phonetic fallback.
+ * (1) Direct dictionary, (2) suffix-stripped dictionary, (3) stem-normalized
+ * vocabulary index, (4) geoToLatin() phonetic fallback.
  */
 function translateGeoWord(word: string): string {
   if (GEO_EN[word]) return GEO_EN[word];
@@ -161,6 +204,10 @@ function translateGeoWord(word: string): string {
       if (GEO_EN[stem]) return GEO_EN[stem];
     }
   }
+  // Stem-level normalization — resolves inflected forms whose exact and simple
+  // suffix-stripped variants are not direct keys (inflected descriptors).
+  const stem = geoStem(word);
+  if (stem.length >= 3 && GEO_EN_STEMS[stem]) return GEO_EN_STEMS[stem];
   // Phonetic fallback — produces readable Latin text, never raw Georgian script.
   const latin = geoToLatin(word);
   return latin.charAt(0).toUpperCase() + latin.slice(1);
@@ -201,7 +248,9 @@ function transliterateProperText(text: string): string {
  * Returns null if pattern is not present in the text.
  */
 function parseGeorgianHours(text: string): string | null {
-  const m = text.match(/(\d+)\s*საათიდან\s*(\d+)\s*საათამდე/);
+  // Allow time-of-day words between the two hour markers, e.g.
+  // "3 საათიდან საღამოს 9 საათამდე" ("from 3 o'clock in the evening until 9").
+  const m = text.match(/(\d+)\s*საათიდან\s+(?:\S+\s+)*?(\d+)\s*საათამდე/);
   if (!m) return null;
   const fromH = parseInt(m[1], 10);
   const toH   = parseInt(m[2], 10);
@@ -230,7 +279,15 @@ export function compactCompanyInfoForEnglish(raw: string | null): string {
     : null;
 
   const hoursMatch = /(?:მუშაობს|working hours?|open)\s*[^\n.]{0,100}/i.exec(n);
-  const hoursText = hoursMatch ? hoursMatch[0].trim() : null;
+  const hoursRaw = hoursMatch ? hoursMatch[0].trim() : null;
+  // Strip any phone segment the greedy capture swallowed so the number is not
+  // rendered twice (once inside hours, once in the dedicated Phone: field below).
+  const hoursText = hoursRaw
+    ? hoursRaw
+        .replace(/\s*(?:ტელეფონი|phone|tel)\b.*$/i, '')
+        .replace(/\+?\d[\d\s\-()]{5,15}\d/g, '')
+        .trim()
+    : null;
   const hoursEN = hoursText
     ? (parseGeorgianHours(hoursText) ?? translateToEnglish(hoursText))
     : null;

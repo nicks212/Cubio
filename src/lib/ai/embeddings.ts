@@ -26,19 +26,39 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { persistAIUsage, type AIUsageContext } from './usage';
 import type { ApartmentContext, ProductContext } from './types';
 
+// ─── Embedding model configuration ────────────────────────────────────────
+// Model name: 'text-embedding-004' / 'embedding-001' return 404 on the current
+// Generative Language API key — they are not exposed. 'gemini-embedding-001' is
+// the available model (verified via ListModels). It defaults to 3072 dimensions,
+// so we MUST request 768 via outputDimensionality to match the existing
+// products.embedding / apartments.embedding vector(768) columns and their
+// ivfflat indexes (pgvector ivfflat/hnsw cap out at 2000 dims — 3072 cannot be
+// indexed). The SDK forwards outputDimensionality verbatim to the REST API
+// (formatEmbedContentInput returns params as-is → JSON.stringify), but the v0.24
+// EmbedContentRequest type omits it, hence the `as EmbedContentRequest` cast.
+//
+// Cosine note: at dimensions < 3072 the model does NOT L2-normalize the vector.
+// We rank with cosine distance (vector_cosine_ops / <=>), which is scale-
+// invariant, so unnormalized 768-dim vectors are correct — do not switch to
+// inner-product/L2 ops without adding normalization first.
+const EMBEDDING_MODEL = 'gemini-embedding-001';
+const EMBEDDING_DIMENSIONS = 768;
+
 // ─── Embedding Model Health Check (Startup) ───────────────────────────────
 let embeddingModelHealthy = false;
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
 let embeddingModel: ReturnType<GoogleGenerativeAI['getGenerativeModel']> | undefined;
 try {
-  embeddingModel = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+  embeddingModel = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
   // Run a test embedding call at startup
   (async () => {
     try {
       const result = await embeddingModel!.embedContent({
         content: { parts: [{ text: 'health check' }], role: 'user' },
         taskType: TaskType.RETRIEVAL_QUERY,
-      });
+        outputDimensionality: EMBEDDING_DIMENSIONS,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
       if (result && result.embedding && Array.isArray(result.embedding.values)) {
         embeddingModelHealthy = true;
         console.info('[embeddings] Embedding model health check: OK');
@@ -109,7 +129,8 @@ export async function describeImageForSearch(
 // ─── Text embedding ───────────────────────────────────────────────────────────
 
 /**
- * Generates a 768-dimensional text embedding using Google's embedding-001.
+ * Generates a 768-dimensional text embedding using gemini-embedding-001
+ * (outputDimensionality forced to 768 — see EMBEDDING_MODEL note above).
  * Returns null on failure. Logs detailed errors.
  */
 export async function generateTextEmbedding(
@@ -124,7 +145,9 @@ export async function generateTextEmbedding(
     const result = await embeddingModel.embedContent({
       content: { parts: [{ text }], role: 'user' },
       taskType,
-    });
+      outputDimensionality: EMBEDDING_DIMENSIONS,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
     if (!result || !result.embedding || !Array.isArray(result.embedding.values)) {
       console.error('[embeddings] generateTextEmbedding: Unexpected result structure', result);
       return null;

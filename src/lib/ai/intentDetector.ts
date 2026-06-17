@@ -29,9 +29,13 @@ export type PhotoType = 'apartment' | 'project' | 'any';
 export function detectIntent(message: string): MessageIntent | null {
   const text = message.trim();
   if (!text) return 'chat';
-  if (BUSINESS_QUERY_RE.test(text)) return 'search';
+  // Order matters: a photo request often also contains business keywords
+  // (e.g. "ფოტო მაჩვენე ისევ" — "მაჩვენე" is in BUSINESS_QUERY_RE). PHOTO_RE must
+  // win so the turn routes to 'photos', not 'search'. CHAT_ONLY is checked first
+  // because it is fully anchored to pure greetings and can never overlap the others.
   if (CHAT_ONLY_RE.test(text)) return 'chat';
   if (PHOTO_RE.test(text)) return 'photos';
+  if (BUSINESS_QUERY_RE.test(text)) return 'search';
 
   // Any short message that didn't confidently match chat or photo is ambiguous —
   // could be a photo request in Georgian script ("ვნახოთ ბინა"), romanized Georgian

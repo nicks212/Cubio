@@ -121,18 +121,12 @@ export async function generateReply(
 
   // ── System instruction ─────────────────────────────────────────────────────
   const systemParts: string[] = [`${globalPrompt}\n\n${businessPrompt}`, stateLine];
-  // Catalog grounding: injected into every non-chat turn to counter history contamination.
-  // Previous AI turns may contain wrong prices from earlier hallucinations; this rule
-  // ensures the AI always reads prices from the current TOP PRODUCTS, not from memory.
-  if (businessType === 'craft_shop') {
-    systemParts.push(
-      'CATALOG AUTHORITY: The PRODUCTS section in the craft shop prompt is the SOLE authoritative source for names, prices, availability, and attributes. ' +
-      'If PRODUCTS conflicts with conversation history, PRODUCTS is always correct. ' +
-      'If PRODUCTS shows "(no products matched this message)", do NOT mention any product name or price — only ask for clarification. ' +
-      'Never state a price, product name, or attribute that does not appear in the current PRODUCTS list. ' +
-      'You may only reference products present in the PRODUCTS section. Do not invent, estimate, or suggest products not listed.'
-    );
-  }
+  // Catalog grounding is already stated authoritatively in TWO layered prompts that
+  // are always part of systemParts[0] for non-chat turns:
+  //   • global.ts  → PRICES / ACCURACY (layer 1, both business types)
+  //   • craft_shop.ts → CATALOG RULE   (layer 2, craft shop)
+  // A third runtime-injected "CATALOG AUTHORITY" copy here was redundant (~90 tokens
+  // every craft turn) and stated nothing the two layers don't already enforce.
   if (!isFirstMessage) {
     // Hard constraint — injected FIRST so it overrides the model's tendency to greet
     systemParts.unshift('NO GREETING: Do NOT use გამარჯობა, hello, hi, or any greeting. Start directly with your answer.');
