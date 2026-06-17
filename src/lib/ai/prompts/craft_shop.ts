@@ -1,6 +1,6 @@
 import type { ProductContext } from '../types';
 import { CRAFT_BROAD_QUERY_RE } from '../signals';
-import { translateProductForEnglish, compactCompanyInfoForEnglish } from '../geoTranslation';
+import { translateProductForEnglish, compactCompanyInfoForEnglish, detectReplyLanguage } from '../geoTranslation';
 
 type ProductRow = ProductContext['products'][0];
 
@@ -76,21 +76,15 @@ function compactCompanyInfo(raw: string | null): string {
 export function buildCraftShopSystemPrompt(
   context: ProductContext,
   userQuery = '',
-  opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean } = {},
+  opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean; replyLanguage?: 'ka' | 'en' } = {},
 ): string {
 
   // ── Language detection (done first — affects preprocessing of all data below) ──
-  // True when customer message has Latin letters but no Georgian script.
-  // Covers English and romanized European languages (all routed to English output).
-  // Use only the LAST line of userQuery for language detection.  When the debounce
-  // buffer drains multiple messages (bufferedTexts.join('\n')), earlier Georgian
-  // messages cause the whole string to fail the Georgian-script test, even when the
-  // customer's actual current message is in English.  The last line is the
-  // most-recent message \u2014 the one that determines the reply language.
-  const lastQueryLine = (userQuery.split('\n').at(-1) ?? userQuery).trim();
-  const isEnglishQuery = lastQueryLine.length > 0 &&
-    !/[\u10D0-\u10FF]/.test(lastQueryLine) &&
-    /[a-zA-Z]/.test(lastQueryLine);
+  // replyLanguage is computed once upstream from the CURRENT customer message and
+  // threaded in via opts; never re-derived from history. Controls product-data
+  // translation and the DATA LANGUAGE block below. Falls back to the shared detector
+  // if a caller omits it (still one detection implementation).
+  const isEnglishQuery = (opts.replyLanguage ?? detectReplyLanguage(userQuery)) === 'en';
 
   const available = context.products.filter(p => p.in_stock);
   const catFallbackHits = context.categoryFallbackHits ?? 0;

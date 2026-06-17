@@ -12,7 +12,7 @@ import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
 import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts } from '@/lib/ai/embeddings';
 import { persistAIUsage } from '@/lib/ai/usage';
 import { normalizeQuery, retrieveProducts } from '@/lib/ai/productRetrieval';
-import { translateProductForEnglish } from '@/lib/ai/geoTranslation';
+import { translateProductForEnglish, detectReplyLanguage } from '@/lib/ai/geoTranslation';
 import { redis } from '@/lib/redis';
 import { createHash } from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -258,7 +258,8 @@ export async function processIncomingMessage(
       console.info(`${label} Voice transcribed (${transcript.length} chars): "${transcript.slice(0, 80)}"`);
     } else {
       // Transcription failed — let the customer know without crashing the pipeline.
-      const isGeoCtx = /[\u10D0-\u10FF]/.test(preloadedHistory.map(m => m.content).join(''));
+      // Language from the CURRENT message only (a voice note has no script \u2192 English default).
+      const isGeoCtx = detectReplyLanguage(combinedMessage) === 'ka';
       const fallback = isGeoCtx
         ? '\u10ee\u10db\u10dd\u10d5\u10d0ნი შეტყობინება მივიღე — გთხოვთ დაწეროთ თქვენი კითხვა ტექსტის სახით.'
         : 'Voice message received — please type your question.';
@@ -268,6 +269,14 @@ export async function processIncomingMessage(
       return { conversationId, reply: fallback };
     }
   }
+
+  // ── Single language authority for this turn ─────────────────────────────────
+  // Derived ONLY from the current customer message (the transcript, when this was a
+  // voice note). Never from conversation history — so a customer can switch language
+  // every message and each reply adapts. Threaded into generateReply and every
+  // deterministic fallback below; nothing re-detects language independently.
+  const replyLanguage = detectReplyLanguage(combinedMessage);
+  console.info(`${label} [language] replyLanguage=${replyLanguage}`);
 
   // 6. Detect intent — fast regex first; AI classifier fallback for ambiguous short messages
   //    (romanized Georgian like "fotoebs", "suratebi", "vnaxo" can't be caught by keywords alone).
@@ -489,8 +498,7 @@ export async function processIncomingMessage(
 
   // Confirmed soft escalation: skip AI, send contact, persist escalation record
   if (escalationConfirmed) {
-    const isGeo = /[\u10D0-\u10FF]/.test(combinedMessage)
-      || history.some(m => /[\u10D0-\u10FF]/.test(m.content));
+    const isGeo = replyLanguage === 'ka';
     const contactMsg = buildEscalationContactMessage(
       (businessContext as ApartmentContext).businessDescription,
       isGeo,
@@ -563,6 +571,7 @@ export async function processIncomingMessage(
     isFirstMessage,
     lastShownApt,
     offerEscalation,
+    replyLanguage,
     { companyId: integration.companyId, conversationId },
   );
 
@@ -673,8 +682,7 @@ export async function processIncomingMessage(
   // Fallback: when AI's entire reply was just the SHOW_PHOTOS marker (AI wrote no text),
   // provide a natural default sentence so the customer gets a text message with their photos.
   if (cleanReply.length === 0 && imageUrlsToSend.length > 0) {
-    const isGeoFallback = /[\u10D0-\u10FF]/.test(combinedMessage)
-      || history.some(m => /[\u10D0-\u10FF]/.test(m.content));
+    const isGeoFallback = replyLanguage === 'ka';
     cleanReply = integration.businessType === 'real_estate'
       ? (isGeoFallback ? 'აი ბინის ფოტოები! 📸' : 'Here are the photos! 📸')
       : (isGeoFallback ? 'გამოგიგზავნე! 📸' : 'Here you go! 📸');
@@ -684,8 +692,7 @@ export async function processIncomingMessage(
   // If the model hallucinated a bare SHOW_PHOTOS marker on a non-photo turn, recover with
   // a short grounded text reply instead of sending an empty message or photo fallback.
   if (showPhotosRaw && !showPhotosMatch && cleanReply.length === 0) {
-    const isGeoFallback = /[\u10D0-\u10FF]/.test(combinedMessage)
-      || history.some(m => /[\u10D0-\u10FF]/.test(m.content));
+    const isGeoFallback = replyLanguage === 'ka';
     cleanReply = integration.businessType === 'craft_shop'
       ? (isGeoFallback
         ? 'მითხარი რა ტიპის ნივთი გაინტერესებს და კატალოგიდან ზუსტ ვარიანტებს შეგირჩევ.'
@@ -713,8 +720,7 @@ export async function processIncomingMessage(
   // No-photos fallback: AI emitted SHOW_PHOTOS but no images were resolved for that product.
   // Override whatever text AI wrote — never leave the customer without any response.
   if (showPhotosMatch && imageUrlsToSend.length === 0) {
-    const isGeo = /[\u10D0-\u10FF]/.test(combinedMessage)
-      || history.some(m => /[\u10D0-\u10FF]/.test(m.content));
+    const isGeo = replyLanguage === 'ka';
     const biz = (finalBusinessContext as { businessDescription?: string }).businessDescription ?? null;
     const companyLine = biz ? `\n\n${biz.slice(0, 150)}` : '';
     cleanReply = isGeo
@@ -730,7 +736,7 @@ export async function processIncomingMessage(
         .slice(0, 3).map(p => p.name);
       console.info(`${label} [retrieval] query="${combinedMessage.slice(0, 60)}" top3_context=${JSON.stringify(top3names)}`);
     }
-    const guardedReply = guardCraftCatalogReply(cleanReply, combinedMessage, finalBusinessContext as ProductContext, history);
+    const guardedReply = guardCraftCatalogReply(cleanReply, combinedMessage, finalBusinessContext as ProductContext, replyLanguage);
     if (guardedReply.replaced) {
       cleanReply = guardedReply.reply;
       console.warn(`${label} Replaced unsupported craft reply with safe fallback (${guardedReply.reason})`);
@@ -928,7 +934,7 @@ function guardCraftCatalogReply(
   reply: string,
   userMessage: string,
   context: ProductContext,
-  history: MessageHistoryEntry[],
+  replyLanguage: 'ka' | 'en',
 ): { reply: string; replaced: boolean; reason: string | null } {
   if (!reply.trim() || context.products.length === 0) {
     return { reply, replaced: false, reason: null };
@@ -972,7 +978,7 @@ function guardCraftCatalogReply(
           : 'vague_turn_recommendation';
 
   return {
-    reply: buildSafeCraftReply(userMessage, context, retrievalHits, history, reason),
+    reply: buildSafeCraftReply(userMessage, context, retrievalHits, reason, replyLanguage),
     replaced: true,
     reason,
   };
@@ -1090,11 +1096,11 @@ function buildSafeCraftReply(
   userMessage: string,
   context: ProductContext,
   retrievalHits: Array<{ name: string; confidence: number }>,
-  history: MessageHistoryEntry[],
   reason: string,
+  replyLanguage: 'ka' | 'en',
 ): string {
-  const isGeorgian = /[\u10D0-\u10FF]/.test(userMessage)
-    || history.some(message => /[\u10D0-\u10FF]/.test(message.content));
+  // Language from the single authority (current message), never from history.
+  const isGeorgian = replyLanguage === 'ka';
   const products = context.products;
   const companyInfo = extractCompactCompanyInfo(context.businessDescription);
   const matchedProducts = retrievalHits

@@ -51,6 +51,8 @@ export async function generateReply(
    * with a representative and ask if they'd like that. One sentence, no apologies.
    */
   offerEscalation = false,
+  /** Single language authority, computed upstream from the current customer message. */
+  replyLanguage: 'ka' | 'en' = 'en',
   usageContext?: Omit<AIUsageContext, 'feature' | 'model'>,
 ): Promise<string> {
   // ── Chat intent: lean micro-prompt, no business context ───────────────────
@@ -71,7 +73,7 @@ export async function generateReply(
       `If company details are limited, ask one short clarifying question instead of guessing. ` +
       `If they mention seeing an ad or coming to inquire — warmly ask what they are looking for. ` +
       `If they say thanks, say you're welcome. If they say goodbye, wish them well.`;
-    const isGeo = /[\u10D0-\u10FF]/.test(message);
+    const isGeo = replyLanguage === 'ka';
     for (let attempt = 0; attempt <= 1; attempt++) {
       try {
         const result = await model.generateContent({
@@ -117,6 +119,7 @@ export async function generateReply(
         buyingIntent: state.buyingIntent || BUYING_INTENT_RE.test(message),
         productDissatisfied: state.productDissatisfied,
         photoIntent: intent === 'photos',
+        replyLanguage,
       });
 
   // ── System instruction ─────────────────────────────────────────────────────
@@ -159,7 +162,13 @@ export async function generateReply(
   //   3. Drop any leading model turns (Gemini history MUST start with user)
   const historySlice = conversationHistory
     .slice(-historyTurns)
-    .filter(m => !(m.role === 'ai' && /^SHOW_PHOTOS:/i.test(m.content.trim())));
+    .filter(m => !(m.role === 'ai' && /^SHOW_PHOTOS:/i.test(m.content.trim())))
+    // Prevent Gemini from mirroring the conversation's prior language: when this turn
+    // must be answered in English, drop any history turn that still contains Georgian
+    // script (the assistant's earlier replies carry Georgian product names). Structured
+    // facts (budget, rooms, etc.) are preserved separately in the STATE line, so removing
+    // these raw turns loses no grounding. Georgian turns are kept when answering in Georgian.
+    .filter(m => replyLanguage !== 'en' || !/[ა-ჿ]/.test(m.content));
 
   const geminiHistory: GeminiContent[] = [];
   for (const turn of historySlice) {
@@ -235,8 +244,7 @@ export async function generateReply(
   }
 
   console.error('[ai/generate] generateReply error:', lastErr);
-  const isGeorgian = /[\u10D0-\u10FF]/.test(message);
-  return isGeorgian
+  return replyLanguage === 'ka'
     ? 'გთხოვთ მოთმინება, ცოტა ხანში გიპასუხებთ.'
     : 'Thank you for your message. We will get back to you shortly.';
 }

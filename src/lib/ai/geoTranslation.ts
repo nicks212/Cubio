@@ -153,6 +153,27 @@ export function containsGeorgian(text: string): boolean {
   return GEO_SCRIPT_RE.test(text);
 }
 
+/**
+ * THE single authority for reply language across the whole system.
+ *
+ * Rule: Georgian script in the CURRENT customer message \u21D2 "ka", otherwise "en".
+ * Every non-Georgian language (English, Russian-latin, Spanish, \u2026) defaults to "en".
+ *
+ * Deliberately ignores conversation history: the assistant's own prior replies
+ * contain Georgian product names, so any history-based check would permanently
+ * flip foreign-language conversations to Georgian once a product was shown.
+ *
+ * For a debounced burst ("msg1\nmsg2") the most-recent line decides \u2014 that is the
+ * message the customer is waiting on a reply to. Romanized Georgian ("minda",
+ * "gamarjoba") has no Georgian script and therefore resolves to "en", unchanged
+ * from the previous isEnglishQuery behaviour.
+ */
+export function detectReplyLanguage(currentMessage: string): 'ka' | 'en' {
+  const lastLine = (currentMessage.split('\n').at(-1) ?? '').trim();
+  const probe = lastLine.length > 0 ? lastLine : currentMessage;
+  return GEO_SCRIPT_RE.test(probe) ? 'ka' : 'en';
+}
+
 // Georgian nominative vowels stripped during stemming (Latin-comment safe constant).
 const GEO_VOWELS = ['ა', 'ე', 'ი', 'ო', 'უ']; // ა ე ი ო უ
 
