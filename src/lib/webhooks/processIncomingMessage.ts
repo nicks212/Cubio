@@ -12,6 +12,7 @@ import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
 import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts } from '@/lib/ai/embeddings';
 import { persistAIUsage } from '@/lib/ai/usage';
 import { normalizeQuery, retrieveProducts } from '@/lib/ai/productRetrieval';
+import { translateProductForEnglish } from '@/lib/ai/geoTranslation';
 import { redis } from '@/lib/redis';
 import { createHash } from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -506,8 +507,12 @@ export async function processIncomingMessage(
     const tokenHits  = prodCtx.tokenRetrievalHits ?? 0;
     const vectorHitsN = prodCtx.vectorHits ?? 0;
     const totalHits  = tokenHits + vectorHitsN;
-    const candidates = prodCtx.products.slice(0, totalHits).map(p => p.name);
-    const finalTop6  = prodCtx.products.slice(0, 6).map(p => p.name);
+    // Mirror the same last-line language detection used in buildCraftShopSystemPrompt
+    // so this log shows translated names for English queries (not raw Georgian names).
+    const lastMsgLine = (combinedMessage.split('\n').at(-1) ?? combinedMessage).trim();
+    const isEngLog = lastMsgLine.length > 0 && !/[ა-ჿ]/.test(lastMsgLine) && /[a-zA-Z]/.test(lastMsgLine);
+    const candidates = prodCtx.products.slice(0, totalHits).map(p => isEngLog ? translateProductForEnglish(p).name : p.name);
+    const finalTop6  = prodCtx.products.slice(0, 6).map(p => isEngLog ? translateProductForEnglish(p).name : p.name);
     console.info(
       `${label} [retrieval-trace] ` +
       `query="${combinedMessage.slice(0, 60)}" ` +

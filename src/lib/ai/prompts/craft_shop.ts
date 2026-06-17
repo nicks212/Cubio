@@ -54,9 +54,15 @@ export function buildCraftShopSystemPrompt(
   // ── Language detection (done first — affects preprocessing of all data below) ──
   // True when customer message has Latin letters but no Georgian script.
   // Covers English and romanized European languages (all routed to English output).
-  const isEnglishQuery = userQuery.length > 0 &&
-    !/[\u10D0-\u10FF]/.test(userQuery) &&
-    /[a-zA-Z]/.test(userQuery);
+  // Use only the LAST line of userQuery for language detection.  When the debounce
+  // buffer drains multiple messages (bufferedTexts.join('\n')), earlier Georgian
+  // messages cause the whole string to fail the Georgian-script test, even when the
+  // customer's actual current message is in English.  The last line is the
+  // most-recent message \u2014 the one that determines the reply language.
+  const lastQueryLine = (userQuery.split('\n').at(-1) ?? userQuery).trim();
+  const isEnglishQuery = lastQueryLine.length > 0 &&
+    !/[\u10D0-\u10FF]/.test(lastQueryLine) &&
+    /[a-zA-Z]/.test(lastQueryLine);
 
   // Show top N products — category fallback narrows the slice to same-category products
   // only, so unrelated products (e.g. tarot) cannot bleed into candle/stone responses.

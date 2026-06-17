@@ -60,7 +60,7 @@ export async function classifyIntentAI(
 ): Promise<{ intent: MessageIntent; wantsEscalation: boolean }> {
   // Compressed 4-label prompt — ~40 input tokens, 1-word output, 0 thinking
   const prompt = `Classify. One word only: PHOTOS, CHAT, SEARCH, or ESCALATE.
-PHOTOS=wants images/photos. CHAT=greeting/thanks/ack/emoji. ESCALATE=asks for human/agent/operator. SEARCH=everything else.
+PHOTOS=wants images/photos. CHAT=pure greeting/thanks/acknowledgement or emoji-only message with no product content. ESCALATE=explicitly requests to be connected with a human operator or agent. SEARCH=everything else including product descriptions, questions about items, or messages mixing emoji with product content.
 Message: "${message.replace(/"/g, "'")}"`;
 
   try {

@@ -40,6 +40,19 @@ export function withinEditDistance2(a: string, b: string): boolean {
   }
   return row[n] <= 2;
 }
+// English function words that carry no retrieval signal and must be stripped
+// before token matching.  Without this, "Do you have emerald stones?" scores
+// "do" and "have" hits against product names/descriptions, producing nonsense
+// matches like "I am not a Doll" (doll.startsWith("do") = true).
+const EN_STOPWORDS = new Set([
+  'do', 'does', 'did', 'have', 'has', 'had',
+  'you', 'your', 'we', 'our', 'they', 'their', 'it', 'its',
+  'is', 'are', 'was', 'were', 'be', 'been',
+  'the', 'an', 'can', 'could', 'would', 'should', 'will', 'may', 'might',
+  'this', 'that', 'these', 'those', 'what', 'which', 'who',
+  'show', 'tell', 'me', 'to', 'in', 'of', 'for', 'on', 'at', 'or', 'and', 'not',
+]);
+
 // Georgian morphological endings (longest-first for greedy stripping).
 const GEO_SUFFIXES = ['ebi', 'ebis', 'ebs', 'shi', 'its', 'ad', 'ze', 'is', 'it', 'eb', 's', 'i'];
 
@@ -80,7 +93,9 @@ export function scoreProductRetrieval(
   product: ProductLike,
   normalizedQuery: string,
 ): { score: number; confidence: number; reason: string; matchedFields: string[] } {
-  const tokens = (normalizedQuery.match(/[a-z0-9]{2,}/g) ?? []).map(stemGeoToken);
+  const tokens = (normalizedQuery.match(/[a-z0-9]{2,}/g) ?? [])
+    .map(stemGeoToken)
+    .filter(t => !EN_STOPWORDS.has(t));
   if (!tokens.length) return { score: 0, confidence: 0, reason: 'empty', matchedFields: [] };
 
   const nq = (s: string) => normalizeQuery(s);
@@ -95,15 +110,22 @@ export function scoreProductRetrieval(
   const zodTokens  = (product.zodiac_compatibility ?? []).flatMap(z => stemTokens(z));
 
   // Returns the subset of query tokens that match at least one token in fieldTokens.
-  // Match modes: exact, prefix, ed-1 (len≥4), ed-2 (len≥5 — Georgian oblique-stem metathesis).
+  // Match modes:
+  //   exact          — always allowed
+  //   prefix         — ft.startsWith(qt) only when qt≥4 chars (prevents "do"→"doll")
+  //                  — qt.startsWith(ft) only when ft≥4 chars (prevents short field stubs)
+  //   ed-1 (len≥4)  — one-char typo tolerance
+  //   ed-2 (len≥6)  — Georgian oblique-stem metathesis only; raised from 5 to prevent
+  //                    stemmed English words ("storie" from "stories") matching 5-char
+  //                    English query tokens ("stone" ed-2 "storie" = 2 ≤ 2 → false positive)
   const getMatchedTokens = (fieldTokens: string[]): string[] =>
     tokens.filter(qt =>
       fieldTokens.some(ft =>
         ft === qt ||
-        ft.startsWith(qt) ||
-        qt.startsWith(ft) ||
+        (qt.length >= 4 && ft.startsWith(qt)) ||
+        (ft.length >= 4 && qt.startsWith(ft)) ||
         (qt.length >= 4 && ft.length >= 4 && withinEditDistance1(qt, ft)) ||
-        (qt.length >= 5 && ft.length >= 5 && withinEditDistance2(qt, ft))
+        (qt.length >= 6 && ft.length >= 6 && withinEditDistance2(qt, ft))
       )
     );
 
@@ -157,7 +179,7 @@ export function scoreProductRetrieval(
   const dscMatched = getMatchedTokens(dscTokens);
   const dscHits = dscMatched.length;
   if (dscHits > 0) {
-    score += dscHits * 1.5;
+    score += dscHits * 2.5;
     if (dscHits >= 2) score += 4.0; // co-occurrence bonus
     if (!reason) reason = `${dscHits} description tokens${dscHits >= 2 ? ' (+co-occurrence)' : ''}`;
     matchedFields.push(...dscMatched.map(t => `description:${t}`));
@@ -290,7 +312,9 @@ const EN_CATEGORY_MAP: Array<{ queryKeywords: string[]; fieldPatterns: string[] 
  */
 export function extractCategoryKeywords(query: string): string[] | null {
   const qNorm = normalizeQuery(query);
-  const tokens = (qNorm.match(/[a-z0-9]{2,}/g) ?? []).map(stemGeoToken);
+  const tokens = (qNorm.match(/[a-z0-9]{2,}/g) ?? [])
+    .map(stemGeoToken)
+    .filter(t => !EN_STOPWORDS.has(t));
   for (const { queryKeywords, fieldPatterns } of EN_CATEGORY_MAP) {
     if (tokens.some(t => queryKeywords.some(k => t === k || t.startsWith(k) || k.startsWith(t)))) {
       return fieldPatterns;
