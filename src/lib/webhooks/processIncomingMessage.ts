@@ -356,14 +356,25 @@ export async function processIncomingMessage(
     const newNames = textVectorNames.filter(n => !existingSet.has(n.toLowerCase()));
     if (newNames.length > 0) {
       console.info(`${label} Vector search (text): ${newNames.length} product(s) found — top: "${newNames[0]}"`);
-      // Promote text-vector hits to priority front in businessContext.
+      // Promote text-vector hits in businessContext.
       // businessContext was already loaded — re-sort products array in place.
       if ('products' in businessContext && Array.isArray(businessContext.products)) {
-        const allProds = businessContext.products as Array<{ name: string }>;
+        const prodCtx = businessContext as ProductContext;
+        const allProds = prodCtx.products;
         const vectorSet = new Set([...similarProductNames, ...newNames].map(n => n.toLowerCase()));
-        const prioritized = allProds.filter(p => vectorSet.has(p.name.toLowerCase()));
-        const rest = allProds.filter(p => !vectorSet.has(p.name.toLowerCase()));
-        (businessContext as { products: Array<{ name: string }> }).products = [...prioritized, ...rest];
+        prodCtx.products = [
+          ...allProds.filter(p => vectorSet.has(p.name.toLowerCase())),
+          ...allProds.filter(p => !vectorSet.has(p.name.toLowerCase())),
+        ];
+        // Prepend the new semantic matches to the authoritative matched list (deduped).
+        // Vector is the strongest signal, so these lead — but they NEVER pad with
+        // unmatched catalog rows.
+        const existingMatched = prodCtx.matchedProducts ?? [];
+        const matchedNames = new Set(existingMatched.map(p => p.name.toLowerCase()));
+        const newMatched = newNames
+          .map(n => allProds.find(p => p.name.toLowerCase() === n.toLowerCase()))
+          .filter((p): p is ProductContext['products'][0] => !!p && !matchedNames.has(p.name.toLowerCase()));
+        prodCtx.matchedProducts = [...newMatched, ...existingMatched];
       }
     }
   }
@@ -506,20 +517,22 @@ export async function processIncomingMessage(
     const prodCtx = finalBusinessContext as ProductContext;
     const tokenHits  = prodCtx.tokenRetrievalHits ?? 0;
     const vectorHitsN = prodCtx.vectorHits ?? 0;
-    const totalHits  = tokenHits + vectorHitsN;
     // Mirror the same last-line language detection used in buildCraftShopSystemPrompt
     // so this log shows translated names for English queries (not raw Georgian names).
     const lastMsgLine = (combinedMessage.split('\n').at(-1) ?? combinedMessage).trim();
     const isEngLog = lastMsgLine.length > 0 && !/[ა-ჿ]/.test(lastMsgLine) && /[a-zA-Z]/.test(lastMsgLine);
-    const candidates = prodCtx.products.slice(0, totalHits).map(p => isEngLog ? translateProductForEnglish(p).name : p.name);
-    const finalTop6  = prodCtx.products.slice(0, 6).map(p => isEngLog ? translateProductForEnglish(p).name : p.name);
+    // Trace the AUTHORITATIVE matched list — the only products the prompt may show.
+    const matchedList = prodCtx.matchedProducts ?? [];
+    const candidates = matchedList.map(p => isEngLog ? translateProductForEnglish(p).name : p.name);
+    const finalTop6  = matchedList.slice(0, 6).map(p => isEngLog ? translateProductForEnglish(p).name : p.name);
     console.info(
       `${label} [retrieval-trace] ` +
       `query="${combinedMessage.slice(0, 60)}" ` +
       `intent=${effectiveIntent} ` +
       `loadedProductCount=${prodCtx.products.length} ` +
-      `retrievalCandidateCount=${totalHits} ` +
-      `retrievalCandidates=${JSON.stringify(candidates)} ` +
+      `matchedCount=${matchedList.length} ` +
+      `signalCounts={token:${tokenHits},vector:${vectorHitsN},category:${prodCtx.categoryFallbackHits ?? 0}} ` +
+      `matchedProducts=${JSON.stringify(candidates.slice(0, 10))} ` +
       `finalProductsPassedToPrompt=${JSON.stringify(finalTop6)}`,
     );
   }
@@ -615,18 +628,22 @@ export async function processIncomingMessage(
           break;
         }
       }
-      // Last resort: use the top context product (already vector-ranked as most relevant).
-      // Fires when token retrieval scores every product below 0.12 (e.g. pure Georgian script
-      // with no token overlap) but vector search already identified the correct product.
+      // Last resort: use the top MATCHED product (vector/token/category ranked).
+      // Fires when token retrieval scores every product below 0.12 (e.g. pure Georgian
+      // script with no token overlap) but vector search already identified the correct
+      // product. Sourced from matchedProducts — NEVER from raw catalog order — so a bare
+      // photo request can no longer return the first-inserted catalog item (a statue).
       if (imageUrlsToSend.length === 0) {
-        const topProd = prodCtxFallback.products.find(p =>
+        const topProd = (prodCtxFallback.matchedProducts ?? []).find(p =>
           p.images?.some(u => u.startsWith('http'))
         );
         if (topProd) {
           const photos = (topProd.images ?? []).filter(u => u.startsWith('http'));
           imageUrlsToSend.push(...photos);
           fallbackProductName = topProd.name;
-          console.info(`${label} [photo-fallback] Context-top product "${topProd.name}" — ${photos.length} photo(s)`);
+          console.info(`${label} [photo-fallback] Top matched product "${topProd.name}" — ${photos.length} photo(s)`);
+        } else {
+          console.info(`${label} [photo-fallback] No matched product with photos — asking customer which item`);
         }
       }
     }

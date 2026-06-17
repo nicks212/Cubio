@@ -35,6 +35,16 @@ export interface ProductContext {
   /** Non-null when context was loaded after an image similarity search. */
   imageSearchQuery?: string | null;
   /**
+   * The ONLY products the prompt builder may surface for this turn — the genuinely
+   * relevant matches (vector + strong token retrieval + category-level alternatives),
+   * already ranked best-first. NEVER padded with arbitrary catalog rows.
+   *
+   * `products` above remains the full catalog (used only for SHOW_PHOTOS resolution).
+   * Keeping these two arrays separate is what prevents insertion-order deity statues
+   * from leaking into responses when retrieval finds few/no matches.
+   */
+  matchedProducts?: ProductContext['products'];
+  /**
    * Number of distinct products returned by pgvector similarity search for this turn.
    * When > 0, prompt builder shows those products even when token retrieval scored them
    * below threshold — handles Georgian product names that don't transliterate to match

@@ -127,76 +127,86 @@ export async function loadBusinessContext(
     console.info(`[loadBusinessContext] ${prioritized.length} priority products from vector search surfaced to top`);
   }
 
-  // Deterministic text retrieval — catches romanized/transliterated queries that
-  // vector search may miss (e.g. "taro" vs ტარო, "silver ring" vs ვერცხლის ბეჭედი).
-  // Runs ONLY when vector search found nothing — vector is primary, token is fallback.
-  // If vector already returned matches, those are already at the front; running token
-  // retrieval on top would mix a 3rd ranking signal and potentially displace better matches.
+  // ── Build the explicit matched-products list ────────────────────────────────
+  // This is the ONLY list the prompt may surface. It contains genuinely relevant
+  // products in best-first order: vector matches → strong token matches → same-
+  // category alternatives → (last) weak best-effort token hits. It is NEVER padded
+  // with arbitrary catalog rows, so insertion-order items (e.g. the deity statues
+  // created first) cannot leak into a response when retrieval finds few/no matches.
+  //
+  // STRONG_RETRIEVAL_SCORE tracks the scoring engine: a single category/description
+  // token scores 2.5; two tokens or a full category/name match score >= 5; exact or
+  // "name contains query" score 8–10. So < 5 means only a weak coincidental hit —
+  // which must NOT be treated as a confident match, and must NOT suppress the
+  // category fallback below.
+  const STRONG_RETRIEVAL_SCORE = 5.0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const byName = (name: string): any => allProducts.find((p: any) => p.name.toLowerCase() === name.toLowerCase());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const matched: any[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pushUnique = (p: any) => { if (p && !matched.some(m => m.name.toLowerCase() === p.name.toLowerCase())) matched.push(p); };
+
   let tokenRetrievalHitCount = 0;
+  let categoryFallbackHitCount = 0;
+
+  // 1. Vector priority (image similarity) — strongest signal.
+  if (options.priorityProductNames?.length) {
+    for (const n of options.priorityProductNames) pushUnique(byName(n));
+  }
+
+  // 2. Token retrieval — only when vector did not pre-filter. Confident matches are
+  //    added; a weak top score is held aside (step 4) so it can be displaced by a
+  //    proper category fallback first.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let weakTokenHits: any[] = [];
   if (!options.priorityProductNames?.length && options.textQuery?.trim()) {
     const retrievalHits = retrieveProducts(allProducts, options.textQuery);
+    const topScore = retrievalHits[0]?.score ?? 0;
     if (retrievalHits.length > 0) {
-      tokenRetrievalHitCount = retrievalHits.length;
-      const top = retrievalHits[0];
-      console.info(
-        `[loadBusinessContext] retrieval: ${retrievalHits.length} match(es) for "${options.textQuery.slice(0, 40)}" — top: "${top.name}" (conf: ${top.confidence.toFixed(2)}, reason: ${top.reason})`,
-      );
-      // Add retrieval hits that are not already in the current top priority slots
-      const currentTopNames = new Set(
-        allProducts.slice(0, Math.max(options.priorityProductNames?.length ?? 0, 1)).map(
-          (p: { name: string }) => p.name.toLowerCase(),
-        ),
-      );
-      const newPriority = retrievalHits
-        .filter(r => !currentTopNames.has(r.name.toLowerCase()))
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .map(r => allProducts.find((p: any) => p.name === r.name))
-        .filter(Boolean) as typeof allProducts;
-      if (newPriority.length > 0) {
-        const alreadyTop = allProducts.filter((p: { name: string }) => currentTopNames.has(p.name.toLowerCase()));
-        const others     = allProducts.filter(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (p: any) => !currentTopNames.has(p.name.toLowerCase()) && !newPriority.find((n: any) => n.name === p.name),
-        );
-        allProducts = [...alreadyTop, ...newPriority, ...others];
-        console.info(`[loadBusinessContext] retrieval promoted ${newPriority.length} product(s) to priority front`);
-      }
+      const t = retrievalHits[0];
+      console.info(`[loadBusinessContext] retrieval: ${retrievalHits.length} hit(s) for "${options.textQuery.slice(0, 40)}" — top "${t.name}" score=${topScore.toFixed(1)} conf=${t.confidence.toFixed(2)} reason=${t.reason}`);
     } else {
       console.info(`[loadBusinessContext] retrieval: no matches above threshold for "${options.textQuery.slice(0, 40)}"`);
     }
+    if (topScore >= STRONG_RETRIEVAL_SCORE) {
+      for (const h of retrievalHits) pushUnique(byName(h.name));
+      tokenRetrievalHitCount = retrievalHits.length;
+    } else {
+      weakTokenHits = retrievalHits.map(h => byName(h.name)).filter(Boolean);
+    }
   }
 
-  // Category-level fallback — fires ONLY when full-text retrieval returned 0 results.
-  // Extracts the primary product category from the query (e.g. "square shaped candles"
-  // → category = candle) and promotes all same-category products to the front.
-  // This enables "we don't have square candles but here are other candles" behaviour
-  // instead of the incorrect "we don't have that, here are some tarot cards".
-  let categoryFallbackHitCount = 0;
-  if (tokenRetrievalHitCount === 0 && options.textQuery?.trim()) {
+  // 3. Category-level fallback — now fires whenever no STRONG match exists yet
+  //    (zero hits OR only weak hits). Surfaces same-category alternatives so a
+  //    weak coincidental hit can no longer block "we don't have X, but here are
+  //    other <category>" behaviour.
+  if (matched.length === 0 && options.textQuery?.trim()) {
     const catPatterns = extractCategoryKeywords(options.textQuery);
     if (catPatterns) {
       const catHits = retrieveProductsByCategory(allProducts, catPatterns);
       if (catHits.length > 0) {
         categoryFallbackHitCount = catHits.length;
-        console.info(
-          `[loadBusinessContext] category-fallback: ${catHits.length} product(s) for ` +
-          `"${options.textQuery.slice(0, 40)}" — patterns: [${catPatterns.slice(0, 3).join(', ')}]`,
-        );
-        const catNames = new Set(catHits.map(h => h.name.toLowerCase()));
-        const catProds  = allProducts.filter(p => catNames.has(p.name.toLowerCase()));
-        const restProds = allProducts.filter(p => !catNames.has(p.name.toLowerCase()));
-        allProducts = [...catProds, ...restProds];
+        for (const h of catHits) pushUnique(byName(h.name));
+        console.info(`[loadBusinessContext] category-fallback: ${catHits.length} same-category alternative(s) for "${options.textQuery.slice(0, 40)}" patterns=[${catPatterns.slice(0, 3).join(', ')}]`);
       } else {
-        console.info(
-          `[loadBusinessContext] category-fallback: no products matched patterns ` +
-          `[${catPatterns.slice(0, 3).join(', ')}] for "${options.textQuery.slice(0, 40)}"`,
-        );
+        console.info(`[loadBusinessContext] category-fallback: no products matched patterns [${catPatterns.slice(0, 3).join(', ')}]`);
       }
     }
   }
 
+  // 4. Best-effort — if nothing else matched, surface the weak token hits (genuine
+  //    field matches, just low score) rather than asking a needless clarifying
+  //    question. These are real matches, NOT insertion-order padding.
+  if (matched.length === 0 && weakTokenHits.length > 0) {
+    for (const p of weakTokenHits) pushUnique(p);
+    tokenRetrievalHitCount = weakTokenHits.length;
+    console.info(`[loadBusinessContext] using ${weakTokenHits.length} weak token hit(s) as best-effort matches`);
+  }
+
   return {
     products: allProducts,
+    matchedProducts: matched,
     businessDescription,
     imageSearchQuery: options.imageSearchQuery ?? null,
     ...(tokenRetrievalHitCount   > 0 ? { tokenRetrievalHits:   tokenRetrievalHitCount   } : {}),

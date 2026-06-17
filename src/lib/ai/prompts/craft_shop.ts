@@ -8,6 +8,34 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/[\s-]+/g, '_').slice(0, 40);
 }
 
+/**
+ * Picks up to `limit` products spread across distinct categories (one per category
+ * first, then fills any remainder). Used ONLY for broad "what do you sell?" browse
+ * turns so the sample reflects the shop's actual range instead of the catalog's
+ * insertion order — preventing one early-inserted category (e.g. statues) from
+ * dominating the list. No hardcoded category names; purely structural.
+ */
+function pickCategoryDiverse(products: ProductRow[], limit: number): ProductRow[] {
+  const picked: ProductRow[] = [];
+  const seenCategory = new Set<string>();
+  // First pass: one product per distinct category.
+  for (const p of products) {
+    if (picked.length >= limit) break;
+    const cat = (p.category ?? '').trim().toLowerCase();
+    if (cat && seenCategory.has(cat)) continue;
+    seenCategory.add(cat);
+    picked.push(p);
+  }
+  // Second pass: fill any remaining slots with not-yet-picked products.
+  if (picked.length < limit) {
+    for (const p of products) {
+      if (picked.length >= limit) break;
+      if (!picked.includes(p)) picked.push(p);
+    }
+  }
+  return picked;
+}
+
 function buildPhotoKeySection(products: ProductRow[], translatedNames?: Map<string, string>): string {
   const rows = products
     .map(p => ({
@@ -64,12 +92,23 @@ export function buildCraftShopSystemPrompt(
     !/[\u10D0-\u10FF]/.test(lastQueryLine) &&
     /[a-zA-Z]/.test(lastQueryLine);
 
-  // Show top N products — category fallback narrows the slice to same-category products
-  // only, so unrelated products (e.g. tarot) cannot bleed into candle/stone responses.
   const available = context.products.filter(p => p.in_stock);
   const catFallbackHits = context.categoryFallbackHits ?? 0;
-  const productSliceCount = catFallbackHits > 0 ? Math.min(catFallbackHits, 6) : 6;
-  const products = available.slice(0, productSliceCount);
+
+  // PRODUCTS are sourced ONLY from the explicitly matched list (vector + token +
+  // category fallback), already ranked best-first by loadBusinessContext. We cap at
+  // 6 for token budget, but every entry is a genuine match — the list is NEVER padded
+  // with arbitrary catalog rows, which is what previously let insertion-order deity
+  // statues fill the empty slots on weak/ambiguous queries.
+  const matched = (context.matchedProducts ?? []).filter(p => p.in_stock);
+
+  // Broad catalog browse ("what do you sell?") has no specific match. Show a
+  // category-diverse sample (one product per distinct category) so the reply reflects
+  // the real range of the shop rather than whatever happens to sit first in the DB.
+  const isBroadBrowse = matched.length === 0 && CRAFT_BROAD_QUERY_RE.test(userQuery);
+  const products = matched.length > 0
+    ? matched.slice(0, 6)
+    : (isBroadBrowse ? pickCategoryDiverse(available, 6) : []);
 
   // ── Translation preprocessing — architecture-level fix for Bug 1 ─────────
   // When the customer writes in English, all Georgian text fields are translated
@@ -93,13 +132,9 @@ export function buildCraftShopSystemPrompt(
   //   • customer sent a product image          (imageSearchQuery != null)
   //   • query is a broad catalog browse        ("what do you sell?", "catalog")
   //     → broad queries always show top products; no specific category is implied.
-  const hasRetrievalSignal =
-    CRAFT_BROAD_QUERY_RE.test(userQuery) ||
-    (context.tokenRetrievalHits  ?? 0) > 0 ||
-    (context.vectorHits          ?? 0) > 0 ||
-    catFallbackHits > 0 ||
-    context.imageSearchQuery != null;
-  const hasProducts = displayProducts.length > 0 && hasRetrievalSignal;
+  // `products` is now empty unless there were genuine matches (or a broad browse),
+  // so its non-emptiness IS the retrieval signal — no separate guard needed.
+  const hasProducts = displayProducts.length > 0;
 
   const productLines = hasProducts
     ? displayProducts.map(p => {
