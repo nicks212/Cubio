@@ -26,11 +26,22 @@ interface Props {
   usageReport: Array<{ companyId: string; companyName: string; inputTokens: number; outputTokens: number; totalTokens: number; uniqueUsersServed: number }>;
   selectedMonth: string;
   usageTrackingReady: boolean;
+  initialTab?: Tab;
 }
 
-export default function AdminClient({ users, integrations, localizations, companies, termsContent, usageReport, selectedMonth, usageTrackingReady }: Props) {
+export default function AdminClient({ users, integrations, localizations, companies, termsContent, usageReport, selectedMonth, usageTrackingReady, initialTab = 'users' }: Props) {
   const t = useT();
-  const [tab, setTab] = useState<Tab>('users');
+  const [tab, setTab] = useState<Tab>(initialTab);
+
+  // Persist the active tab in the URL so a refresh (or the usage month-form reload)
+  // keeps you on the same tab instead of snapping back to Users.
+  const selectTab = useCallback((id: Tab) => {
+    setTab(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', id);
+    if (id !== 'usage') url.searchParams.delete('month');
+    window.history.replaceState(null, '', url.toString());
+  }, []);
   const [intModal, setIntModal] = useState(false);
   const [editingInt, setEditingInt] = useState<Props['integrations'][0] | null>(null);
   const [locModal, setLocModal] = useState(false);
@@ -116,7 +127,7 @@ export default function AdminClient({ users, integrations, localizations, compan
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-8 w-fit">
         {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm transition-all ${tab === t.id ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+          <button key={t.id} onClick={() => selectTab(t.id)} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm transition-all ${tab === t.id ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
             <t.icon className="w-4 h-4" />{t.label}
           </button>
         ))}
@@ -320,9 +331,10 @@ export default function AdminClient({ users, integrations, localizations, compan
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 className="text-xl font-semibold text-foreground">Company AI Usage</h2>
-              <p className="text-sm text-muted-foreground">UTC calendar month reporting across all companies.</p>
+              <p className="text-sm text-muted-foreground">Per-company usage by Tbilisi calendar month. Counters reset each month.</p>
             </div>
             <form method="GET" className="flex items-end gap-3">
+              <input type="hidden" name="tab" value="usage" />
               <div>
                 <label className="block text-sm font-medium mb-2">Month</label>
                 <input

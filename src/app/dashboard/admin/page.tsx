@@ -3,17 +3,27 @@ import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { DEFAULT_TRANSLATIONS, DEFAULT_TRANSLATIONS_EN } from '@/lib/i18n';
 import AdminClient from './AdminClient';
 
-function resolveUtcMonth(month?: string | null) {
+// Cubio bills per Tbilisi (UTC+4, no DST) calendar month, so "May" means May in
+// Georgia — not the UTC month. Each month is queried independently, so counters
+// naturally reset at every month boundary.
+const TBILISI_OFFSET_HOURS = 4;
+
+function resolveMonthRange(month?: string | null) {
   const valid = typeof month === 'string' && /^\d{4}-\d{2}$/.test(month) ? month : null;
-  const now = new Date();
-  const selectedMonth = valid ?? `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-  const start = new Date(`${selectedMonth}-01T00:00:00.000Z`);
-  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
-  return { selectedMonth, startIso: start.toISOString(), endIso: end.toISOString() };
+  const nowTbilisi = new Date(Date.now() + TBILISI_OFFSET_HOURS * 3_600_000);
+  const selectedMonth = valid ?? `${nowTbilisi.getUTCFullYear()}-${String(nowTbilisi.getUTCMonth() + 1).padStart(2, '0')}`;
+  const [year, monthNum] = selectedMonth.split('-').map(Number);
+  // Tbilisi-local midnight on the 1st of the month, expressed as a UTC instant.
+  const startIso = new Date(Date.UTC(year, monthNum - 1, 1, -TBILISI_OFFSET_HOURS)).toISOString();
+  const endIso = new Date(Date.UTC(year, monthNum, 1, -TBILISI_OFFSET_HOURS)).toISOString();
+  return { selectedMonth, startIso, endIso };
 }
 
+const ADMIN_TABS = ['users', 'localizations', 'integrations', 'usage', 'conversations', 'terms'] as const;
+type AdminTab = (typeof ADMIN_TABS)[number];
+
 type AdminPageProps = {
-  searchParams?: Promise<{ month?: string }>;
+  searchParams?: Promise<{ month?: string; tab?: string }>;
 };
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
@@ -26,7 +36,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   const adminClient = createAdminClient();
   const params = searchParams ? await searchParams : {};
-  const { selectedMonth, startIso, endIso } = resolveUtcMonth(params?.month ?? null);
+  const { selectedMonth, startIso, endIso } = resolveMonthRange(params?.month ?? null);
+  const initialTab: AdminTab = ADMIN_TABS.includes(params?.tab as AdminTab) ? (params!.tab as AdminTab) : 'users';
 
   const [
     { data: users },
@@ -144,6 +155,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       usageReport={usageReport}
       selectedMonth={selectedMonth}
       usageTrackingReady={usageTrackingReady}
+      initialTab={initialTab}
     />
   );
 }
