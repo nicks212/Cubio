@@ -52,6 +52,20 @@ export const PROJ_PHOTO_RE =
 export const BUYING_INTENT_RE =
   /\b(?:want\s+to\s+(?:buy|visit|see|reserve|purchase)|i(?:'m|\s+am)\s+interested\s+in\s+(?:buy|purchas|reserv)|how\s+(?:can|do)\s+i\s+(?:buy|purchase|reserve|order)|please\s+contact|call\s+me|i\s+want\s+(?:this|consultation|a\s+consult)|can\s+(?:i|your|the)\s+(?:visit|see\s+it|operator|agent|rep))|(?:მინდა(?:\s*(?:ვნახო|შევიძინო|ვიზიტი|შეძენ|დაჯავშნ|კონსულტ))?|გთხოვ\s*(?:დამიკავშირდ|დარეკ|შეგ(?:ატყობინ|ახსენ))|კონსულტაცია\s*მინდა|ოპერატორ(?:ი|მა)\s*დამიკავშირდ|ვიყიდი|დაჯავშნ|ვიზიტ(?:ი|ზე)|შეძენ(?:ა|ას)|(?:შე)?ვნახ(?:ავ|ო)\s*(?:ბინ|ბუნ)|хочу\s*(?:купить|посмотреть|записаться|эту|этот)|позвоните\s*мне|как\s*(?:купить|приобрести|заказать)|хочу\s*консультацию|\bminda(?:a)?\b|\bviqidi?\b|\b(?:moval|movide|movdivar|movalt|vnaxav|vnaxot)\b|adgilze\s+moval|sad\s+movide|xval\s+movide|movida\s+sheidzleba|momwon[ts]?\b|momtond\b)/i;
 
+/**
+ * Transactional / purchase-logistics intent — the customer is discussing HOW to buy,
+ * not just WHAT exists: pre-order, reservation, bulk/wholesale, specific or large
+ * quantity, delivery/shipping, ordering or payment process.
+ *
+ * This is a conceptual, multilingual detector (English / Georgian script / romanized) —
+ * NOT a single-keyword hack. It flags the turn so the reply addresses the logistics
+ * first instead of dumping a product list when a product noun happens to be present.
+ * Covers e.g. "preorder candles", "I need 50 pieces", "reserve this", "do you ship",
+ * "I want 20 X", "წინასწარ შეგიკვეთოთ", "პატარა რაოდენობა არ მინდა".
+ */
+export const TRANSACTION_INTENT_RE =
+  /\b(?:pre[\s-]?order|order(?:ing)?\s+(?:in\s+advance|process)?|place\s+an?\s+order|reserve|reservation|hold\s+(?:it|this|one|these|that)|bulk|wholesale|large\s+(?:order|quantity|amount|number|batch)|big\s+order|quantit(?:y|ies)|minimum\s+order|(?:want|need|order|buy|require|get)\s+\d{2,}|\d+\s*(?:pieces?|pcs|units?|sets?|dozen|boxes?|items?)|delivery|deliver|shipping|\bship\b|lead\s*time|how\s+(?:do|can)\s+i\s+(?:order|pay|reserve|buy)|payment|invoice|quote)\b|(?:წინასწარ|შეუკვეთ|შეგიკვეთ|შევუკვეთ|შეკვეთ|დაჯავშნ|ჯავშან|საბითუმ|რაოდენობ|პარტია|მიწოდებ|მოტან|გაგზავნ|გადახდ|\d+\s*ცალ)|(?:tsinas|she?ukvet|shegikvet|dajavshn|sabitum|raodenob|mitsodeb|gadakhd|\d+\s*cal)/i;
+
 /** Phone number — Georgian mobile, international, or bare 9–12 digit run. */
 export const PHONE_RE =
   /(?:\+995[\s-]?)?(?:\(?\d{3}\)?[\s-]?)?\d{2,3}[\s-]?\d{2,3}[\s-]?\d{2,4}|\+\d{7,15}|\b\d{9,12}\b/;

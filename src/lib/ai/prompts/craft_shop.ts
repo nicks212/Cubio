@@ -76,7 +76,7 @@ function compactCompanyInfo(raw: string | null): string {
 export function buildCraftShopSystemPrompt(
   context: ProductContext,
   userQuery = '',
-  opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean; replyLanguage?: 'ka' | 'en' } = {},
+  opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean; transactional?: boolean; replyLanguage?: 'ka' | 'en' } = {},
 ): string {
 
   // ── Language detection (done first — affects preprocessing of all data below) ──
@@ -158,8 +158,25 @@ export function buildCraftShopSystemPrompt(
   // ── Conditional instruction blocks ──────────────────────────────────────────
   const modeLines: string[] = [];
 
-  if (hasProducts && products.length >= 2) {
+  // Transactional turns (order/quantity/reservation/delivery/payment) must NOT lead with
+  // a product dump — handled by the ORDER & LOGISTICS block below. Suppress the forced
+  // "present all" listing in that case.
+  if (hasProducts && products.length >= 2 && !opts.transactional) {
     modeLines.push(`PRESENT ALL: ${products.length} products matched. List every one individually with its name and price — do not omit, group, or summarize any.`);
+  }
+
+  // Transactional / purchase-logistics intent: the customer is discussing HOW to buy
+  // (pre-order, quantity, reservation, bulk, delivery, payment), not just browsing.
+  // Address that first; products are secondary context, not the lead.
+  if (opts.transactional) {
+    modeLines.push(
+      `ORDER & LOGISTICS: The customer is discussing the purchase itself — ordering, quantity, ` +
+      `pre-order, reservation, bulk, or delivery — not just browsing. Acknowledge their request ` +
+      `warmly and address the ordering/quantity/logistics question FIRST, in your own words ` +
+      `(confirm what's possible and ask the single most useful clarifying detail, e.g. how many or when). ` +
+      `You MAY briefly mention that relevant options exist in PRODUCTS, but do NOT open with or dump a product list. ` +
+      `Treat this as a serious buyer.`,
+    );
   }
 
   // Category alternatives — fires when category fallback promoted same-category products

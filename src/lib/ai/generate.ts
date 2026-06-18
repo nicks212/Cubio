@@ -3,7 +3,7 @@ import { buildGlobalSystemPrompt, LANGUAGE_RULE } from './prompts/global';
 import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
 import { extractConversationState, formatStateForPrompt } from './state';
-import { BUYING_INTENT_RE, PHOTO_RE } from './signals';
+import { BUYING_INTENT_RE, PHOTO_RE, TRANSACTION_INTENT_RE } from './signals';
 import { persistAIUsage, type AIUsageContext } from './usage';
 import type { BusinessContext, ApartmentContext, ProductContext } from './types';
 import type { MessageIntent } from './intentDetector';
@@ -65,10 +65,16 @@ export async function generateReply(
     const domainFence = businessType === 'real_estate'
       ? 'You work only for a real-estate company. Never mention jewelry, gifts, zodiac, birthstones, candles, oils, incense, souvenirs, or craft-shop products.'
       : 'You work only for a craft shop. Never mention apartments, projects, neighborhoods, rooms, floors, square meters, developers, investments, or real-estate services.';
+    // First message of a new conversation → warm greeting + transparent AI disclosure
+    // (phrased naturally by the model, not a fixed sentence). Only here, never repeated.
+    const firstMsgDisclosure = isFirstMessage
+      ? `This is their very first message: you MUST open with a warm greeting AND clearly tell them — naturally, in your own words, never a canned line — that they're chatting with the store's AI assistant who can help find products, answer questions, and assist with orders. This transparency is required on this first message only. `
+      : '';
     const chatSystemInstruction =
       `You are a warm, natural sales assistant${bizHint}. ` +
       `${domainFence} ` +
       `${LANGUAGE_RULE} ` +
+      `${firstMsgDisclosure}` +
       `1–2 sentences max. Be conversational. ` +
       `If company details are limited, ask one short clarifying question instead of guessing. ` +
       `If they mention seeing an ad or coming to inquire — warmly ask what they are looking for. ` +
@@ -119,6 +125,7 @@ export async function generateReply(
         buyingIntent: state.buyingIntent || BUYING_INTENT_RE.test(message),
         productDissatisfied: state.productDissatisfied,
         photoIntent: intent === 'photos',
+        transactional: TRANSACTION_INTENT_RE.test(message),
         replyLanguage,
       });
 
@@ -136,7 +143,7 @@ export async function generateReply(
   }
   if (isFirstMessage) {
     systemParts.push(
-      "This is the customer's very first message. Begin with a brief natural greeting (one sentence max), then answer their question in the same message.",
+      "FIRST MESSAGE (new conversation): Open with a brief, warm greeting and, in your own natural words, transparently let the customer know they're chatting with the store's AI assistant who can help find products, answer questions, and assist with orders — then answer their question in the same message. ~2 short sentences. Warm, not robotic. Do this disclosure ONLY now; never repeat it on later turns.",
     );
   }
   if (offerEscalation) {
