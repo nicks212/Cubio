@@ -127,6 +127,32 @@ export async function toggleIntegration(id: string, is_active: boolean) {
   return { success: true };
 }
 
+export async function adminListConversations(companyId: string) {
+  if (!await isAdmin()) return { error: 'Unauthorized', conversations: [] };
+  if (!companyId) return { conversations: [] };
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('updated_at', { ascending: false });
+  if (error) return { error: error.message, conversations: [] };
+  return { conversations: data ?? [] };
+}
+
+export async function adminListMessages(conversationId: string) {
+  if (!await isAdmin()) return { error: 'Unauthorized', messages: [] };
+  if (!conversationId) return { messages: [] };
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .order('created_at');
+  if (error) return { error: error.message, messages: [] };
+  return { messages: data ?? [] };
+}
+
 export async function upsertTermsContent(language: string, content: string): Promise<{ success?: boolean; error?: string }> {
   if (!await isAdmin()) return { error: 'Unauthorized' };
   const supabase = createAdminClient();

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useActionState, useCallback } from 'react';
-import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight, RotateCcw, Search, FileText, BarChart3 } from 'lucide-react';
+import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight, RotateCcw, Search, FileText, BarChart3, MessageSquare } from 'lucide-react';
 import {
   toggleUserAdmin, upsertLocalization, deleteLocalization,
   createIntegration, updateIntegration, deleteIntegration, toggleIntegration,
@@ -10,8 +10,9 @@ import {
 import { formatDate } from '@/lib/utils';
 import { useT } from '@/components/TranslationsProvider';
 import RichTextEditor from '@/components/RichTextEditor';
+import AdminConversations from './AdminConversations';
 
-type Tab = 'users' | 'localizations' | 'integrations' | 'terms' | 'usage';
+type Tab = 'users' | 'localizations' | 'integrations' | 'terms' | 'usage' | 'conversations';
 
 const PROVIDERS = ['facebook', 'instagram', 'telegram', 'whatsapp', 'viber'] as const;
 const providerIcons: Record<string, string> = { facebook: '📘', instagram: '📸', telegram: '✈️', whatsapp: '💬', viber: '📱' };
@@ -101,6 +102,7 @@ export default function AdminClient({ users, integrations, localizations, compan
     { id: 'localizations' as Tab, label: t['admin.tab_localizations'] ?? 'Localizations', icon: Languages },
     { id: 'integrations' as Tab, label: t['admin.tab_integrations'] ?? 'Integrations', icon: Plug },
     { id: 'usage' as Tab, label: 'Usage', icon: BarChart3 },
+    { id: 'conversations' as Tab, label: t['admin.tab_conversations'] ?? 'Conversations', icon: MessageSquare },
     { id: 'terms' as Tab, label: t['admin.tab_terms'] ?? 'წესები', icon: FileText },
   ];
 
@@ -392,6 +394,11 @@ export default function AdminClient({ users, integrations, localizations, compan
             </div>
           </div>
         </div>
+      )}
+
+      {/* Conversations Tab */}
+      {tab === 'conversations' && (
+        <AdminConversations companies={companies} />
       )}
 
       {/* Terms Tab */}
