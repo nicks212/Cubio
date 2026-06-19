@@ -150,6 +150,16 @@ export async function loadBusinessContext(
   let tokenRetrievalHitCount = 0;
   let categoryFallbackHitCount = 0;
 
+  // The token + category retrieval fallbacks run on the user's caption when present,
+  // otherwise on the image description produced by vision. This gives an image-only
+  // message the SAME vector → token → category cascade as a text query: when the image
+  // vector search misses (cross-language gap, or cosine below the 0.25 threshold),
+  // category retrieval can still surface same-category alternatives ("we don't have
+  // that exact piece, but here are similar bracelets"). Reuses the existing retrieval
+  // engine verbatim — no image-specific rules, no hardcoded categories.
+  const retrievalQuery = (options.textQuery?.trim() || options.imageSearchQuery?.trim()) || undefined;
+  const retrievalSource = options.textQuery?.trim() ? 'text' : (options.imageSearchQuery?.trim() ? 'image' : 'none');
+
   // 1. Vector priority (image similarity) — strongest signal.
   if (options.priorityProductNames?.length) {
     for (const n of options.priorityProductNames) pushUnique(byName(n));
@@ -160,14 +170,14 @@ export async function loadBusinessContext(
   //    proper category fallback first.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let weakTokenHits: any[] = [];
-  if (!options.priorityProductNames?.length && options.textQuery?.trim()) {
-    const retrievalHits = retrieveProducts(allProducts, options.textQuery);
+  if (!options.priorityProductNames?.length && retrievalQuery) {
+    const retrievalHits = retrieveProducts(allProducts, retrievalQuery);
     const topScore = retrievalHits[0]?.score ?? 0;
     if (retrievalHits.length > 0) {
       const t = retrievalHits[0];
-      console.info(`[loadBusinessContext] retrieval: ${retrievalHits.length} hit(s) for "${options.textQuery.slice(0, 40)}" — top "${t.name}" score=${topScore.toFixed(1)} conf=${t.confidence.toFixed(2)} reason=${t.reason}`);
+      console.info(`[loadBusinessContext] retrieval[${retrievalSource}]: ${retrievalHits.length} hit(s) for "${retrievalQuery.slice(0, 40)}" — top "${t.name}" score=${topScore.toFixed(1)} conf=${t.confidence.toFixed(2)} reason=${t.reason}`);
     } else {
-      console.info(`[loadBusinessContext] retrieval: no matches above threshold for "${options.textQuery.slice(0, 40)}"`);
+      console.info(`[loadBusinessContext] retrieval[${retrievalSource}]: no matches above threshold for "${retrievalQuery.slice(0, 40)}"`);
     }
     if (topScore >= STRONG_RETRIEVAL_SCORE) {
       for (const h of retrievalHits) pushUnique(byName(h.name));
@@ -180,17 +190,18 @@ export async function loadBusinessContext(
   // 3. Category-level fallback — now fires whenever no STRONG match exists yet
   //    (zero hits OR only weak hits). Surfaces same-category alternatives so a
   //    weak coincidental hit can no longer block "we don't have X, but here are
-  //    other <category>" behaviour.
-  if (matched.length === 0 && options.textQuery?.trim()) {
-    const catPatterns = extractCategoryKeywords(options.textQuery);
+  //    other <category>" behaviour. Runs on the caption or, for image-only messages,
+  //    on the vision description — so a photo of a bracelet still yields bracelets.
+  if (matched.length === 0 && retrievalQuery) {
+    const catPatterns = extractCategoryKeywords(retrievalQuery);
     if (catPatterns) {
       const catHits = retrieveProductsByCategory(allProducts, catPatterns);
       if (catHits.length > 0) {
         categoryFallbackHitCount = catHits.length;
         for (const h of catHits) pushUnique(byName(h.name));
-        console.info(`[loadBusinessContext] category-fallback: ${catHits.length} same-category alternative(s) for "${options.textQuery.slice(0, 40)}" patterns=[${catPatterns.slice(0, 3).join(', ')}]`);
+        console.info(`[loadBusinessContext] category-fallback[${retrievalSource}]: ${catHits.length} same-category alternative(s) for "${retrievalQuery.slice(0, 40)}" patterns=[${catPatterns.slice(0, 3).join(', ')}]`);
       } else {
-        console.info(`[loadBusinessContext] category-fallback: no products matched patterns [${catPatterns.slice(0, 3).join(', ')}]`);
+        console.info(`[loadBusinessContext] category-fallback[${retrievalSource}]: no products matched patterns [${catPatterns.slice(0, 3).join(', ')}]`);
       }
     }
   }

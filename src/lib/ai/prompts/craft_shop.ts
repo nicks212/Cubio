@@ -219,7 +219,14 @@ export function buildCraftShopSystemPrompt(
   }
 
   if (context.imageSearchQuery) {
-    modeLines.push(`IMAGE MATCH: Customer sent a photo. The products listed below are the closest visual catalog matches.`);
+    modeLines.push(
+      `IMAGE: The customer sent a photo of a product. Based on what it shows, the PRODUCTS below ` +
+      `are the most similar items we actually carry. Open by naturally acknowledging the kind of ` +
+      `thing they're looking for, then present these as similar options from our collection and ` +
+      `invite them to see photos or details. If none is an exact match, say so honestly ` +
+      `("we don't have that exact piece, but here are similar ones"). ` +
+      `Never claim a product is the same as the one in the photo, and never name an item not in PRODUCTS.`,
+    );
   }
 
   // ── Assemble sections ────────────────────────────────────────────────────────
