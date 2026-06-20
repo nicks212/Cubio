@@ -49,21 +49,36 @@ async function authed() {
   return { supabase, company_id };
 }
 
-/** Deterministic end-time: start + service duration. Never the AI's job (spec §13). */
-async function computeEndTime(
+/**
+ * Validates a booking and computes its end time deterministically (start + service
+ * duration). Reservations REQUIRE a service with a real duration and a specialist
+ * who performs that service — there is NO default duration. Returns {end} or {error}.
+ */
+async function resolveBooking(
   supabase: Awaited<ReturnType<typeof createClient>>,
   companyId: string,
-  serviceId: string | null,
-  startTime: string,
-  explicitEnd: string | null | undefined,
-): Promise<string> {
-  if (explicitEnd) return explicitEnd;
-  let duration = 30;
-  if (serviceId) {
-    const { data: svc } = await supabase.from('services').select('duration_minutes').eq('id', serviceId).eq('company_id', companyId).single();
-    if (svc?.duration_minutes) duration = svc.duration_minutes;
+  d: { service_id?: string | null; specialist_id?: string | null; reservation_start_time: string },
+): Promise<{ end: string } | { error: string }> {
+  if (!d.service_id) return { error: 'Please select a service.' };
+  if (!d.specialist_id) return { error: 'Please select a specialist.' };
+
+  const { data: svc } = await supabase
+    .from('services').select('duration_minutes, specialist_type_id')
+    .eq('id', d.service_id).eq('company_id', companyId).single();
+  if (!svc) return { error: 'Service not found.' };
+  if (!svc.duration_minutes || svc.duration_minutes <= 0) {
+    return { error: 'This service has no duration set — set it on the Services tab before booking.' };
   }
-  return toTime(toMin(startTime) + duration);
+
+  const { data: spec } = await supabase
+    .from('specialists').select('specialist_type_id')
+    .eq('id', d.specialist_id).eq('company_id', companyId).single();
+  if (!spec) return { error: 'Specialist not found.' };
+  if (svc.specialist_type_id && spec.specialist_type_id !== svc.specialist_type_id) {
+    return { error: 'This specialist does not perform the selected service.' };
+  }
+
+  return { end: toTime(toMin(d.reservation_start_time) + svc.duration_minutes) };
 }
 
 /**
@@ -114,17 +129,16 @@ async function availabilityError(
     .lte('start_date', date).gte('end_date', date).limit(1);
   if (specVac && specVac.length > 0) return 'The specialist is on vacation on that date.';
 
-  // Specialist weekly schedule.
-  const { data: allSched } = await supabase
-    .from('specialist_schedules').select('weekday, start_time, end_time').eq('company_id', companyId).eq('specialist_id', specialistId);
-  if (allSched && allSched.length > 0) {
-    const windows = allSched.filter(w => w.weekday === weekday);
-    if (windows.length === 0) return 'The specialist does not work on that day.';
-    const fits = windows.some(w => s >= toMin(w.start_time) && e <= toMin(w.end_time));
-    if (!fits) {
-      const hrs = windows.map(w => `${w.start_time.slice(0, 5)}–${w.end_time.slice(0, 5)}`).join(', ');
-      return `Outside the specialist's working hours (${hrs}).`;
-    }
+  // Specialist weekly schedule — STRICT: a working window for that weekday is required.
+  // No schedule for the day (or no schedule at all) means no bookings until hours are set.
+  const { data: windows } = await supabase
+    .from('specialist_schedules').select('start_time, end_time')
+    .eq('company_id', companyId).eq('specialist_id', specialistId).eq('weekday', weekday);
+  if (!windows || windows.length === 0) return 'The specialist does not work on that day. Set their weekly hours on the Specialists tab.';
+  const fits = windows.some(w => s >= toMin(w.start_time) && e <= toMin(w.end_time));
+  if (!fits) {
+    const hrs = windows.map(w => `${w.start_time.slice(0, 5)}–${w.end_time.slice(0, 5)}`).join(', ');
+    return `Outside the specialist's working hours (${hrs}).`;
   }
   return null;
 }
@@ -169,8 +183,9 @@ export async function createReservation(_prev: unknown, formData: FormData) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
   const d = parsed.data;
 
-  const end = await computeEndTime(a.supabase, a.company_id, d.service_id ?? null, d.reservation_start_time, d.reservation_end_time);
-  if (toMin(end) <= toMin(d.reservation_start_time)) return { error: 'End time must be after start time' };
+  const booking = await resolveBooking(a.supabase, a.company_id, d);
+  if ('error' in booking) return { error: booking.error };
+  const end = booking.end;
   const availErr = await availabilityError(a.supabase, a.company_id, d.specialist_id ?? null, d.reservation_date, d.reservation_start_time, end);
   if (availErr) return { error: availErr };
   if (await hasConflict(a.supabase, a.company_id, d.specialist_id ?? null, d.reservation_date, d.reservation_start_time, end)) {
@@ -199,8 +214,9 @@ export async function updateReservation(_prev: unknown, formData: FormData) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message };
   const d = parsed.data;
 
-  const end = await computeEndTime(a.supabase, a.company_id, d.service_id ?? null, d.reservation_start_time, d.reservation_end_time);
-  if (toMin(end) <= toMin(d.reservation_start_time)) return { error: 'End time must be after start time' };
+  const booking = await resolveBooking(a.supabase, a.company_id, d);
+  if ('error' in booking) return { error: booking.error };
+  const end = booking.end;
   const availErr = await availabilityError(a.supabase, a.company_id, d.specialist_id ?? null, d.reservation_date, d.reservation_start_time, end);
   if (availErr) return { error: availErr };
   if (await hasConflict(a.supabase, a.company_id, d.specialist_id ?? null, d.reservation_date, d.reservation_start_time, end, id)) {

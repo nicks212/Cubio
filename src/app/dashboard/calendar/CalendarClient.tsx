@@ -25,11 +25,19 @@ interface Reservation {
 }
 interface ServiceOpt { id: string; service_name: string; duration_minutes: number | null; specialist_type_id: string | null; }
 interface SpecialistOpt { id: string; specialist_name: string; specialist_type_id: string | null; }
+interface ScheduleRow { specialist_id: string; weekday: number; start_time: string; end_time: string; }
+interface SpecVacation { specialist_id: string; start_date: string; end_date: string; }
+interface BizVacation { start_date: string; end_date: string; }
+interface BizHours { weekday: number; opening_time: string | null; closing_time: string | null; closed: boolean; }
 
 interface Props {
   reservations: Reservation[];
   services: ServiceOpt[];
   specialists: SpecialistOpt[];
+  schedules: ScheduleRow[];
+  specialistVacations: SpecVacation[];
+  businessVacations: BizVacation[];
+  businessHours: BizHours[];
 }
 
 const STATUSES = [
@@ -60,7 +68,7 @@ const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const weekStart = (d: Date) => { const x = new Date(d); const off = (x.getDay() + 6) % 7; x.setDate(x.getDate() - off); return x; };
 
-export default function CalendarClient({ reservations, services, specialists }: Props) {
+export default function CalendarClient({ reservations, services, specialists, schedules, specialistVacations, businessVacations, businessHours }: Props) {
   const t = useT();
   const [view, setView] = useState<'day' | 'week'>('day');
   const [anchor, setAnchor] = useState(() => new Date());
@@ -69,34 +77,56 @@ export default function CalendarClient({ reservations, services, specialists }: 
   const [prefillDate, setPrefillDate] = useState<string | null>(null);
   const [prefillTime, setPrefillTime] = useState<string | null>(null);
   const [prefillSpecialist, setPrefillSpecialist] = useState<string | null>(null);
+  // Bumped on each open so the modal remounts with fresh action state (errors cleared).
+  const [openSeq, setOpenSeq] = useState(0);
 
-  const [createState, createAction, createPending] = useActionState(createReservation, null);
-  const [updateState, updateAction, updatePending] = useActionState(updateReservation, null);
-  const state = editing ? updateState : createState;
-  // Close on each successful submit via effect — a render-time check on the persisted
-  // action state would re-close the modal on every reopen (needing a page refresh).
   const closeModal = () => { setModal(false); setEditing(null); setPrefillDate(null); setPrefillTime(null); setPrefillSpecialist(null); };
-  useEffect(() => { if (createState?.success) closeModal(); }, [createState]);
-  useEffect(() => { if (updateState?.success) closeModal(); }, [updateState]);
 
   const svcName = (id: string | null) => services.find(s => s.id === id)?.service_name ?? '';
   const specName = (id: string | null) => specialists.find(s => s.id === id)?.specialist_name ?? (t['calendar.unassigned'] ?? 'Unassigned');
 
   const openAdd = (date?: string, time?: string, specialistId?: string | null) => {
-    setEditing(null); setPrefillDate(date ?? ymd(anchor)); setPrefillTime(time ?? null); setPrefillSpecialist(specialistId ?? null); setModal(true);
+    setEditing(null); setPrefillDate(date ?? ymd(anchor)); setPrefillTime(time ?? null); setPrefillSpecialist(specialistId ?? null);
+    setOpenSeq(n => n + 1); setModal(true);
   };
-  const openEdit = (r: Reservation) => { setEditing(r); setPrefillDate(null); setPrefillTime(null); setPrefillSpecialist(null); setModal(true); };
+  const openEdit = (r: Reservation) => {
+    setEditing(r); setPrefillDate(null); setPrefillTime(null); setPrefillSpecialist(null);
+    setOpenSeq(n => n + 1); setModal(true);
+  };
 
   const step = (dir: number) => setAnchor(a => addDays(a, dir * (view === 'day' ? 1 : 7)));
 
   const weekDays = useMemo(() => { const s = weekStart(anchor); return Array.from({ length: 7 }, (_, i) => addDays(s, i)); }, [anchor]);
   const dayCols = useMemo(() => {
-    // specialist columns + a trailing "unassigned" bucket if any unassigned reservations exist that day
     const cols: Array<{ id: string | null; name: string }> = specialists.map(s => ({ id: s.id, name: s.specialist_name }));
     return cols.length > 0 ? cols : [{ id: null, name: t['calendar.unassigned'] ?? 'Unassigned' }];
   }, [specialists, t]);
 
   const resOn = (date: string) => reservations.filter(r => r.reservation_date === date);
+
+  // ── Working-window computation for the day view (#4 passive slots) ──
+  const anchorDate = ymd(anchor);
+  const anchorWeekday = anchor.getDay();
+  const bizClosedToday =
+    businessVacations.some(v => v.start_date <= anchorDate && v.end_date >= anchorDate) ||
+    businessHours.find(h => h.weekday === anchorWeekday)?.closed === true;
+  const bizH = businessHours.find(h => h.weekday === anchorWeekday);
+  const bizOpen = bizH?.opening_time ? toMin(bizH.opening_time) : null;
+  const bizClose = bizH?.closing_time ? toMin(bizH.closing_time) : null;
+
+  const windowsFor = (specId: string | null): Array<{ s: number; e: number }> => {
+    if (!specId || bizClosedToday) return [];
+    if (specialistVacations.some(v => v.specialist_id === specId && v.start_date <= anchorDate && v.end_date >= anchorDate)) return [];
+    return schedules
+      .filter(s => s.specialist_id === specId && s.weekday === anchorWeekday)
+      .map(s => ({
+        s: bizOpen != null ? Math.max(toMin(s.start_time), bizOpen) : toMin(s.start_time),
+        e: bizClose != null ? Math.min(toMin(s.end_time), bizClose) : toMin(s.end_time),
+      }))
+      .filter(w => w.e > w.s);
+  };
+  const slotActive = (wins: Array<{ s: number; e: number }>, m: number) => wins.some(w => m >= w.s && m < w.e);
+
   const headerLabel = view === 'day'
     ? anchor.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     : `${weekDays[0].toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${weekDays[6].toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`;
@@ -120,7 +150,6 @@ export default function CalendarClient({ reservations, services, specialists }: 
         </div>
       </div>
 
-      {/* Date navigation */}
       <div className="flex items-center gap-3 mb-4">
         <button onClick={() => step(-1)} className="p-2 hover:bg-slate-100 rounded-lg border border-slate-200"><ChevronLeft className="w-4 h-4" /></button>
         <button onClick={() => setAnchor(new Date())} className="px-3 py-2 text-sm font-medium hover:bg-slate-100 rounded-lg border border-slate-200">{t['calendar.today'] ?? 'Today'}</button>
@@ -131,8 +160,6 @@ export default function CalendarClient({ reservations, services, specialists }: 
       {view === 'day' ? (
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
           <div className="flex min-w-fit">
-            {/* Time axis — absolute positioning so labels sit exactly on the gridlines
-                that the reservation blocks are positioned against (same coordinate system). */}
             <div className="flex-shrink-0 w-16 border-r border-slate-200">
               <div className="h-10 border-b border-slate-200" />
               <div className="relative" style={{ height: slots.length * ROW_H }}>
@@ -143,18 +170,25 @@ export default function CalendarClient({ reservations, services, specialists }: 
                 ) : null)}
               </div>
             </div>
-            {/* Specialist columns */}
             {dayCols.map(col => {
-              const colRes = resOn(ymd(anchor)).filter(r => (r.specialist_id ?? null) === col.id);
+              const colRes = resOn(anchorDate).filter(r => (r.specialist_id ?? null) === col.id);
+              const wins = windowsFor(col.id);
+              const offToday = wins.length === 0;
               return (
                 <div key={col.id ?? 'unassigned'} className="flex-1 min-w-[180px] border-r border-slate-200 last:border-r-0">
-                  <div className="h-10 border-b border-slate-200 flex items-center justify-center text-sm font-semibold px-2 truncate">{col.name}</div>
+                  <div className="h-10 border-b border-slate-200 flex items-center justify-center gap-1 text-sm font-semibold px-2 truncate">
+                    {col.name}
+                    {offToday && <span className="text-[10px] font-normal text-muted-foreground">({t['calendar.off'] ?? 'off'})</span>}
+                  </div>
                   <div className="relative" style={{ height: slots.length * ROW_H }}>
-                    {slots.map((m, i) => (
-                      <div key={m} style={{ top: i * ROW_H, height: ROW_H }}
-                        className="absolute inset-x-0 border-b border-slate-100 hover:bg-slate-50 cursor-pointer"
-                        onClick={() => openAdd(ymd(anchor), fromMin(m), col.id)} />
-                    ))}
+                    {slots.map((m, i) => {
+                      const active = slotActive(wins, m);
+                      return (
+                        <div key={m} style={{ top: i * ROW_H, height: ROW_H }}
+                          className={`absolute inset-x-0 border-b border-slate-100 ${active ? 'hover:bg-slate-50 cursor-pointer' : 'bg-slate-100/70 cursor-not-allowed'}`}
+                          onClick={active ? () => openAdd(anchorDate, fromMin(m), col.id) : undefined} />
+                      );
+                    })}
                     {colRes.map(r => {
                       const top = ((toMin(r.reservation_start_time) - DAY_START) / SLOT) * ROW_H;
                       const h = Math.max(((toMin(r.reservation_end_time) - toMin(r.reservation_start_time)) / SLOT) * ROW_H, 22);
@@ -207,15 +241,13 @@ export default function CalendarClient({ reservations, services, specialists }: 
 
       {modal && (
         <ReservationModal
+          key={openSeq}
           editing={editing}
           prefillDate={prefillDate}
           prefillTime={prefillTime}
           prefillSpecialist={prefillSpecialist}
           services={services}
           specialists={specialists}
-          action={editing ? updateAction : createAction}
-          pending={editing ? updatePending : createPending}
-          error={state?.error ?? null}
           onClose={closeModal}
         />
       )}
@@ -223,34 +255,49 @@ export default function CalendarClient({ reservations, services, specialists }: 
   );
 }
 
-function ReservationModal({ editing, prefillDate, prefillTime, prefillSpecialist, services, specialists, action, pending, error, onClose }: {
+function ReservationModal({ editing, prefillDate, prefillTime, prefillSpecialist, services, specialists, onClose }: {
   editing: Reservation | null;
   prefillDate: string | null;
   prefillTime: string | null;
   prefillSpecialist: string | null;
   services: ServiceOpt[];
   specialists: SpecialistOpt[];
-  action: (formData: FormData) => void;
-  pending: boolean;
-  error: string | null;
   onClose: () => void;
 }) {
   const t = useT();
+  const isEdit = !!editing;
+  // Action state lives here so it resets every time the modal opens (errors cleared, #5).
+  const [createState, createAction, createPending] = useActionState(createReservation, null);
+  const [updateState, updateAction, updatePending] = useActionState(updateReservation, null);
+  const action = isEdit ? updateAction : createAction;
+  const pending = isEdit ? updatePending : createPending;
+  const state = isEdit ? updateState : createState;
+  useEffect(() => { if (state?.success) onClose(); }, [state, onClose]);
+
   const [showPet, setShowPet] = useState(!!(editing?.animal_type || editing?.pet_name));
   const inputCls = 'w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50';
 
-  // #6 — when a service is chosen, only specialists matching its specialist_type show.
+  // Bidirectional filtering: picking a service narrows specialists (#6); picking a
+  // specialist narrows services to ones they perform (#1).
   const [serviceId, setServiceId] = useState<string>(editing?.service_id ?? '');
   const [specialistId, setSpecialistId] = useState<string>(editing?.specialist_id ?? prefillSpecialist ?? '');
   const selectedService = services.find(s => s.id === serviceId);
+  const selectedSpecialist = specialists.find(s => s.id === specialistId);
   const eligibleSpecialists = selectedService?.specialist_type_id
     ? specialists.filter(s => s.specialist_type_id === selectedService.specialist_type_id)
     : specialists;
-  // If the current specialist no longer fits the chosen service, clear it.
+  const eligibleServices = selectedSpecialist?.specialist_type_id
+    ? services.filter(s => s.specialist_type_id === selectedSpecialist.specialist_type_id)
+    : services;
+
   useEffect(() => {
     if (specialistId && !eligibleSpecialists.some(s => s.id === specialistId)) setSpecialistId('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceId]);
+  useEffect(() => {
+    if (serviceId && !eligibleServices.some(s => s.id === serviceId)) setServiceId('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specialistId]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
@@ -261,7 +308,7 @@ function ReservationModal({ editing, prefillDate, prefillTime, prefillSpecialist
         </div>
         <form action={action} className="p-6 space-y-4">
           {editing && <input type="hidden" name="id" value={editing.id} />}
-          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
+          {state?.error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{state.error}</div>}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -276,16 +323,16 @@ function ReservationModal({ editing, prefillDate, prefillTime, prefillSpecialist
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-2">{t['calendar.f_service'] ?? 'Service'}</label>
-              <select name="service_id" value={serviceId} onChange={e => setServiceId(e.target.value)} className={inputCls}>
-                <option value="">—</option>
-                {services.map(s => <option key={s.id} value={s.id}>{s.service_name}{s.duration_minutes ? ` (${s.duration_minutes}m)` : ''}</option>)}
+              <label className="block text-sm font-medium mb-2">{t['calendar.f_service'] ?? 'Service'} *</label>
+              <select name="service_id" required value={serviceId} onChange={e => setServiceId(e.target.value)} className={inputCls}>
+                <option value="">{t['calendar.select_service'] ?? 'Select service…'}</option>
+                {eligibleServices.map(s => <option key={s.id} value={s.id}>{s.service_name}{s.duration_minutes ? ` (${s.duration_minutes}m)` : ''}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">{t['calendar.f_specialist'] ?? 'Specialist'}</label>
-              <select name="specialist_id" value={specialistId} onChange={e => setSpecialistId(e.target.value)} className={inputCls}>
-                <option value="">{t['calendar.unassigned'] ?? 'Unassigned'}</option>
+              <label className="block text-sm font-medium mb-2">{t['calendar.f_specialist'] ?? 'Specialist'} *</label>
+              <select name="specialist_id" required value={specialistId} onChange={e => setSpecialistId(e.target.value)} className={inputCls}>
+                <option value="">{t['calendar.select_specialist'] ?? 'Select specialist…'}</option>
                 {eligibleSpecialists.map(s => <option key={s.id} value={s.id}>{s.specialist_name}</option>)}
               </select>
               {selectedService?.specialist_type_id && eligibleSpecialists.length === 0 && (
