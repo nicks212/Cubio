@@ -1,6 +1,7 @@
 import { model } from './model';
 import { persistAIUsage, type AIUsageContext } from './usage';
 import type { LeadDetection, EscalationDetection } from './types';
+import type { BusinessType } from '@/types/database';
 
 const EMPTY_LEAD: LeadDetection = {
   isLead: false, summary: '', meetingDate: null, meetingNotes: null, name: null, phone: null, email: null,
@@ -23,7 +24,7 @@ const EMPTY_ESCALATION: EscalationDetection = { isEscalation: false, frustration
  */
 export async function detectLeadAndEscalation(
   conversationHistory: Array<{ role: string; content: string }>,
-  businessType: 'real_estate' | 'craft_shop',
+  businessType: BusinessType,
   checkLead = true,
   checkEscalation = true,
   usageContext?: Omit<AIUsageContext, 'feature' | 'model'>,
@@ -37,9 +38,12 @@ export async function detectLeadAndEscalation(
     .map(m => `${m.role}: ${m.content}`)
     .join('\n');
 
-  const qualificationFields = businessType === 'real_estate'
-    ? 'budget, preferred m², preferred floor, room count (at least budget OR room count must be present)'
-    : 'desired product name (must be present)';
+  const qualificationFields =
+    businessType === 'real_estate'
+      ? 'budget, preferred m², preferred floor, room count (at least budget OR room count must be present)'
+      : businessType === 'beauty_salon'
+        ? 'desired service, preferred specialist, or preferred date/time (at least the desired service must be present)'
+        : 'desired product name (must be present)';
 
   // ── Escalation-only prompt (shorter = fewer tokens when lead check skipped) ──
   if (!checkLead && checkEscalation) {
@@ -174,7 +178,7 @@ Return exactly:
 // Legacy single-purpose exports kept for any external usage
 export async function detectLead(
   conversationHistory: Array<{ role: string; content: string }>,
-  businessType: 'real_estate' | 'craft_shop',
+  businessType: BusinessType,
 ): Promise<LeadDetection> {
   const { lead } = await detectLeadAndEscalation(conversationHistory, businessType);
   return lead;

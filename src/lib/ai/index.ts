@@ -18,7 +18,7 @@
  *       craft_shop.ts   — Layer 2: craft shop rules + compact inventory
  */
 
-export type { BusinessContext, ApartmentContext, ProductContext, LeadDetection, EscalationDetection } from './types';
+export type { BusinessContext, ApartmentContext, ProductContext, ServiceContext, LeadDetection, EscalationDetection } from './types';
 export type { ConversationState } from './state';
 export { generateReply } from './generate';
 export { detectLeadAndEscalation, detectLead, detectEscalation } from './detect';

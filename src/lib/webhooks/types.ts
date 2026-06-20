@@ -2,6 +2,8 @@
 // Shared Webhook Types
 // ============================================================
 
+import type { BusinessType } from '@/types/database';
+
 export type Provider = 'facebook' | 'instagram' | 'telegram' | 'whatsapp' | 'viber';
 
 /** Normalized message format — shared across all providers */
@@ -34,7 +36,7 @@ export interface NormalizedMessage {
 export interface ResolvedIntegration {
   integrationId: string;
   companyId: string;
-  businessType: 'real_estate' | 'craft_shop';
+  businessType: BusinessType;
   aiEnabled: boolean;
   accessToken: string;
   refreshToken: string | null;

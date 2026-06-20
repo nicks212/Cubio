@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { Building2, Gem, CheckCircle2, LogOut, FileText, X, ChevronDown } from 'lucide-react';
+import { Building2, Gem, Scissors, CheckCircle2, LogOut, FileText, X, ChevronDown } from 'lucide-react';
 import { CubioLogo } from '@/components/CubioLogo';
 import { setupCompany } from './actions';
 import { logout } from '@/app/auth/actions';
@@ -47,6 +47,19 @@ export default function OnboardingClient({ termsKa, termsEn }: Props) {
         t['onboarding.feat_birthstone'],
         t['onboarding.feat_zodiac'],
         t['onboarding.feat_inventory'],
+      ],
+    },
+    {
+      id: 'beauty_salon',
+      title: t['onboarding.salon_title'] ?? 'Beauty Salon / Aesthetics Center',
+      description: t['onboarding.salon_desc'] ?? 'Salons, clinics, barber & nail studios, grooming',
+      icon: Scissors,
+      color: 'bg-pink-500',
+      features: [
+        t['onboarding.feat_services'] ?? 'Services',
+        t['onboarding.feat_specialists'] ?? 'Specialists',
+        t['onboarding.feat_reservations'] ?? 'Reservations',
+        t['onboarding.feat_ai_booking'] ?? 'AI booking',
       ],
     },
   ];
@@ -108,7 +121,7 @@ export default function OnboardingClient({ termsKa, termsEn }: Props) {
               <p className="text-sm font-semibold text-foreground">{t['onboarding.select_type']}</p>
             </div>
             <input type="hidden" name="businessType" value={selected ?? ''} />
-            <div className="grid sm:grid-cols-2 gap-4">
+            <div className="grid sm:grid-cols-3 gap-4">
               {businessProfiles.map((profile) => {
                 const Icon = profile.icon;
                 const isSelected = selected === profile.id;

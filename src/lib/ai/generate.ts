@@ -2,11 +2,33 @@ import { model } from './model';
 import { buildGlobalSystemPrompt, LANGUAGE_RULE } from './prompts/global';
 import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
+import { buildBeautySalonSystemPrompt } from './prompts/beauty_salon';
 import { extractConversationState, formatStateForPrompt } from './state';
 import { BUYING_INTENT_RE, PHOTO_RE, TRANSACTION_INTENT_RE } from './signals';
 import { persistAIUsage, type AIUsageContext } from './usage';
-import type { BusinessContext, ApartmentContext, ProductContext } from './types';
+import type { BusinessContext, ApartmentContext, ProductContext, ServiceContext } from './types';
 import type { MessageIntent } from './intentDetector';
+import type { BusinessType } from '@/types/database';
+
+/**
+ * Per-profile copy used in the chat micro-prompt: the domain fence (what the
+ * assistant must never talk about) and the assistant's scope for the first-message
+ * AI disclosure. Centralised so adding a profile is one entry, not scattered ternaries.
+ */
+const PROFILE_COPY: Record<BusinessType, { domainFence: string; scope: string }> = {
+  real_estate: {
+    domainFence: 'You work only for a real-estate company. Never mention jewelry, gifts, zodiac, birthstones, candles, oils, incense, souvenirs, or craft-shop products.',
+    scope: 'help find properties, answer questions, and arrange a viewing',
+  },
+  craft_shop: {
+    domainFence: 'You work only for a craft shop. Never mention apartments, projects, neighborhoods, rooms, floors, square meters, developers, investments, or real-estate services.',
+    scope: 'help find products, answer questions, and assist with orders',
+  },
+  beauty_salon: {
+    domainFence: 'You work only for a beauty / aesthetics service business (salon, clinic, barber, nail/skincare studio, or grooming). Never mention real estate, apartments, or unrelated retail products. Focus on the business’s services, specialists, and appointments.',
+    scope: 'help find the right service, answer questions, and book an appointment',
+  },
+};
 
 /**
  * Generates an AI reply using Gemini's native multi-turn chat API.
@@ -34,7 +56,7 @@ type GeminiContent = { role: 'user' | 'model'; parts: GeminiPart[] };
 export async function generateReply(
   message: string,
   context: BusinessContext,
-  businessType: 'real_estate' | 'craft_shop',
+  businessType: BusinessType,
   conversationHistory: Array<{ role: string; content: string }> = [],
   imageUrl?: string | null,
   photosSent = false,
@@ -62,13 +84,11 @@ export async function generateReply(
     // Truncated to 120 chars to keep the micro-prompt lean.
     const bizCtx = (context as { businessDescription?: string | null }).businessDescription;
     const bizHint = bizCtx ? ` for: ${bizCtx.slice(0, 120)}` : '';
-    const domainFence = businessType === 'real_estate'
-      ? 'You work only for a real-estate company. Never mention jewelry, gifts, zodiac, birthstones, candles, oils, incense, souvenirs, or craft-shop products.'
-      : 'You work only for a craft shop. Never mention apartments, projects, neighborhoods, rooms, floors, square meters, developers, investments, or real-estate services.';
+    const domainFence = PROFILE_COPY[businessType].domainFence;
     // First message of a new conversation → warm greeting + transparent AI disclosure
     // (phrased naturally by the model, not a fixed sentence). Only here, never repeated.
     const firstMsgDisclosure = isFirstMessage
-      ? `This is their very first message: you MUST open with a warm greeting AND clearly tell them — naturally, in your own words, never a canned line — that they're chatting with the store's AI assistant who can help find products, answer questions, and assist with orders. This transparency is required on this first message only. `
+      ? `This is their very first message: you MUST open with a warm greeting AND clearly tell them — naturally, in your own words, never a canned line — that they're chatting with the business's AI assistant who can ${PROFILE_COPY[businessType].scope}. This transparency is required on this first message only. `
       : '';
     const chatSystemInstruction =
       `You are a warm, natural sales assistant${bizHint}. ` +
@@ -119,15 +139,18 @@ export async function generateReply(
   const stateLine = formatStateForPrompt(state);
 
   // ── Layer 2: Business-type rules + compact inventory ──────────────────────────
-  const businessPrompt = businessType === 'real_estate'
-    ? buildRealEstateSystemPrompt(context as ApartmentContext, message)
-    : buildCraftShopSystemPrompt(context as ProductContext, message, {
-        buyingIntent: state.buyingIntent || BUYING_INTENT_RE.test(message),
-        productDissatisfied: state.productDissatisfied,
-        photoIntent: intent === 'photos',
-        transactional: TRANSACTION_INTENT_RE.test(message),
-        replyLanguage,
-      });
+  const businessPrompt =
+    businessType === 'real_estate'
+      ? buildRealEstateSystemPrompt(context as ApartmentContext, message)
+      : businessType === 'beauty_salon'
+        ? buildBeautySalonSystemPrompt(context as ServiceContext, message, { replyLanguage })
+        : buildCraftShopSystemPrompt(context as ProductContext, message, {
+            buyingIntent: state.buyingIntent || BUYING_INTENT_RE.test(message),
+            productDissatisfied: state.productDissatisfied,
+            photoIntent: intent === 'photos',
+            transactional: TRANSACTION_INTENT_RE.test(message),
+            replyLanguage,
+          });
 
   // ── System instruction ─────────────────────────────────────────────────────
   const systemParts: string[] = [`${globalPrompt}\n\n${businessPrompt}`, stateLine];
@@ -143,7 +166,7 @@ export async function generateReply(
   }
   if (isFirstMessage) {
     systemParts.push(
-      "FIRST MESSAGE (new conversation): Open with a brief, warm greeting and, in your own natural words, transparently let the customer know they're chatting with the store's AI assistant who can help find products, answer questions, and assist with orders — then answer their question in the same message. ~2 short sentences. Warm, not robotic. Do this disclosure ONLY now; never repeat it on later turns.",
+      `FIRST MESSAGE (new conversation): Open with a brief, warm greeting and, in your own natural words, transparently let the customer know they're chatting with the business's AI assistant who can ${PROFILE_COPY[businessType].scope} — then answer their question in the same message. ~2 short sentences. Warm, not robotic. Do this disclosure ONLY now; never repeat it on later turns.`,
     );
   }
   if (offerEscalation) {
@@ -160,8 +183,12 @@ export async function generateReply(
   // price is always re-injected into PRODUCTS (reference resolution) and CATALOG AUTHORITY
   // forbids quoting history prices, so a slightly longer window is safe.
   const isPhotoFlow = photosSent || !!lastShownAptId || intent === 'photos';
-  const historyTurns = (isPhotoFlow && businessType !== 'craft_shop') ? 6
-    : businessType === 'craft_shop' ? 4
+  // Real-estate photo flows need a deeper window for apartment follow-up detection.
+  // Craft shop and beauty salon use 4 turns: enough for multi-turn references
+  // ("show me another", "do you have similar?", "book me with Anna instead") without bloat.
+  const isMultiTurnProfile = businessType === 'craft_shop' || businessType === 'beauty_salon';
+  const historyTurns = (isPhotoFlow && businessType === 'real_estate') ? 6
+    : isMultiTurnProfile ? 4
     : 3;
 
   // ── Build Gemini multi-turn history ───────────────────────────────────────

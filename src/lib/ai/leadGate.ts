@@ -19,6 +19,7 @@ import {
   PHOTO_ONLY_RE,
   PRODUCT_DISSATISFIED_RE,
 } from './signals';
+import type { BusinessType } from '@/types/database';
 
 export type ShouldAnalyse =
   | { lead: false; escalation: false }
@@ -36,7 +37,7 @@ export type ShouldAnalyse =
 export function shouldRunLeadAnalysis(
   history: Array<{ role: string; content: string }>,
   latestMessage: string,
-  businessType: 'real_estate' | 'craft_shop',
+  businessType: BusinessType,
   lastShownAptId: string | null = null,
 ): ShouldAnalyse {
   const msg = latestMessage.trim();

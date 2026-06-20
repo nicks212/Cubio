@@ -62,7 +62,47 @@ export interface ProductContext {
   categoryFallbackHits?: number;
 }
 
-export type BusinessContext = ApartmentContext | ProductContext;
+/**
+ * Context for service-based businesses (beauty_salon profile: salons, clinics,
+ * barbers, nail/skincare studios, pet grooming). Mirrors ProductContext so the
+ * existing deterministic retrieval engine (productRetrieval.ts) and prompt-builder
+ * conventions can be reused without new infrastructure. `name` holds service_name
+ * so service rows satisfy ProductLike for retrieval.
+ */
+export interface ServiceContext {
+  services: Array<{
+    name: string;
+    description?: string | null;
+    category?: string | null;
+    price_from?: number | null;
+    price_to?: number | null;
+    currency?: string | null;
+    duration_minutes?: number | null;
+    sessions_required?: number | null;
+    specialist_type?: string | null;
+    gender_target?: string | null;
+    consultation_required?: boolean | null;
+    service_target?: string | null;
+    active: boolean;
+  }>;
+  /** Active specialists the assistant may reference (name + type + languages). */
+  specialists?: Array<{ name: string; type?: string | null; languages?: string[] | null }>;
+  businessDescription: string | null;
+  /** Non-null when context was loaded after an image similarity search. */
+  imageSearchQuery?: string | null;
+  /**
+   * The ONLY services the prompt builder may surface this turn — genuinely relevant
+   * matches (vector + strong token retrieval + category-level alternatives), ranked
+   * best-first. NEVER padded with arbitrary catalog rows. `services` above stays the
+   * full active list (used for broad-browse / photo-key resolution).
+   */
+  matchedServices?: ServiceContext['services'];
+  vectorHits?: number;
+  tokenRetrievalHits?: number;
+  categoryFallbackHits?: number;
+}
+
+export type BusinessContext = ApartmentContext | ProductContext | ServiceContext;
 
 // ── Detection Result Types ─────────────────────────────────────────────────
 

@@ -17,6 +17,7 @@ import {
   BROWSE_AGAIN_RE,
 } from '@/lib/ai/signals';
 import { extractConversationState } from '@/lib/ai/state';
+import type { BusinessType } from '@/types/database';
 
 export interface LeadAnalysis {
   /** True when all three conditions are met: buying intent + qualification + phone. */
@@ -61,7 +62,7 @@ export interface LeadAnalysis {
 export function analyzeLeadState(
   history: Array<{ role: string; content: string }>,
   latestMessage: string,
-  businessType: 'real_estate' | 'craft_shop',
+  businessType: BusinessType,
   lastShownAptId: string | null = null,
 ): LeadAnalysis {
   const userMessages = history.filter(m => m.role === 'user');
@@ -134,7 +135,7 @@ export function analyzeLeadState(
   if (state.lastShownAptId)    summaryParts.push(`ბინა #${state.lastShownAptId}`);
   const summary = summaryParts.length > 0
     ? summaryParts.join(' | ')
-    : businessType === 'craft_shop' ? 'მომხმარებელი — ყიდვის განზრავა' : 'Lead — buying intent';
+    : businessType === 'real_estate' ? 'Lead — buying intent' : 'მომხმარებელი — ყიდვის განზრავა';
 
   // ── Lifecycle update detection (latest message only) ──────────────────────
   const updateType: Array<'phone' | 'name' | 'cancel' | 'apt_change'> = [];

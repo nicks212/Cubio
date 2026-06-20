@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
-import type { BusinessContext } from '@/lib/ai';
+import type { BusinessContext, ServiceContext } from '@/lib/ai';
 import { retrieveProducts, extractCategoryKeywords, retrieveProductsByCategory } from '@/lib/ai/productRetrieval';
+import type { BusinessType } from '@/types/database';
 
 /** Options for context loading — used when vector similarity search pre-filtered results. */
 export interface LoadContextOptions {
@@ -29,7 +30,7 @@ export interface LoadContextOptions {
  */
 export async function loadBusinessContext(
   companyId: string,
-  businessType: 'real_estate' | 'craft_shop',
+  businessType: BusinessType,
   options: LoadContextOptions = {},
 ): Promise<BusinessContext> {
   const supabase = createAdminClient();
@@ -85,6 +86,13 @@ export async function loadBusinessContext(
     return { apartments: allApartments, businessDescription };
   }
 
+  // ── Beauty salon / service business ─────────────────────────────────────────
+  // Loads the company's active SERVICES (+ specialists) and runs the SAME deterministic
+  // retrieval engine used for products (token + category fallback). Fully isolated from
+  // the product/apartment paths — beauty_salon never touches the catalog code below.
+  if (businessType === 'beauty_salon') {
+    return loadServiceContext(supabase, companyId, businessDescription, options);
+  }
 
   // Fetch up to 20 products — enough for retrieval ranking without loading the entire catalog.
   // Vector/token retrieval promotes the best matches to the front; prompt builder slices to 6.
@@ -222,5 +230,126 @@ export async function loadBusinessContext(
     imageSearchQuery: options.imageSearchQuery ?? null,
     ...(tokenRetrievalHitCount   > 0 ? { tokenRetrievalHits:   tokenRetrievalHitCount   } : {}),
     ...(categoryFallbackHitCount > 0 ? { categoryFallbackHits: categoryFallbackHitCount } : {}),
+  };
+}
+
+// ── Service-business context loader ───────────────────────────────────────────
+type ServiceRow = ServiceContext['services'][number];
+
+/** Postgrest embeds a to-one relation as either an object or a single-element array. */
+function relName(rel: unknown): string | null {
+  if (Array.isArray(rel)) return (rel[0] as { name?: string } | undefined)?.name ?? null;
+  return (rel as { name?: string } | null)?.name ?? null;
+}
+
+/**
+ * Loads active services + specialists for a beauty_salon company and ranks the
+ * services with the SAME deterministic retrieval engine used for products
+ * (token retrieval → category fallback → weak best-effort). Returns a ServiceContext.
+ *
+ * Degrades gracefully (empty services) if the service tables aren't migrated yet,
+ * so deploying the code before applying migration 017 cannot break the pipeline.
+ */
+async function loadServiceContext(
+  supabase: ReturnType<typeof createAdminClient>,
+  companyId: string,
+  businessDescription: string | null,
+  options: LoadContextOptions,
+): Promise<ServiceContext> {
+  const empty: ServiceContext = {
+    services: [],
+    specialists: [],
+    matchedServices: [],
+    businessDescription,
+    imageSearchQuery: options.imageSearchQuery ?? null,
+  };
+
+  const { data: serviceRows, error: svcErr } = await supabase
+    .from('services')
+    .select('service_name, description, price_from, price_to, currency, duration_minutes, sessions_required, gender_target, consultation_required, service_target, active, category:service_categories(name), specialist_type:specialist_types(name)')
+    .eq('company_id', companyId)
+    .eq('active', true)
+    .is('deleted_at', null)
+    .limit(200);
+
+  if (svcErr) {
+    console.warn('[loadBusinessContext] beauty_salon services query failed (tables may be unmigrated):', svcErr.message);
+    return empty;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const services: ServiceRow[] = ((serviceRows ?? []) as any[]).map(r => ({
+    name: r.service_name,
+    description: r.description ?? null,
+    category: relName(r.category),
+    price_from: r.price_from ?? null,
+    price_to: r.price_to ?? null,
+    currency: r.currency ?? null,
+    duration_minutes: r.duration_minutes ?? null,
+    sessions_required: r.sessions_required ?? null,
+    specialist_type: relName(r.specialist_type),
+    gender_target: r.gender_target ?? null,
+    consultation_required: r.consultation_required ?? null,
+    service_target: r.service_target ?? null,
+    active: r.active ?? true,
+  }));
+
+  const { data: specRows } = await supabase
+    .from('specialists')
+    .select('specialist_name, languages, specialist_type:specialist_types(name)')
+    .eq('company_id', companyId)
+    .eq('active', true)
+    .is('deleted_at', null)
+    .limit(100);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const specialists = ((specRows ?? []) as any[]).map(r => ({
+    name: r.specialist_name,
+    type: relName(r.specialist_type),
+    languages: (r.languages ?? null) as string[] | null,
+  }));
+
+  // Rank services with the existing deterministic engine. Image-vector priority for
+  // services is deferred to Phase 5; for now the engine runs on the caption or the
+  // image description (token retrieval → category fallback → weak best-effort).
+  const STRONG = 5.0;
+  const retrievalQuery = (options.textQuery?.trim() || options.imageSearchQuery?.trim()) || undefined;
+  const matched: ServiceRow[] = [];
+  const byName = (name: string) => services.find(s => s.name.toLowerCase() === name.toLowerCase());
+  const pushUnique = (s?: ServiceRow) => { if (s && !matched.some(m => m.name.toLowerCase() === s.name.toLowerCase())) matched.push(s); };
+  let tokenHits = 0;
+  let catHits = 0;
+
+  if (retrievalQuery) {
+    const hits = retrieveProducts(services, retrievalQuery);
+    const topScore = hits[0]?.score ?? 0;
+    if (topScore >= STRONG) {
+      for (const h of hits) pushUnique(byName(h.name));
+      tokenHits = hits.length;
+    }
+    if (matched.length === 0) {
+      const pats = extractCategoryKeywords(retrievalQuery);
+      if (pats) {
+        const ch = retrieveProductsByCategory(services, pats);
+        if (ch.length > 0) {
+          catHits = ch.length;
+          for (const h of ch) pushUnique(byName(h.name));
+        }
+      }
+    }
+    if (matched.length === 0 && hits.length > 0) {
+      for (const h of hits) pushUnique(byName(h.name));
+      tokenHits = hits.length;
+    }
+  }
+
+  return {
+    services,
+    specialists,
+    matchedServices: matched,
+    businessDescription,
+    imageSearchQuery: options.imageSearchQuery ?? null,
+    ...(tokenHits > 0 ? { tokenRetrievalHits: tokenHits } : {}),
+    ...(catHits > 0 ? { categoryFallbackHits: catHits } : {}),
   };
 }

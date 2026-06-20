@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import type { Provider, ResolvedIntegration } from './types';
+import type { BusinessType } from '@/types/database';
 
 /**
  * Looks up the integration row in the DB for a given provider + providerAccountId.
@@ -46,7 +47,7 @@ export async function identifyCompany(
   return {
     integrationId: data.id as string,
     companyId: company.id,
-    businessType: company.business_type as 'real_estate' | 'craft_shop',
+    businessType: company.business_type as BusinessType,
     aiEnabled: company.ai_enabled,
     accessToken: data.access_token as string,
     refreshToken: data.refresh_token as string | null,
@@ -97,7 +98,7 @@ export async function identifyCompanyByProviderOnly(
   return {
     integrationId: data.id as string,
     companyId: company.id,
-    businessType: company.business_type as 'real_estate' | 'craft_shop',
+    businessType: company.business_type as BusinessType,
     aiEnabled: company.ai_enabled,
     accessToken: data.access_token as string,
     refreshToken: data.refresh_token as string | null,

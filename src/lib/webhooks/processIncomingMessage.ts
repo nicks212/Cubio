@@ -17,7 +17,8 @@ import { redis } from '@/lib/redis';
 import { createHash } from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './types';
-import type { ApartmentContext, ProductContext, BusinessContext } from '@/lib/ai/types';
+import type { ApartmentContext, ProductContext, ServiceContext, BusinessContext } from '@/lib/ai/types';
+import type { BusinessType } from '@/types/database';
 import type { PhotoType } from '@/lib/ai/intentDetector';
 
 // CRAFT_BROAD_QUERY_RE imported from signals.ts
@@ -321,12 +322,15 @@ export async function processIncomingMessage(
         if (similarApartmentNumbers.length > 0) {
           console.info(`${label} Vector search: ${similarApartmentNumbers.length} similar apartments found`);
         }
-      } else {
+      } else if (integration.businessType === 'craft_shop') {
         similarProductNames = await searchSimilarProducts(integration.companyId, imageSearchQuery);
         if (similarProductNames.length > 0) {
           console.info(`${label} Vector search (image): ${similarProductNames.length} similar products found`);
         }
       }
+      // beauty_salon: image-vector matching over SERVICES is Phase 5. The image
+      // description (imageSearchQuery) still flows into loadServiceContext, which
+      // runs deterministic token/category retrieval over services.
     }
   }
 
@@ -464,7 +468,9 @@ export async function processIncomingMessage(
   const finalBusinessContext: BusinessContext = effectiveIntent === 'chat'
     ? (integration.businessType === 'real_estate'
         ? ({ apartments: [], businessDescription: businessContext.businessDescription } as ApartmentContext)
-        : ({ products: [], businessDescription: businessContext.businessDescription } as ProductContext))
+        : integration.businessType === 'beauty_salon'
+          ? ({ services: [], businessDescription: businessContext.businessDescription } as ServiceContext)
+          : ({ products: [], businessDescription: businessContext.businessDescription } as ProductContext))
     : businessContext;
   console.info(
     `${label} [routing] company:${integration.companyId} biz:${integration.businessType} intent:${effectiveIntent} first:${isFirstMessage} regex:${regexIntent ?? 'null'} context:${effectiveIntent === 'chat' ? 'minimal-grounded' : 'full'}`,
@@ -1339,7 +1345,7 @@ async function detectAndPersistLeadOrEscalation(
   latestMessage: string,
   companyId: string,
   conversationId: string,
-  businessType: 'real_estate' | 'craft_shop',
+  businessType: BusinessType,
   senderName: string | null,
   providerNickname: string | null,
   provider: string,

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { Users, Home, Clock, CheckCircle2, MessageSquare, TrendingUp, Gem } from 'lucide-react';
+import { Users, Home, Clock, CheckCircle2, MessageSquare, TrendingUp, Gem, Scissors } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { getTranslations } from '@/lib/i18n';
 
@@ -17,13 +17,16 @@ export default async function DashboardPage() {
 
   const company = profile?.company;
   const isRealEstate = company?.business_type === 'real_estate';
+  const isCraftShop = company?.business_type === 'craft_shop';
+  const isBeautySalon = company?.business_type === 'beauty_salon';
 
   // Fetch stats
-  const [leadsRes, conversationsRes, apartmentsRes, productsRes] = await Promise.all([
+  const [leadsRes, conversationsRes, apartmentsRes, productsRes, servicesRes] = await Promise.all([
     supabase.from('leads').select('id, status, ai_handled, created_at, name, interest').eq('company_id', company?.id ?? '').order('created_at', { ascending: false }).limit(5),
     supabase.from('conversations').select('id', { count: 'exact', head: true }).eq('company_id', company?.id ?? ''),
     isRealEstate ? supabase.from('apartments').select('id, status').eq('company_id', company?.id ?? '').is('deleted_at', null) : Promise.resolve({ data: [] }),
-    !isRealEstate ? supabase.from('products').select('id').eq('company_id', company?.id ?? '').is('deleted_at', null) : Promise.resolve({ data: [] }),
+    isCraftShop ? supabase.from('products').select('id').eq('company_id', company?.id ?? '').is('deleted_at', null) : Promise.resolve({ data: [] }),
+    isBeautySalon ? supabase.from('services').select('id').eq('company_id', company?.id ?? '').eq('active', true).is('deleted_at', null) : Promise.resolve({ data: [] }),
   ]);
 
   const leads = leadsRes.data ?? [];
@@ -33,6 +36,7 @@ export default async function DashboardPage() {
   const reserved = apartments.filter((a) => a.status === 'reserved').length;
   const sold = apartments.filter((a) => a.status === 'sold').length;
   const products = (productsRes as { data: unknown[] | null })?.data ?? [];
+  const services = (servicesRes as { data: unknown[] | null })?.data ?? [];
   const convCount = (conversationsRes as { count: number | null }).count ?? 0;
 
   const realEstateStats = [
@@ -49,7 +53,14 @@ export default async function DashboardPage() {
     { label: t['dashboard.conversion_rate'], value: '—', icon: TrendingUp, color: 'bg-amber-500' },
   ];
 
-  const stats = isRealEstate ? realEstateStats : craftStats;
+  const salonStats = [
+    { label: t['dashboard.total_services'] ?? 'Services', value: services.length.toString(), icon: Scissors, color: 'bg-pink-500' },
+    { label: t['dashboard.total_leads'], value: totalLeads.toString(), icon: Users, color: 'bg-blue-500' },
+    { label: t['dashboard.ai_conversations'], value: convCount.toString(), icon: MessageSquare, color: 'bg-green-500' },
+    { label: t['dashboard.conversion_rate'], value: '—', icon: TrendingUp, color: 'bg-amber-500' },
+  ];
+
+  const stats = isRealEstate ? realEstateStats : isBeautySalon ? salonStats : craftStats;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">

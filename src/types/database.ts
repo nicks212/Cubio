@@ -1,6 +1,6 @@
 // Database types matching Supabase schema
 
-export type BusinessType = 'real_estate' | 'craft_shop';
+export type BusinessType = 'real_estate' | 'craft_shop' | 'beauty_salon';
 
 export type ApartmentStatus = 'vacant' | 'reserved' | 'sold';
 

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Building2, Home, Users, BarChart3,
   Menu, X, LogOut, Gem, Shield, MessageSquare, Plug, Settings, AlertTriangle,
+  Scissors, UserCog,
 } from 'lucide-react';
 import { logout } from '@/app/auth/actions';
 import { CubioLogo } from '@/components/CubioLogo';
@@ -95,6 +96,7 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
 
   const isRealEstate = profile.company?.business_type === 'real_estate';
   const isCraftShop = profile.company?.business_type === 'craft_shop';
+  const isBeautySalon = profile.company?.business_type === 'beauty_salon';
 
   const navItems = [
     { path: '/dashboard', label: t['nav.dashboard'], icon: LayoutDashboard, exact: true, badge: 0 },
@@ -107,6 +109,11 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
     ] : []),
     ...(isCraftShop ? [
       { path: '/dashboard/products', label: t['nav.products'], icon: Gem, badge: 0 },
+    ] : []),
+    ...(isBeautySalon ? [
+      { path: '/dashboard/services', label: t['nav.services'] ?? 'Services', icon: Scissors, badge: 0 },
+      { path: '/dashboard/specialists', label: t['nav.specialists'] ?? 'Specialists', icon: UserCog, badge: 0 },
+      // Calendar/scheduler lands in Phase 3.
     ] : []),
     { path: '/dashboard/integrations', label: t['nav.integrations'], icon: Plug, badge: 0 },
     { path: '/dashboard/settings', label: t['nav.settings'], icon: Settings, badge: 0 },

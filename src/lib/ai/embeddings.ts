@@ -25,6 +25,7 @@ import { GoogleGenerativeAI, TaskType } from '@google/generative-ai';
 import { createAdminClient } from '@/lib/supabase/server';
 import { persistAIUsage, type AIUsageContext } from './usage';
 import type { ApartmentContext, ProductContext } from './types';
+import type { BusinessType } from '@/types/database';
 
 // ─── Embedding model configuration ────────────────────────────────────────
 // Model name: 'text-embedding-004' / 'embedding-001' return 404 on the current
@@ -96,15 +97,19 @@ try {
 export async function describeImageForSearch(
   base64: string,
   mimeType: string,
-  businessType: 'real_estate' | 'craft_shop',
+  businessType: BusinessType,
   usageContext?: Omit<AIUsageContext, 'feature' | 'model'>,
 ): Promise<string | null> {
   try {
     const visionModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-    const searchContext = businessType === 'real_estate'
-      ? 'Describe key visual features of this apartment or building that would help match it to similar properties: layout feel, natural light, finishes, view, style. Be concise (under 40 words).'
-      : 'Describe this product for catalog similarity matching. What type of product is it? Include: product category, style, material, color, any symbols or text visible, and distinguishing features. Be concise (under 30 words).';
+    const searchContext =
+      businessType === 'real_estate'
+        ? 'Describe key visual features of this apartment or building that would help match it to similar properties: layout feel, natural light, finishes, view, style. Be concise (under 40 words).'
+        : businessType === 'beauty_salon'
+          // Cosmetic/service intent only — NEVER a medical diagnosis (spec §21).
+          ? 'Describe the aesthetic/grooming goal this photo suggests, to match it to salon SERVICES. Name the likely service area (e.g. hair style, hair color, manicure/nail design, facial/skincare, beard/barber, lashes/brows) and visible style details. Cosmetic description only — do NOT diagnose any medical or skin condition. Be concise (under 30 words).'
+          : 'Describe this product for catalog similarity matching. What type of product is it? Include: product category, style, material, color, any symbols or text visible, and distinguishing features. Be concise (under 30 words).';
 
     const result = await visionModel.generateContent([
       { text: searchContext },
