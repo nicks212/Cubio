@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useActionState, useTransition } from 'react';
+import { useState, useActionState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Edit, Trash2, X, UserCog, Tag, Layers, Clock, Plane } from 'lucide-react';
 import {
@@ -49,7 +49,8 @@ export default function SpecialistsClient({ specialists, specialistTypes, catego
   const [createState, createAction, createPending] = useActionState(createSpecialist, null);
   const [updateState, updateAction, updatePending] = useActionState(updateSpecialist, null);
   const state = editing ? updateState : createState;
-  if (state?.success && modal) { setModal(false); setEditing(null); }
+  useEffect(() => { if (createState?.success) { setModal(false); setEditing(null); } }, [createState]);
+  useEffect(() => { if (updateState?.success) { setModal(false); setEditing(null); } }, [updateState]);
 
   const typeName = (s: Specialist) =>
     Array.isArray(s.specialist_type) ? (s.specialist_type[0]?.name ?? '—') : (s.specialist_type?.name ?? '—');

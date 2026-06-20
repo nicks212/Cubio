@@ -67,6 +67,69 @@ async function computeEndTime(
 }
 
 /**
+ * Backend availability validation (spec §4/§12/§13): rejects a reservation that
+ * falls outside the specialist's working hours for that weekday, or on a specialist
+ * vacation day, or on a business-wide closure. Returns an error string or null.
+ *
+ * Rules:
+ *  - Business vacation overlapping the date → always reject.
+ *  - If business_hours has a row for that weekday and it's closed → reject.
+ *  - Specialist vacation overlapping the date → reject.
+ *  - If the specialist has ANY weekly schedule configured, the [start,end) must fit
+ *    inside one of that weekday's windows; no window for the weekday → reject.
+ *    (If the specialist has no schedule at all, treat as unconfigured = allowed.)
+ */
+async function availabilityError(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  companyId: string,
+  specialistId: string | null,
+  date: string,
+  startTime: string,
+  endTime: string,
+): Promise<string | null> {
+  const weekday = new Date(`${date}T00:00:00`).getDay(); // 0=Sun..6=Sat
+  const s = toMin(startTime), e = toMin(endTime);
+
+  // Business-wide closures.
+  const { data: bizVac } = await supabase
+    .from('business_vacations').select('id').eq('company_id', companyId)
+    .lte('start_date', date).gte('end_date', date).limit(1);
+  if (bizVac && bizVac.length > 0) return 'The business is closed (vacation/holiday) on that date.';
+
+  const { data: bizHours } = await supabase
+    .from('business_hours').select('opening_time, closing_time, closed').eq('company_id', companyId).eq('weekday', weekday);
+  if (bizHours && bizHours.length > 0) {
+    const row = bizHours[0];
+    if (row.closed) return 'The business is closed on that day.';
+    if (row.opening_time && row.closing_time && (s < toMin(row.opening_time) || e > toMin(row.closing_time))) {
+      return `Outside business hours (${row.opening_time.slice(0, 5)}–${row.closing_time.slice(0, 5)}).`;
+    }
+  }
+
+  if (!specialistId) return null;
+
+  // Specialist vacation.
+  const { data: specVac } = await supabase
+    .from('specialist_vacations').select('id').eq('company_id', companyId).eq('specialist_id', specialistId)
+    .lte('start_date', date).gte('end_date', date).limit(1);
+  if (specVac && specVac.length > 0) return 'The specialist is on vacation on that date.';
+
+  // Specialist weekly schedule.
+  const { data: allSched } = await supabase
+    .from('specialist_schedules').select('weekday, start_time, end_time').eq('company_id', companyId).eq('specialist_id', specialistId);
+  if (allSched && allSched.length > 0) {
+    const windows = allSched.filter(w => w.weekday === weekday);
+    if (windows.length === 0) return 'The specialist does not work on that day.';
+    const fits = windows.some(w => s >= toMin(w.start_time) && e <= toMin(w.end_time));
+    if (!fits) {
+      const hrs = windows.map(w => `${w.start_time.slice(0, 5)}–${w.end_time.slice(0, 5)}`).join(', ');
+      return `Outside the specialist's working hours (${hrs}).`;
+    }
+  }
+  return null;
+}
+
+/**
  * Backend conflict check (spec §13/§14): rejects a reservation that overlaps an
  * existing blocking reservation for the same specialist on the same date.
  * `excludeId` skips the row being edited.
@@ -108,6 +171,8 @@ export async function createReservation(_prev: unknown, formData: FormData) {
 
   const end = await computeEndTime(a.supabase, a.company_id, d.service_id ?? null, d.reservation_start_time, d.reservation_end_time);
   if (toMin(end) <= toMin(d.reservation_start_time)) return { error: 'End time must be after start time' };
+  const availErr = await availabilityError(a.supabase, a.company_id, d.specialist_id ?? null, d.reservation_date, d.reservation_start_time, end);
+  if (availErr) return { error: availErr };
   if (await hasConflict(a.supabase, a.company_id, d.specialist_id ?? null, d.reservation_date, d.reservation_start_time, end)) {
     return { error: 'This specialist already has a reservation overlapping that time.' };
   }
@@ -136,6 +201,8 @@ export async function updateReservation(_prev: unknown, formData: FormData) {
 
   const end = await computeEndTime(a.supabase, a.company_id, d.service_id ?? null, d.reservation_start_time, d.reservation_end_time);
   if (toMin(end) <= toMin(d.reservation_start_time)) return { error: 'End time must be after start time' };
+  const availErr = await availabilityError(a.supabase, a.company_id, d.specialist_id ?? null, d.reservation_date, d.reservation_start_time, end);
+  if (availErr) return { error: availErr };
   if (await hasConflict(a.supabase, a.company_id, d.specialist_id ?? null, d.reservation_date, d.reservation_start_time, end, id)) {
     return { error: 'This specialist already has a reservation overlapping that time.' };
   }

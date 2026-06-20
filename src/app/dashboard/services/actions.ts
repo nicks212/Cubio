@@ -13,7 +13,7 @@ const serviceSchema = z.object({
   price_from: z.coerce.number().nonnegative().optional().nullable(),
   price_to: z.coerce.number().nonnegative().optional().nullable(),
   currency: z.enum(['GEL', 'USD']).default('GEL'),
-  duration_minutes: z.coerce.number().int().positive().optional().nullable(),
+  duration_minutes: z.coerce.number({ message: 'Duration is required' }).int().positive('Duration is required'),
   sessions_required: z.coerce.number().int().positive().default(1),
   preparation_instructions: z.string().optional(),
   consultation_required: z.string().optional().transform(v => v === 'true'),

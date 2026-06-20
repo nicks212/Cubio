@@ -126,10 +126,24 @@ export function buildBeautySalonSystemPrompt(
     modeLines.push(`NO MATCH: Ask exactly one short clarifying question — which service, area, or concern. Do NOT name or price any specific service.`);
   }
 
+  // ── Availability context (deterministic backend data the assistant reasons over) ──
+  const scheduleSummary = context.scheduleSummary ?? '';
+  let availabilityLine = '';
+  if (context.availableSlots && context.requestedDate) {
+    if (context.availableSlots.length > 0) {
+      const list = context.availableSlots.map(s => `${s.start} (${s.specialistName})`).join(', ');
+      availabilityLine = `AVAILABLE SLOTS for ${context.requestedDate} (verified open by the system): ${list}`;
+    } else {
+      availabilityLine = `AVAILABLE SLOTS for ${context.requestedDate}: none open that day.`;
+    }
+  }
+
   return assemble({
     isEnglishQuery,
     businessDescription: context.businessDescription,
     specialistLine,
+    scheduleSummary,
+    availabilityLine,
     modeLines,
     serviceLines,
     hasServices,
@@ -140,6 +154,8 @@ function assemble(o: {
   isEnglishQuery: boolean;
   businessDescription: string | null;
   specialistLine: string;
+  scheduleSummary: string;
+  availabilityLine: string;
   modeLines: string[];
   serviceLines: string;
   hasServices: boolean;
@@ -164,14 +180,24 @@ function assemble(o: {
       `CATEGORY FALLBACK: If the requested service isn't present, identify its category and suggest ONLY same-category alternatives from SERVICES. Never substitute an unrelated category. If none exist, say so briefly and offer to help with something else.`,
     ].join('\n'),
     [
-      `BOOKING (intake only): If the customer wants to book, warmly collect — in your own words — the desired service, preferred specialist (optional), preferred date and time, and a phone number.`,
-      `  • Do NOT claim a specific time is free, do NOT confirm or finalize a booking, and do NOT calculate availability or duration yourself.`,
-      `  • Let them know the team will confirm the exact available time. Ask only for the single most useful missing detail at a time.`,
+      `BOOKING: Help the customer book naturally, collecting the desired service, preferred specialist (optional), date, time, and phone number.`,
+      `  • NEVER invent times or compute availability yourself. Offer ONLY the times listed under AVAILABLE SLOTS, and only propose appointments inside the hours shown under SCHEDULE.`,
+      `  • Never offer a time on a day a specialist is off/on vacation or when the business is closed. Never propose a slot that would overlap an existing one — the system has already excluded those from AVAILABLE SLOTS.`,
+      `  • If AVAILABLE SLOTS shows none (or no date was given yet), ask for their preferred day and tell them which days/hours are available from SCHEDULE — do not guess specific open times.`,
+      `  • Once they pick a listed slot and you have their name + phone, confirm you've noted it and the team will finalize. Ask for one missing detail at a time.`,
     ].join('\n'),
   );
 
   if (o.specialistLine) {
     sections.push(`SPECIALISTS: ${o.specialistLine}`);
+  }
+
+  if (o.scheduleSummary) {
+    sections.push(`SCHEDULE (working days & hours — the only times you may propose):\n${o.scheduleSummary}`);
+  }
+
+  if (o.availabilityLine) {
+    sections.push(o.availabilityLine);
   }
 
   if (o.isEnglishQuery) {

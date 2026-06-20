@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useActionState } from 'react';
+import { useState, useActionState, useEffect } from 'react';
 import { Plus, Edit, Trash2, X, Scissors, PawPrint } from 'lucide-react';
 import { createService, updateService, deleteService } from './actions';
 import { useT } from '@/components/TranslationsProvider';
@@ -43,7 +43,11 @@ export default function ServicesClient({ services, categories, specialistTypes }
   const [createState, createAction, createPending] = useActionState(createService, null);
   const [updateState, updateAction, updatePending] = useActionState(updateService, null);
   const state = editing ? updateState : createState;
-  if (state?.success && modal) { setModal(false); setEditing(null); }
+  // Close the modal once, on each successful submit. (Using a render-time check on
+  // the persisted action state would re-close the modal every time it reopened,
+  // forcing a full page refresh between actions.)
+  useEffect(() => { if (createState?.success) { setModal(false); setEditing(null); } }, [createState]);
+  useEffect(() => { if (updateState?.success) { setModal(false); setEditing(null); } }, [updateState]);
 
   const openAdd = () => { setEditing(null); setPetMode('human'); setModal(true); };
   const openEdit = (s: Service) => { setEditing(s); setPetMode(s.service_target ?? 'human'); setModal(true); };
@@ -174,8 +178,8 @@ export default function ServicesClient({ services, categories, specialistTypes }
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">{t['services.f_duration'] ?? 'Duration (min)'}</label>
-                  <input name="duration_minutes" type="number" defaultValue={editing?.duration_minutes ?? ''} className={inputCls} />
+                  <label className="block text-sm font-medium mb-2">{t['services.f_duration'] ?? 'Duration (min)'} *</label>
+                  <input name="duration_minutes" type="number" min="1" required defaultValue={editing?.duration_minutes ?? ''} className={inputCls} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">{t['services.f_sessions'] ?? 'Sessions'}</label>

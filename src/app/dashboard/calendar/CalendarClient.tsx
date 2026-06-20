@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useActionState, useMemo } from 'react';
+import { useState, useActionState, useMemo, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Plus, X, CalendarDays, Trash2 } from 'lucide-react';
 import { createReservation, updateReservation, deleteReservation } from './actions';
 import { useT } from '@/components/TranslationsProvider';
@@ -23,8 +23,8 @@ interface Reservation {
   size_category: string | null;
   special_requirements: string | null;
 }
-interface ServiceOpt { id: string; service_name: string; duration_minutes: number | null; }
-interface SpecialistOpt { id: string; specialist_name: string; }
+interface ServiceOpt { id: string; service_name: string; duration_minutes: number | null; specialist_type_id: string | null; }
+interface SpecialistOpt { id: string; specialist_name: string; specialist_type_id: string | null; }
 
 interface Props {
   reservations: Reservation[];
@@ -55,6 +55,7 @@ const DAY_END = 21 * 60;
 const SLOT = 30;
 const ROW_H = 44;
 const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0); };
+const fromMin = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const weekStart = (d: Date) => { const x = new Date(d); const off = (x.getDay() + 6) % 7; x.setDate(x.getDate() - off); return x; };
@@ -66,17 +67,25 @@ export default function CalendarClient({ reservations, services, specialists }: 
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Reservation | null>(null);
   const [prefillDate, setPrefillDate] = useState<string | null>(null);
+  const [prefillTime, setPrefillTime] = useState<string | null>(null);
+  const [prefillSpecialist, setPrefillSpecialist] = useState<string | null>(null);
 
   const [createState, createAction, createPending] = useActionState(createReservation, null);
   const [updateState, updateAction, updatePending] = useActionState(updateReservation, null);
   const state = editing ? updateState : createState;
-  if (state?.success && modal) { setModal(false); setEditing(null); setPrefillDate(null); }
+  // Close on each successful submit via effect — a render-time check on the persisted
+  // action state would re-close the modal on every reopen (needing a page refresh).
+  const closeModal = () => { setModal(false); setEditing(null); setPrefillDate(null); setPrefillTime(null); setPrefillSpecialist(null); };
+  useEffect(() => { if (createState?.success) closeModal(); }, [createState]);
+  useEffect(() => { if (updateState?.success) closeModal(); }, [updateState]);
 
   const svcName = (id: string | null) => services.find(s => s.id === id)?.service_name ?? '';
   const specName = (id: string | null) => specialists.find(s => s.id === id)?.specialist_name ?? (t['calendar.unassigned'] ?? 'Unassigned');
 
-  const openAdd = (date?: string) => { setEditing(null); setPrefillDate(date ?? ymd(anchor)); setModal(true); };
-  const openEdit = (r: Reservation) => { setEditing(r); setPrefillDate(null); setModal(true); };
+  const openAdd = (date?: string, time?: string, specialistId?: string | null) => {
+    setEditing(null); setPrefillDate(date ?? ymd(anchor)); setPrefillTime(time ?? null); setPrefillSpecialist(specialistId ?? null); setModal(true);
+  };
+  const openEdit = (r: Reservation) => { setEditing(r); setPrefillDate(null); setPrefillTime(null); setPrefillSpecialist(null); setModal(true); };
 
   const step = (dir: number) => setAnchor(a => addDays(a, dir * (view === 'day' ? 1 : 7)));
 
@@ -122,14 +131,17 @@ export default function CalendarClient({ reservations, services, specialists }: 
       {view === 'day' ? (
         <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto">
           <div className="flex min-w-fit">
-            {/* Time axis */}
+            {/* Time axis — absolute positioning so labels sit exactly on the gridlines
+                that the reservation blocks are positioned against (same coordinate system). */}
             <div className="flex-shrink-0 w-16 border-r border-slate-200">
               <div className="h-10 border-b border-slate-200" />
-              {slots.map(m => (
-                <div key={m} style={{ height: ROW_H }} className="text-[11px] text-muted-foreground text-right pr-2 -mt-2">
-                  {m % 60 === 0 ? `${m / 60}:00` : ''}
-                </div>
-              ))}
+              <div className="relative" style={{ height: slots.length * ROW_H }}>
+                {slots.map((m, i) => m % 60 === 0 ? (
+                  <div key={m} style={{ top: i * ROW_H }} className="absolute right-2 -translate-y-1/2 text-[11px] text-muted-foreground">
+                    {m / 60}:00
+                  </div>
+                ) : null)}
+              </div>
             </div>
             {/* Specialist columns */}
             {dayCols.map(col => {
@@ -141,7 +153,7 @@ export default function CalendarClient({ reservations, services, specialists }: 
                     {slots.map((m, i) => (
                       <div key={m} style={{ top: i * ROW_H, height: ROW_H }}
                         className="absolute inset-x-0 border-b border-slate-100 hover:bg-slate-50 cursor-pointer"
-                        onClick={() => openAdd(ymd(anchor))} />
+                        onClick={() => openAdd(ymd(anchor), fromMin(m), col.id)} />
                     ))}
                     {colRes.map(r => {
                       const top = ((toMin(r.reservation_start_time) - DAY_START) / SLOT) * ROW_H;
@@ -197,21 +209,25 @@ export default function CalendarClient({ reservations, services, specialists }: 
         <ReservationModal
           editing={editing}
           prefillDate={prefillDate}
+          prefillTime={prefillTime}
+          prefillSpecialist={prefillSpecialist}
           services={services}
           specialists={specialists}
           action={editing ? updateAction : createAction}
           pending={editing ? updatePending : createPending}
           error={state?.error ?? null}
-          onClose={() => { setModal(false); setEditing(null); setPrefillDate(null); }}
+          onClose={closeModal}
         />
       )}
     </div>
   );
 }
 
-function ReservationModal({ editing, prefillDate, services, specialists, action, pending, error, onClose }: {
+function ReservationModal({ editing, prefillDate, prefillTime, prefillSpecialist, services, specialists, action, pending, error, onClose }: {
   editing: Reservation | null;
   prefillDate: string | null;
+  prefillTime: string | null;
+  prefillSpecialist: string | null;
   services: ServiceOpt[];
   specialists: SpecialistOpt[];
   action: (formData: FormData) => void;
@@ -222,6 +238,19 @@ function ReservationModal({ editing, prefillDate, services, specialists, action,
   const t = useT();
   const [showPet, setShowPet] = useState(!!(editing?.animal_type || editing?.pet_name));
   const inputCls = 'w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50';
+
+  // #6 — when a service is chosen, only specialists matching its specialist_type show.
+  const [serviceId, setServiceId] = useState<string>(editing?.service_id ?? '');
+  const [specialistId, setSpecialistId] = useState<string>(editing?.specialist_id ?? prefillSpecialist ?? '');
+  const selectedService = services.find(s => s.id === serviceId);
+  const eligibleSpecialists = selectedService?.specialist_type_id
+    ? specialists.filter(s => s.specialist_type_id === selectedService.specialist_type_id)
+    : specialists;
+  // If the current specialist no longer fits the chosen service, clear it.
+  useEffect(() => {
+    if (specialistId && !eligibleSpecialists.some(s => s.id === specialistId)) setSpecialistId('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serviceId]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
@@ -248,17 +277,20 @@ function ReservationModal({ editing, prefillDate, services, specialists, action,
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-2">{t['calendar.f_service'] ?? 'Service'}</label>
-              <select name="service_id" defaultValue={editing?.service_id ?? ''} className={inputCls}>
+              <select name="service_id" value={serviceId} onChange={e => setServiceId(e.target.value)} className={inputCls}>
                 <option value="">—</option>
                 {services.map(s => <option key={s.id} value={s.id}>{s.service_name}{s.duration_minutes ? ` (${s.duration_minutes}m)` : ''}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">{t['calendar.f_specialist'] ?? 'Specialist'}</label>
-              <select name="specialist_id" defaultValue={editing?.specialist_id ?? ''} className={inputCls}>
+              <select name="specialist_id" value={specialistId} onChange={e => setSpecialistId(e.target.value)} className={inputCls}>
                 <option value="">{t['calendar.unassigned'] ?? 'Unassigned'}</option>
-                {specialists.map(s => <option key={s.id} value={s.id}>{s.specialist_name}</option>)}
+                {eligibleSpecialists.map(s => <option key={s.id} value={s.id}>{s.specialist_name}</option>)}
               </select>
+              {selectedService?.specialist_type_id && eligibleSpecialists.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">{t['calendar.no_eligible'] ?? 'No specialist of the required type is available.'}</p>
+              )}
             </div>
           </div>
 
@@ -269,7 +301,7 @@ function ReservationModal({ editing, prefillDate, services, specialists, action,
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">{t['calendar.f_start'] ?? 'Start time'} *</label>
-              <input type="time" name="reservation_start_time" required defaultValue={editing?.reservation_start_time?.slice(0, 5) ?? '10:00'} className={inputCls} />
+              <input type="time" name="reservation_start_time" required defaultValue={editing?.reservation_start_time?.slice(0, 5) ?? prefillTime ?? '10:00'} className={inputCls} />
             </div>
           </div>
           <p className="text-xs text-muted-foreground -mt-1">{t['calendar.end_auto'] ?? 'End time is set automatically from the service duration.'}</p>

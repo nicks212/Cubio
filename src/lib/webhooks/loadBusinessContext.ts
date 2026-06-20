@@ -2,6 +2,8 @@ import { createAdminClient } from '@/lib/supabase/server';
 import type { BusinessContext, ServiceContext } from '@/lib/ai';
 import { retrieveProducts, extractCategoryKeywords, retrieveProductsByCategory } from '@/lib/ai/productRetrieval';
 import type { BusinessType } from '@/types/database';
+import { generateAvailableSlots } from '@/lib/services/availability';
+import { parseRequestedDate } from '@/lib/services/dateParse';
 
 /** Options for context loading — used when vector similarity search pre-filtered results. */
 export interface LoadContextOptions {
@@ -266,7 +268,7 @@ async function loadServiceContext(
 
   const { data: serviceRows, error: svcErr } = await supabase
     .from('services')
-    .select('service_name, description, price_from, price_to, currency, duration_minutes, sessions_required, gender_target, consultation_required, service_target, active, category:service_categories(name), specialist_type:specialist_types(name)')
+    .select('service_name, description, price_from, price_to, currency, duration_minutes, sessions_required, gender_target, consultation_required, service_target, active, specialist_type_id, category:service_categories(name), specialist_type:specialist_types(name)')
     .eq('company_id', companyId)
     .eq('active', true)
     .is('deleted_at', null)
@@ -294,16 +296,23 @@ async function loadServiceContext(
     active: r.active ?? true,
   }));
 
+  // Raw lookup (name → duration + specialist_type_id) for the availability engine.
+  const rawByName = new Map<string, { duration: number | null; typeId: string | null }>(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((serviceRows ?? []) as any[]).map(r => [String(r.service_name).toLowerCase(), { duration: r.duration_minutes ?? null, typeId: r.specialist_type_id ?? null }]),
+  );
+
   const { data: specRows } = await supabase
     .from('specialists')
-    .select('specialist_name, languages, specialist_type:specialist_types(name)')
+    .select('id, specialist_name, languages, specialist_type:specialist_types(name)')
     .eq('company_id', companyId)
     .eq('active', true)
     .is('deleted_at', null)
     .limit(100);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const specialists = ((specRows ?? []) as any[]).map(r => ({
+  const specRowsArr = (specRows ?? []) as any[];
+  const specialists = specRowsArr.map(r => ({
     name: r.specialist_name,
     type: relName(r.specialist_type),
     languages: (r.languages ?? null) as string[] | null,
@@ -343,13 +352,100 @@ async function loadServiceContext(
     }
   }
 
+  // ── Schedule summary (working days/hours + vacations) so the assistant can reason
+  //    about WHEN the business is open — it never computes this itself. ──
+  let scheduleSummary: string | null = null;
+  try {
+    const idToName = new Map<string, string>(specRowsArr.map(r => [r.id as string, r.specialist_name as string]));
+    const specIds = specRowsArr.map(r => r.id as string);
+    if (specIds.length > 0) {
+      const [{ data: sched }, { data: vac }] = await Promise.all([
+        supabase.from('specialist_schedules').select('specialist_id, weekday, start_time, end_time').eq('company_id', companyId).in('specialist_id', specIds),
+        supabase.from('specialist_vacations').select('specialist_id, start_date, end_date').eq('company_id', companyId).in('specialist_id', specIds).gte('end_date', new Date().toISOString().slice(0, 10)),
+      ]);
+      scheduleSummary = buildScheduleSummary(sched ?? [], vac ?? [], idToName) || null;
+    }
+  } catch (err) {
+    console.warn('[loadBusinessContext] schedule summary failed (non-fatal):', err);
+  }
+
+  // ── Backend-computed open slots when the customer referenced a date + a service. ──
+  let availableSlots: ServiceContext['availableSlots'] = null;
+  let requestedDate: string | null = null;
+  try {
+    const date = parseRequestedDate(options.textQuery ?? '');
+    const targetSvc = matched[0];
+    if (date && targetSvc) {
+      const raw = rawByName.get(targetSvc.name.toLowerCase());
+      if (raw?.duration) {
+        requestedDate = date;
+        const slots = await generateAvailableSlots({
+          companyId, date, durationMin: raw.duration, specialistTypeId: raw.typeId ?? null, maxSlots: 10,
+        });
+        availableSlots = slots.map(s => ({ specialistName: s.specialistName, start: s.start, end: s.end }));
+      }
+    }
+  } catch (err) {
+    console.warn('[loadBusinessContext] availability computation failed (non-fatal):', err);
+  }
+
   return {
     services,
     specialists,
     matchedServices: matched,
+    scheduleSummary,
+    availableSlots,
+    requestedDate,
     businessDescription,
     imageSearchQuery: options.imageSearchQuery ?? null,
     ...(tokenHits > 0 ? { tokenRetrievalHits: tokenHits } : {}),
     ...(catHits > 0 ? { categoryFallbackHits: catHits } : {}),
   };
+}
+
+const WD_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WD_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday-first
+
+/** Compact per-specialist working-hours + vacation summary for the prompt. */
+function buildScheduleSummary(
+  schedules: Array<{ specialist_id: string; weekday: number; start_time: string; end_time: string }>,
+  vacations: Array<{ specialist_id: string; start_date: string; end_date: string }>,
+  idToName: Map<string, string>,
+): string {
+  const bySpec = new Map<string, Array<{ weekday: number; start: string; end: string }>>();
+  for (const s of schedules) {
+    const arr = bySpec.get(s.specialist_id) ?? [];
+    arr.push({ weekday: s.weekday, start: s.start_time.slice(0, 5), end: s.end_time.slice(0, 5) });
+    bySpec.set(s.specialist_id, arr);
+  }
+  const vacBySpec = new Map<string, Array<{ start: string; end: string }>>();
+  for (const v of vacations) {
+    const arr = vacBySpec.get(v.specialist_id) ?? [];
+    arr.push({ start: v.start_date, end: v.end_date });
+    vacBySpec.set(v.specialist_id, arr);
+  }
+
+  const lines: string[] = [];
+  for (const [id, name] of idToName) {
+    const rows = bySpec.get(id);
+    if (!rows || rows.length === 0) continue;
+    // Group weekdays sharing the same window.
+    const byWindow = new Map<string, number[]>();
+    for (const r of rows) {
+      const key = `${r.start}-${r.end}`;
+      const arr = byWindow.get(key) ?? [];
+      arr.push(r.weekday);
+      byWindow.set(key, arr);
+    }
+    const parts: string[] = [];
+    for (const [win, wds] of byWindow) {
+      const days = WD_ORDER.filter(d => wds.includes(d)).map(d => WD_ABBR[d]).join(',');
+      parts.push(`${days} ${win}`);
+    }
+    let line = `${name}: ${parts.join('; ')}`;
+    const vacs = vacBySpec.get(id);
+    if (vacs && vacs.length > 0) line += ` (off: ${vacs.map(v => v.start === v.end ? v.start : `${v.start}→${v.end}`).join(', ')})`;
+    lines.push(line);
+  }
+  return lines.join('\n');
 }

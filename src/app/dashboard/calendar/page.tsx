@@ -25,8 +25,8 @@ export default async function CalendarPage() {
       .eq('company_id', companyId)
       .order('reservation_date', { ascending: true })
       .order('reservation_start_time', { ascending: true }),
-    supabase.from('services').select('id, service_name, duration_minutes').eq('company_id', companyId).eq('active', true).is('deleted_at', null).order('service_name'),
-    supabase.from('specialists').select('id, specialist_name').eq('company_id', companyId).eq('active', true).is('deleted_at', null).order('specialist_name'),
+    supabase.from('services').select('id, service_name, duration_minutes, specialist_type_id').eq('company_id', companyId).eq('active', true).is('deleted_at', null).order('service_name'),
+    supabase.from('specialists').select('id, specialist_name, specialist_type_id').eq('company_id', companyId).eq('active', true).is('deleted_at', null).order('specialist_name'),
   ]);
 
   return (

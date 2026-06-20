@@ -87,6 +87,19 @@ export interface ServiceContext {
   }>;
   /** Active specialists the assistant may reference (name + type + languages). */
   specialists?: Array<{ name: string; type?: string | null; languages?: string[] | null }>;
+  /**
+   * Compact per-specialist working-days/hours + vacation summary, so the assistant
+   * can reason about WHEN the business is open without computing anything itself.
+   */
+  scheduleSummary?: string | null;
+  /**
+   * Backend-computed open slots for a date the customer referenced (deterministic
+   * Availability Engine output). The assistant may ONLY offer these — never invent
+   * times. Empty array = nothing free that day; null = no date was referenced.
+   */
+  availableSlots?: Array<{ specialistName: string; start: string; end: string }> | null;
+  /** The date (YYYY-MM-DD) the availableSlots were computed for, if any. */
+  requestedDate?: string | null;
   businessDescription: string | null;
   /** Non-null when context was loaded after an image similarity search. */
   imageSearchQuery?: string | null;
