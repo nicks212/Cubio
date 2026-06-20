@@ -2,10 +2,11 @@
 
 import { useState, useActionState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Edit, Trash2, X, UserCog, Tag, Layers } from 'lucide-react';
+import { Plus, Edit, Trash2, X, UserCog, Tag, Layers, Clock, Plane } from 'lucide-react';
 import {
   createSpecialist, updateSpecialist, deleteSpecialist,
   createSpecialistType, deleteSpecialistType, createCategory, deleteCategory,
+  setSpecialistSchedule, addSpecialistVacation, deleteSpecialistVacation,
 } from './actions';
 import { useT } from '@/components/TranslationsProvider';
 
@@ -18,21 +19,32 @@ interface Specialist {
   active: boolean;
   specialist_type?: { name: string } | { name: string }[] | null;
 }
+interface ScheduleRow { id: string; specialist_id: string; weekday: number; start_time: string; end_time: string; }
+interface VacationRow { id: string; specialist_id: string; start_date: string; end_date: string; label: string | null; }
 
 interface Props {
   specialists: Specialist[];
   specialistTypes: NamedRow[];
   categories: NamedRow[];
+  schedules: ScheduleRow[];
+  vacations: VacationRow[];
 }
+
+// Monday-first display order; values are Postgres weekday numbers (0=Sun).
+const WEEKDAYS: Array<{ n: number; label: string }> = [
+  { n: 1, label: 'Mon' }, { n: 2, label: 'Tue' }, { n: 3, label: 'Wed' },
+  { n: 4, label: 'Thu' }, { n: 5, label: 'Fri' }, { n: 6, label: 'Sat' }, { n: 0, label: 'Sun' },
+];
 
 type Tab = 'specialists' | 'types' | 'categories';
 
-export default function SpecialistsClient({ specialists, specialistTypes, categories }: Props) {
+export default function SpecialistsClient({ specialists, specialistTypes, categories, schedules, vacations }: Props) {
   const t = useT();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('specialists');
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Specialist | null>(null);
+  const [scheduleFor, setScheduleFor] = useState<Specialist | null>(null);
 
   const [createState, createAction, createPending] = useActionState(createSpecialist, null);
   const [updateState, updateAction, updatePending] = useActionState(updateSpecialist, null);
@@ -98,6 +110,7 @@ export default function SpecialistsClient({ specialists, specialistTypes, catego
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex gap-1 justify-end">
+                        <button onClick={() => setScheduleFor(s)} title={t['specialists.schedule'] ?? 'Working hours & vacations'} className="p-1.5 hover:bg-slate-100 rounded text-muted-foreground"><Clock className="w-4 h-4" /></button>
                         <button onClick={() => { setEditing(s); setModal(true); }} className="p-1.5 hover:bg-slate-100 rounded text-muted-foreground"><Edit className="w-4 h-4" /></button>
                         <button onClick={() => { if (confirm(t['specialists.delete_confirm'] ?? 'Delete this specialist?')) deleteSpecialist(s.id); }} className="p-1.5 hover:bg-red-50 rounded text-red-500"><Trash2 className="w-4 h-4" /></button>
                       </div>
@@ -169,6 +182,127 @@ export default function SpecialistsClient({ specialists, specialistTypes, catego
           </div>
         </div>
       )}
+
+      {scheduleFor && (
+        <ScheduleEditor
+          specialist={scheduleFor}
+          schedule={schedules.filter(s => s.specialist_id === scheduleFor.id)}
+          vacations={vacations.filter(v => v.specialist_id === scheduleFor.id)}
+          onClose={() => setScheduleFor(null)}
+          onChanged={() => router.refresh()}
+        />
+      )}
+    </div>
+  );
+}
+
+function ScheduleEditor({ specialist, schedule, vacations, onClose, onChanged }: {
+  specialist: Specialist;
+  schedule: ScheduleRow[];
+  vacations: VacationRow[];
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const t = useT();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  // Local weekly state: { [weekday]: {on, start, end} }, seeded from existing rows.
+  const [days, setDays] = useState<Record<number, { on: boolean; start: string; end: string }>>(() => {
+    const init: Record<number, { on: boolean; start: string; end: string }> = {};
+    for (const { n } of WEEKDAYS) {
+      const row = schedule.find(s => s.weekday === n);
+      init[n] = row
+        ? { on: true, start: row.start_time.slice(0, 5), end: row.end_time.slice(0, 5) }
+        : { on: false, start: '10:00', end: '19:00' };
+    }
+    return init;
+  });
+
+  // Vacation add form
+  const [vStart, setVStart] = useState('');
+  const [vEnd, setVEnd] = useState('');
+  const [vLabel, setVLabel] = useState('');
+
+  const saveSchedule = () => {
+    setError(null);
+    const rows = WEEKDAYS.filter(d => days[d.n].on).map(d => ({ weekday: d.n, start_time: days[d.n].start, end_time: days[d.n].end }));
+    startTransition(async () => {
+      const res = await setSpecialistSchedule(specialist.id, rows);
+      if (res?.error) { setError(res.error); return; }
+      onChanged();
+    });
+  };
+
+  const addVacation = () => {
+    setError(null);
+    if (!vStart || !vEnd) { setError(t['specialists.vac_dates_required'] ?? 'Pick start and end dates'); return; }
+    startTransition(async () => {
+      const res = await addSpecialistVacation(specialist.id, vStart, vEnd, vLabel);
+      if (res?.error) { setError(res.error); return; }
+      setVStart(''); setVEnd(''); setVLabel('');
+      onChanged();
+    });
+  };
+
+  const inputCls = 'px-3 py-2 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b border-slate-200">
+          <h2 className="text-xl font-semibold flex items-center gap-2"><Clock className="w-5 h-5 text-primary" />{specialist.specialist_name}</h2>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-6 space-y-6">
+          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
+
+          {/* Weekly working hours */}
+          <div>
+            <h3 className="text-sm font-semibold mb-3">{t['specialists.weekly_hours'] ?? 'Weekly working hours'}</h3>
+            <div className="space-y-2">
+              {WEEKDAYS.map(d => (
+                <div key={d.n} className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 w-24 text-sm font-medium">
+                    <input type="checkbox" checked={days[d.n].on} onChange={e => setDays(p => ({ ...p, [d.n]: { ...p[d.n], on: e.target.checked } }))} className="w-4 h-4 accent-primary" />
+                    {t[`weekday.${d.n}`] ?? d.label}
+                  </label>
+                  <input type="time" value={days[d.n].start} disabled={!days[d.n].on} onChange={e => setDays(p => ({ ...p, [d.n]: { ...p[d.n], start: e.target.value } }))} className={`${inputCls} disabled:opacity-40`} />
+                  <span className="text-muted-foreground">–</span>
+                  <input type="time" value={days[d.n].end} disabled={!days[d.n].on} onChange={e => setDays(p => ({ ...p, [d.n]: { ...p[d.n], end: e.target.value } }))} className={`${inputCls} disabled:opacity-40`} />
+                </div>
+              ))}
+            </div>
+            <button onClick={saveSchedule} disabled={pending} className="mt-3 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm disabled:opacity-50">
+              {pending ? (t['common.saving'] ?? 'Saving...') : (t['specialists.save_hours'] ?? 'Save hours')}
+            </button>
+          </div>
+
+          {/* Vacations / days off */}
+          <div className="border-t border-slate-200 pt-5">
+            <h3 className="text-sm font-semibold mb-3 flex items-center gap-1.5"><Plane className="w-4 h-4 text-muted-foreground" />{t['specialists.vacations'] ?? 'Vacations & days off'}</h3>
+            <div className="space-y-2 mb-3">
+              {vacations.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t['specialists.no_vacations'] ?? 'No vacations set.'}</p>
+              ) : vacations.map(v => (
+                <div key={v.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
+                  <span className="text-sm">{v.start_date} → {v.end_date}{v.label ? ` · ${v.label}` : ''}</span>
+                  <button onClick={() => startTransition(async () => { await deleteSpecialistVacation(v.id); onChanged(); })} className="p-1 hover:bg-red-50 rounded text-red-500"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input type="date" value={vStart} onChange={e => setVStart(e.target.value)} className={inputCls} />
+              <span className="text-muted-foreground">→</span>
+              <input type="date" value={vEnd} onChange={e => setVEnd(e.target.value)} className={inputCls} />
+              <input type="text" value={vLabel} onChange={e => setVLabel(e.target.value)} placeholder={t['specialists.vac_label'] ?? 'Label (optional)'} className={`${inputCls} flex-1 min-w-[120px]`} />
+              <button onClick={addVacation} disabled={pending} className="flex items-center gap-1 px-3 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm disabled:opacity-50">
+                <Plus className="w-4 h-4" />{t['common.add'] ?? 'Add'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

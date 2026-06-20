@@ -18,10 +18,12 @@ export default async function SpecialistsPage() {
 
   const companyId = profile?.company_id ?? '';
 
-  const [{ data: specialists }, { data: specialistTypes }, { data: categories }] = await Promise.all([
+  const [{ data: specialists }, { data: specialistTypes }, { data: categories }, { data: schedules }, { data: vacations }] = await Promise.all([
     supabase.from('specialists').select('*, specialist_type:specialist_types(name)').eq('company_id', companyId).is('deleted_at', null).order('created_at', { ascending: false }),
     supabase.from('specialist_types').select('id, name').eq('company_id', companyId).is('deleted_at', null).order('name'),
     supabase.from('service_categories').select('id, name').eq('company_id', companyId).is('deleted_at', null).order('name'),
+    supabase.from('specialist_schedules').select('id, specialist_id, weekday, start_time, end_time').eq('company_id', companyId),
+    supabase.from('specialist_vacations').select('id, specialist_id, start_date, end_date, label').eq('company_id', companyId).order('start_date'),
   ]);
 
   return (
@@ -29,6 +31,8 @@ export default async function SpecialistsPage() {
       specialists={specialists ?? []}
       specialistTypes={specialistTypes ?? []}
       categories={categories ?? []}
+      schedules={schedules ?? []}
+      vacations={vacations ?? []}
     />
   );
 }
