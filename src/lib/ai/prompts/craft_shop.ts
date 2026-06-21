@@ -130,14 +130,22 @@ export function buildCraftShopSystemPrompt(
   // so its non-emptiness IS the retrieval signal — no separate guard needed.
   const hasProducts = displayProducts.length > 0;
 
+  // Product line WITHOUT the category label — the assistant must refer to products by
+  // their own names, not announce/repeat the category for each item.
+  const fmtLine = (p: typeof displayProducts[number]) => {
+    const sym = p.currency === 'USD' ? '$' : '₾';
+    const parts: string[] = [`• ${p.name}: ${sym}${p.price}`];
+    if (p.description) parts.push((p.description as string).slice(0, 120));
+    return parts.join(' | ');
+  };
+
+  // Split into directly-REQUESTED product(s) vs SIMILAR side-suggestions so the reply
+  // can emphasize what was asked for and offer a couple of extras (set by retrieval).
+  const primaryCount = Math.min(context.primaryMatchCount ?? 0, displayProducts.length);
+  const hasSimilars = primaryCount >= 1 && displayProducts.length > primaryCount;
+
   const productLines = hasProducts
-    ? displayProducts.map(p => {
-        const sym = p.currency === 'USD' ? '$' : '₾';
-        const parts: string[] = [`• ${p.name}: ${sym}${p.price}`];
-        if (p.category) parts.push(p.category);
-        if (p.description) parts.push((p.description as string).slice(0, 120));
-        return parts.join(' | ');
-      }).join('\n')
+    ? displayProducts.map(fmtLine).join('\n')
     : '(no products matched this message)';
 
   // Budget gap: customer stated a budget below the cheapest in-stock product
@@ -161,8 +169,19 @@ export function buildCraftShopSystemPrompt(
   // Transactional turns (order/quantity/reservation/delivery/payment) must NOT lead with
   // a product dump — handled by the ORDER & LOGISTICS block below. Suppress the forced
   // "present all" listing in that case.
-  if (hasProducts && products.length >= 2 && !opts.transactional) {
-    modeLines.push(`PRESENT ALL: ${products.length} products matched. List every one individually with its name and price — do not omit, group, or summarize any.`);
+  if (hasProducts && !opts.transactional) {
+    if (hasSimilars) {
+      modeLines.push(
+        `RECOMMEND: First confirm and highlight the REQUESTED product(s) by name with the exact price — this is what the customer asked about. ` +
+        `Then, in your own natural words, briefly offer the SIMILAR OPTIONS as one or two extra suggestions. ` +
+        `Keep it conversational — do NOT dump a flat list, and never repeat the product category for each item.`,
+      );
+    } else if (products.length >= 2) {
+      modeLines.push(
+        `PRESENT: Present each matched product by name with its exact price, naturally and conversationally. ` +
+        `Refer to products by their own names; do NOT repeat the product category for each item.`,
+      );
+    }
   }
 
   // Transactional / purchase-logistics intent: the customer is discussing HOW to buy
@@ -251,6 +270,7 @@ export function buildCraftShopSystemPrompt(
       `  • Quote prices exactly as listed — never recall a price from conversation history.`,
       `  • Only name products in the PRODUCTS list — never invent or recall a product not listed here.`,
       `  • If PRODUCTS shows "(no products matched this message)" — ask one clarifying question before naming any product or price.`,
+      `PRESENTATION: Refer to every product by its own name with its exact price. NEVER announce or repeat the product category for each item (avoid patterns like "tarot card X tarot, tarot card Y tarot"). Sound natural and conversational — not a mechanical list.`,
       `CATEGORY FALLBACK: If the customer asked for a specific item that is not present in PRODUCTS:`,
       `  • Identify the semantic category of what they requested (e.g. stone → crystals/minerals; candle → candles; tarot → tarot decks).`,
       `  • Suggest ONLY alternatives from that same category found in PRODUCTS.`,
@@ -275,7 +295,16 @@ export function buildCraftShopSystemPrompt(
     sections.push(modeLines.join('\n'));
   }
 
-  sections.push(`PRODUCTS:\n${productLines}`);
+  if (hasSimilars) {
+    const requested = displayProducts.slice(0, primaryCount).map(fmtLine).join('\n');
+    const similar = displayProducts.slice(primaryCount).map(fmtLine).join('\n');
+    sections.push(
+      `REQUESTED — what the customer asked about (confirm & highlight these, with exact price):\n${requested}\n\n` +
+      `SIMILAR OPTIONS — offer briefly as a couple of extra suggestions:\n${similar}`,
+    );
+  } else {
+    sections.push(`PRODUCTS:\n${productLines}`);
+  }
 
   if (photoKeys) {
     sections.push(photoKeys);

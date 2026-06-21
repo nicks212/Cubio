@@ -159,6 +159,9 @@ export async function loadBusinessContext(
 
   let tokenRetrievalHitCount = 0;
   let categoryFallbackHitCount = 0;
+  // How many of the leading matched products are the directly-requested item(s)
+  // (vector + strong token). Products after this index are "similar" side-suggestions.
+  let primaryMatchCount = 0;
 
   // The token + category retrieval fallbacks run on the user's caption when present,
   // otherwise on the image description produced by vision. This gives an image-only
@@ -197,6 +200,10 @@ export async function loadBusinessContext(
     }
   }
 
+  // Snapshot: everything matched so far (vector + strong token) is the directly
+  // REQUESTED product(s). Anything appended after this point is a similar suggestion.
+  primaryMatchCount = matched.length;
+
   // 3. Category-level fallback — now fires whenever no STRONG match exists yet
   //    (zero hits OR only weak hits). Surfaces same-category alternatives so a
   //    weak coincidental hit can no longer block "we don't have X, but here are
@@ -225,11 +232,32 @@ export async function loadBusinessContext(
     console.info(`[loadBusinessContext] using ${weakTokenHits.length} weak token hit(s) as best-effort matches`);
   }
 
+  // 5. Similar side-suggestions — when we DID find the requested product(s), append a
+  //    few same-category items so the assistant can emphasize the requested one and
+  //    then offer alternatives ("yes, we have the Doll Tarot — we also have …").
+  //    Skipped when nothing specific was requested (broad browse / category fallback /
+  //    weak best-effort already returns a set).
+  if (primaryMatchCount > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const primaryCat = String((matched[0] as any)?.category ?? '').toLowerCase().trim();
+    if (primaryCat) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sims = (allProducts as any[]).filter(p =>
+        p.in_stock &&
+        String(p.category ?? '').toLowerCase().trim() === primaryCat &&
+        !matched.some(m => m.name.toLowerCase() === p.name.toLowerCase()),
+      ).slice(0, 3);
+      for (const s of sims) pushUnique(s);
+      if (sims.length > 0) console.info(`[loadBusinessContext] appended ${sims.length} similar "${primaryCat}" suggestion(s) after ${primaryMatchCount} requested match(es)`);
+    }
+  }
+
   return {
     products: allProducts,
     matchedProducts: matched,
     businessDescription,
     imageSearchQuery: options.imageSearchQuery ?? null,
+    ...(primaryMatchCount      > 0 ? { primaryMatchCount }                                : {}),
     ...(tokenRetrievalHitCount   > 0 ? { tokenRetrievalHits:   tokenRetrievalHitCount   } : {}),
     ...(categoryFallbackHitCount > 0 ? { categoryFallbackHits: categoryFallbackHitCount } : {}),
   };

@@ -45,6 +45,13 @@ export interface ProductContext {
    */
   matchedProducts?: ProductContext['products'];
   /**
+   * How many of the LEADING entries in matchedProducts are the directly-requested
+   * product(s) (vector + strong token match). Entries after this count are similar
+   * same-category side-suggestions. 0 / undefined means no specific item was matched
+   * (broad browse, category fallback, or weak best-effort) — present as a plain set.
+   */
+  primaryMatchCount?: number;
+  /**
    * Number of distinct products returned by pgvector similarity search for this turn.
    * When > 0, prompt builder shows those products even when token retrieval scored them
    * below threshold — handles Georgian product names that don't transliterate to match
