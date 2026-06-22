@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { Building2, Gem, Scissors, CheckCircle2, LogOut, FileText, X, ChevronDown } from 'lucide-react';
+import { Building2, Gem, Store, Scissors, CheckCircle2, LogOut, FileText, X, ChevronDown } from 'lucide-react';
 import { CubioLogo } from '@/components/CubioLogo';
 import { setupCompany } from './actions';
 import { logout } from '@/app/auth/actions';
@@ -47,6 +47,19 @@ export default function OnboardingClient({ termsKa, termsEn }: Props) {
         t['onboarding.feat_birthstone'],
         t['onboarding.feat_zodiac'],
         t['onboarding.feat_inventory'],
+      ],
+    },
+    {
+      id: 'shop',
+      title: t['onboarding.shop_title'] ?? 'Shop',
+      description: t['onboarding.shop_desc'] ?? 'Any retail shop — manage products, inventory, and orders',
+      icon: Store,
+      color: 'bg-emerald-500',
+      features: [
+        t['onboarding.feat_products'],
+        t['onboarding.feat_inventory'],
+        t['onboarding.feat_orders'] ?? 'Orders',
+        t['onboarding.feat_ai_sales'],
       ],
     },
     {
@@ -121,7 +134,7 @@ export default function OnboardingClient({ termsKa, termsEn }: Props) {
               <p className="text-sm font-semibold text-foreground">{t['onboarding.select_type']}</p>
             </div>
             <input type="hidden" name="businessType" value={selected ?? ''} />
-            <div className="grid sm:grid-cols-3 gap-4">
+            <div className="grid sm:grid-cols-2 gap-4">
               {businessProfiles.map((profile) => {
                 const Icon = profile.icon;
                 const isSelected = selected === profile.id;

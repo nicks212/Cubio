@@ -8,7 +8,7 @@ import { BUYING_INTENT_RE, PHOTO_RE, TRANSACTION_INTENT_RE } from './signals';
 import { persistAIUsage, type AIUsageContext } from './usage';
 import type { BusinessContext, ApartmentContext, ProductContext, ServiceContext } from './types';
 import type { MessageIntent } from './intentDetector';
-import type { BusinessType } from '@/types/database';
+import { isProductBusiness, type BusinessType } from '@/types/database';
 
 /**
  * Per-profile copy used in the chat micro-prompt: the domain fence (what the
@@ -22,6 +22,10 @@ const PROFILE_COPY: Record<BusinessType, { domainFence: string; scope: string }>
   },
   craft_shop: {
     domainFence: 'You work only for a craft shop. Never mention apartments, projects, neighborhoods, rooms, floors, square meters, developers, investments, or real-estate services.',
+    scope: 'help find products, answer questions, and assist with orders',
+  },
+  shop: {
+    domainFence: 'You work only for a retail shop. Never mention apartments, projects, neighborhoods, rooms, floors, square meters, developers, investments, or real-estate services.',
     scope: 'help find products, answer questions, and assist with orders',
   },
   beauty_salon: {
@@ -150,6 +154,7 @@ export async function generateReply(
             photoIntent: intent === 'photos',
             transactional: TRANSACTION_INTENT_RE.test(message),
             replyLanguage,
+            businessType,
           });
 
   // ── System instruction ─────────────────────────────────────────────────────
@@ -186,7 +191,7 @@ export async function generateReply(
   // Real-estate photo flows need a deeper window for apartment follow-up detection.
   // Craft shop and beauty salon use 4 turns: enough for multi-turn references
   // ("show me another", "do you have similar?", "book me with Anna instead") without bloat.
-  const isMultiTurnProfile = businessType === 'craft_shop' || businessType === 'beauty_salon';
+  const isMultiTurnProfile = isProductBusiness(businessType) || businessType === 'beauty_salon';
   const historyTurns = (isPhotoFlow && businessType === 'real_estate') ? 6
     : isMultiTurnProfile ? 4
     : 3;

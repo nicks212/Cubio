@@ -150,6 +150,9 @@ export const DEFAULT_TRANSLATIONS: T = {
   'onboarding.feat_birthstone': 'Birthstone-ის მართვა',
   'onboarding.feat_zodiac': 'Zodiac თავსებადობა',
   'onboarding.feat_inventory': 'ინვენტარის თვალყური',
+  'onboarding.shop_title': 'მაღაზია',
+  'onboarding.shop_desc': 'ნებისმიერი მაღაზია — მართეთ პროდუქტის კატალოგი, ინვენტარი და შეკვეთები',
+  'onboarding.feat_orders': 'შეკვეთები',
 
   // === DASHBOARD ===
   'dashboard.title': 'დაფის მიმოხილვა',
@@ -630,6 +633,9 @@ export const DEFAULT_TRANSLATIONS_EN: T = {
   'onboarding.feat_birthstone': 'Birthstone Management',
   'onboarding.feat_zodiac': 'Zodiac Compatibility',
   'onboarding.feat_inventory': 'Inventory Tracking',
+  'onboarding.shop_title': 'Shop',
+  'onboarding.shop_desc': 'Any retail shop — manage products, inventory, and orders',
+  'onboarding.feat_orders': 'Orders',
   'onboarding.business_description': 'Business Description (optional but recommended)',
   'onboarding.business_description_placeholder': 'Your business description: address, contact information, working hours and other details your customers might need',
   'onboarding.terms_section': 'Terms & Conditions',

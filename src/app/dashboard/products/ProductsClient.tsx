@@ -3,7 +3,7 @@
 import { useState, useActionState, useRef, useEffect, useMemo } from 'react';
 import { Package, Plus, Edit, Trash2, X, Star, ChevronDown, Check, Search } from 'lucide-react';
 import { createProduct, updateProduct, deleteProduct, createProductCategory } from './actions';
-import type { Product } from '@/types/database';
+import type { BusinessType, Product } from '@/types/database';
 import { useT } from '@/components/TranslationsProvider';
 import ImageUploader from '@/components/ImageUploader';
 
@@ -151,12 +151,17 @@ function CurrencyToggle({ value, onChange }: { value: Currency; onChange: (v: Cu
 export default function ProductsClient({
   products,
   initialCategories,
+  businessType,
 }: {
   products: Product[];
   initialCategories: string[];
   companyId: string;
+  businessType: BusinessType | null;
 }) {
   const t = useT();
+  // Birthstones + zodiac are the craft_shop niche only. The generic `shop` type reuses
+  // this whole page but hides those two inputs (its products never carry them).
+  const isCraftShop = businessType === 'craft_shop';
   const [categories, setCategories] = useState<string[]>(initialCategories);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -334,7 +339,7 @@ export default function ProductsClient({
             </div>
             <form action={editing ? updateAction : createAction} className="p-6 space-y-4">
               {editing && <input type="hidden" name="id" value={editing.id} />}
-              <input type="hidden" name="zodiac_compatibility" value={selectedZodiacs.join(',')} />
+              {isCraftShop && <input type="hidden" name="zodiac_compatibility" value={selectedZodiacs.join(',')} />}
               <input type="hidden" name="images" value={JSON.stringify(productImages)} />
               <input type="hidden" name="currency" value={currency} />
               <input type="hidden" name="category" value={selectedCategory} />
@@ -366,25 +371,29 @@ export default function ProductsClient({
                 <label className="block text-sm font-medium mb-2">{t('products.material')}</label>
                 <input name="material" defaultValue={editing?.material ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">{t('products.birthstones')}</label>
-                <input name="birthstones" defaultValue={editing?.birthstones ?? ''} placeholder="e.g. Ruby, Sapphire" className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">{t('products.zodiac')}</label>
-                <div className="flex flex-wrap gap-2">
-                  {ZODIAC_SIGNS.map(sign => (
-                    <button
-                      key={sign}
-                      type="button"
-                      onClick={() => toggleZodiac(sign)}
-                      className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${selectedZodiacs.includes(sign) ? 'bg-primary text-white border-primary' : 'bg-white text-muted-foreground border-slate-200 hover:border-primary hover:text-primary'}`}
-                    >
-                      {t(`zodiac.${sign}`)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {isCraftShop && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">{t('products.birthstones')}</label>
+                    <input name="birthstones" defaultValue={editing?.birthstones ?? ''} placeholder="e.g. Ruby, Sapphire" className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">{t('products.zodiac')}</label>
+                    <div className="flex flex-wrap gap-2">
+                      {ZODIAC_SIGNS.map(sign => (
+                        <button
+                          key={sign}
+                          type="button"
+                          onClick={() => toggleZodiac(sign)}
+                          className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${selectedZodiacs.includes(sign) ? 'bg-primary text-white border-primary' : 'bg-white text-muted-foreground border-slate-200 hover:border-primary hover:text-primary'}`}
+                        >
+                          {t(`zodiac.${sign}`)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
               <div>
                 <label className="block text-sm font-medium mb-2">{t('products.description')}</label>
                 <textarea name="description" rows={3} defaultValue={editing?.description ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none" />

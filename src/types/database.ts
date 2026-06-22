@@ -1,6 +1,16 @@
 // Database types matching Supabase schema
 
-export type BusinessType = 'real_estate' | 'craft_shop' | 'beauty_salon';
+export type BusinessType = 'real_estate' | 'craft_shop' | 'beauty_salon' | 'shop';
+
+/**
+ * Product-backed business types share the `products` table and the entire product
+ * pipeline (retrieval, prompts, photo flow, lead gating, the Products dashboard).
+ * `craft_shop` is the birthstone/zodiac niche; `shop` is the generic variant that
+ * reuses everything except the birthstone/zodiac surface. Use this anywhere the
+ * product pipeline must include BOTH — never test `=== 'craft_shop'` for that.
+ */
+export const isProductBusiness = (bt: BusinessType | null | undefined): boolean =>
+  bt === 'craft_shop' || bt === 'shop';
 
 export type ApartmentStatus = 'vacant' | 'reserved' | 'sold';
 

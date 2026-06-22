@@ -18,7 +18,7 @@ import { createHash } from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './types';
 import type { ApartmentContext, ProductContext, ServiceContext, BusinessContext } from '@/lib/ai/types';
-import type { BusinessType } from '@/types/database';
+import { isProductBusiness, type BusinessType } from '@/types/database';
 import type { PhotoType } from '@/lib/ai/intentDetector';
 
 // CRAFT_BROAD_QUERY_RE imported from signals.ts
@@ -322,7 +322,7 @@ export async function processIncomingMessage(
         if (similarApartmentNumbers.length > 0) {
           console.info(`${label} Vector search: ${similarApartmentNumbers.length} similar apartments found`);
         }
-      } else if (integration.businessType === 'craft_shop') {
+      } else if (isProductBusiness(integration.businessType)) {
         similarProductNames = await searchSimilarProducts(integration.companyId, imageSearchQuery);
         if (similarProductNames.length > 0) {
           console.info(`${label} Vector search (image): ${similarProductNames.length} similar products found`);
@@ -335,11 +335,11 @@ export async function processIncomingMessage(
   }
 
   // 6b. Kick off AI classifier, text-vector product search, and business context in parallel.
-  //     For craft_shop text queries, searchSimilarProducts runs alongside the intent classifier
+  //     For product shops, searchSimilarProducts runs alongside the intent classifier
   //     with zero sequential latency — uses the already-deployed pgvector index.
   //     History was pre-loaded at step 3c (before message save) — no DB fetch here.
   const textVectorSearchPromise: Promise<string[]> =
-    integration.businessType === 'craft_shop' && combinedMessage.trim() && similarProductNames.length === 0
+    isProductBusiness(integration.businessType) && combinedMessage.trim() && similarProductNames.length === 0
       ? searchSimilarProducts(integration.companyId, combinedMessage.trim(), 5)
       : Promise.resolve([]);
 
@@ -486,7 +486,7 @@ export async function processIncomingMessage(
   // hallucination). For "another/similar", also include same-category alternatives.
   // Fully scalable: no hardcoded product names; gated to genuine reference turns only.
   if (
-    integration.businessType === 'craft_shop' &&
+    isProductBusiness(integration.businessType) &&
     effectiveIntent !== 'chat' &&
     'products' in finalBusinessContext &&
     !((finalBusinessContext as ProductContext).matchedProducts?.length) &&
@@ -552,9 +552,9 @@ export async function processIncomingMessage(
 
   // 8. Generate AI reply — multi-turn structured history, system instruction includes state
 
-  // Temporary retrieval diagnostics — verify full retrieval pipeline state per craft_shop turn.
+  // Temporary retrieval diagnostics — verify full retrieval pipeline state per product-shop turn.
   // Shows: how many products were loaded, how many matched retrieval, and what goes into the prompt.
-  if (integration.businessType === 'craft_shop' && 'products' in finalBusinessContext) {
+  if (isProductBusiness(integration.businessType) && 'products' in finalBusinessContext) {
     const prodCtx = finalBusinessContext as ProductContext;
     const tokenHits  = prodCtx.tokenRetrievalHits ?? 0;
     const vectorHitsN = prodCtx.vectorHits ?? 0;
@@ -642,7 +642,7 @@ export async function processIncomingMessage(
   //   1. Customer explicitly asked for photos (explicitPhotoRequest)
   //   2. No images were resolved from the AI's SHOW_PHOTOS marker (AI used wrong format,
   //      omitted the marker, or emitted a key that didn't slug-match any product)
-  //   3. Business is a craft_shop (apartment photos use a separate project/apt path)
+  //   3. Business is a product shop (apartment photos use a separate project/apt path)
   // Action: run retrieval against the customer's message, find the top product with images,
   //         and send those photos directly without depending on AI key generation.
   //
@@ -653,7 +653,7 @@ export async function processIncomingMessage(
   if (
     explicitPhotoRequest &&
     imageUrlsToSend.length === 0 &&
-    integration.businessType === 'craft_shop'
+    isProductBusiness(integration.businessType)
   ) {
     const prodCtxFallback = finalBusinessContext as ProductContext;
     if (prodCtxFallback.products?.length > 0) {
@@ -726,7 +726,7 @@ export async function processIncomingMessage(
   // a short grounded text reply instead of sending an empty message or photo fallback.
   if (showPhotosRaw && !showPhotosMatch && cleanReply.length === 0) {
     const isGeoFallback = replyLanguage === 'ka';
-    cleanReply = integration.businessType === 'craft_shop'
+    cleanReply = isProductBusiness(integration.businessType)
       ? (isGeoFallback
         ? 'მითხარი რა ტიპის ნივთი გაინტერესებს და კატალოგიდან ზუსტ ვარიანტებს შეგირჩევ.'
         : 'Tell me what type of item you want and I will pick exact options from the catalog.')
@@ -762,7 +762,7 @@ export async function processIncomingMessage(
     console.info(`${label} No photos resolved for "${showPhotosMatch[1].trim()}" — sending no-photos fallback`);
   }
 
-  if (integration.businessType === 'craft_shop' && cleanReply.length > 0) {
+  if (isProductBusiness(integration.businessType) && cleanReply.length > 0) {
     // Diagnostics — log the final top-3 products that were surfaced to the AI
     if ('products' in finalBusinessContext) {
       const top3names = (finalBusinessContext as ProductContext).products

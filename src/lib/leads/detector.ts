@@ -17,7 +17,7 @@ import {
   BROWSE_AGAIN_RE,
 } from '@/lib/ai/signals';
 import { extractConversationState } from '@/lib/ai/state';
-import type { BusinessType } from '@/types/database';
+import { isProductBusiness, type BusinessType } from '@/types/database';
 
 export interface LeadAnalysis {
   /** True when all three conditions are met: buying intent + qualification + phone. */
@@ -74,7 +74,7 @@ export function analyzeLeadState(
   const hasQualification =
     QUALIFICATION_RE.test(userText) ||
     !!lastShownAptId ||
-    businessType === 'craft_shop'; // craft shop: product mention counts as qualification
+    isProductBusiness(businessType); // product shop: product mention counts as qualification
   // Explicit human-operator requests are handled via the soft-escalation offer flow (2-turn confirmation)
   // in processIncomingMessage to prevent false/accidental lockouts, unless they are also frustrated.
   const isEscalation = false;

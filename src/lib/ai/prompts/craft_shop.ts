@@ -76,8 +76,13 @@ function compactCompanyInfo(raw: string | null): string {
 export function buildCraftShopSystemPrompt(
   context: ProductContext,
   userQuery = '',
-  opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean; transactional?: boolean; replyLanguage?: 'ka' | 'en' } = {},
+  opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean; transactional?: boolean; replyLanguage?: 'ka' | 'en'; businessType?: 'craft_shop' | 'shop' } = {},
 ): string {
+
+  // Birthstone/zodiac attributes only exist for the craft_shop niche. The generic
+  // `shop` type reuses this whole builder but its products never carry those fields,
+  // so we omit zodiac/stone wording from the ROLE and NO MATCH lines for it.
+  const hasSpecialtyAttrs = (opts.businessType ?? 'craft_shop') === 'craft_shop';
 
   // ── Language detection (done first — affects preprocessing of all data below) ──
   // replyLanguage is computed once upstream from the CURRENT customer message and
@@ -218,7 +223,11 @@ export function buildCraftShopSystemPrompt(
         : `PHOTO REQUEST: No product matched. Ask the customer which product they want photos of.`,
     );
   } else if (!hasProducts) {
-    modeLines.push(`NO MATCH: Ask exactly one short clarifying question — type, material, zodiac sign, or budget. Do NOT name or price any specific product.`);
+    modeLines.push(
+      hasSpecialtyAttrs
+        ? `NO MATCH: Ask exactly one short clarifying question — type, material, zodiac sign, or budget. Do NOT name or price any specific product.`
+        : `NO MATCH: Ask exactly one short clarifying question — type, material, or budget. Do NOT name or price any specific product.`,
+    );
   }
 
   if (opts.buyingIntent) {
@@ -263,7 +272,9 @@ export function buildCraftShopSystemPrompt(
   }
 
   sections.push(
-    `ROLE: Warm, knowledgeable sales assistant. Use all product attributes — material, zodiac, stones, description — to connect each product to the customer's needs personally.`,
+    hasSpecialtyAttrs
+      ? `ROLE: Warm, knowledgeable sales assistant. Use all product attributes — material, zodiac, stones, description — to connect each product to the customer's needs personally.`
+      : `ROLE: Warm, knowledgeable sales assistant. Use all product attributes — material, description — to connect each product to the customer's needs personally.`,
     `DOMAIN: Only discuss this shop's products and store info. Never mention real estate, apartments, or unrelated topics.`,
     [
       `CATALOG RULE: The PRODUCTS section below is your ONLY source of facts for this message.`,

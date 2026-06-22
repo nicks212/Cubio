@@ -26,7 +26,7 @@ export async function updateCompany(_prev: unknown, formData: FormData) {
 
   const company_name = formData.get('company_name') as string;
   const business_type_raw = formData.get('business_type') as string | null;
-  const business_type = z.enum(['real_estate', 'craft_shop', 'beauty_salon']).safeParse(business_type_raw);
+  const business_type = z.enum(['real_estate', 'craft_shop', 'beauty_salon', 'shop']).safeParse(business_type_raw);
   if (!business_type.success) return { error: 'Invalid business type' };
   const ai_enabled = formData.get('ai_enabled') === 'true';
   const business_description = ((formData.get('business_description') as string | null) ?? '').replace(/<[^>]*>/g, '').trim().slice(0, 1000) || null;

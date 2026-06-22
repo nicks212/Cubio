@@ -5,13 +5,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Building2, Home, Users, BarChart3,
-  Menu, X, LogOut, Gem, Shield, MessageSquare, Plug, Settings, AlertTriangle,
+  Menu, X, LogOut, Store, Shield, MessageSquare, Plug, Settings, AlertTriangle,
   Scissors, UserCog, CalendarDays,
 } from 'lucide-react';
 import { logout } from '@/app/auth/actions';
 import { CubioLogo } from '@/components/CubioLogo';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
-import type { Profile } from '@/types/database';
+import { isProductBusiness, type BusinessType, type Profile } from '@/types/database';
 import { useT } from '@/components/TranslationsProvider';
 import { createClient } from '@/lib/supabase/client';
 
@@ -95,7 +95,7 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
   }, [companyId]);
 
   const isRealEstate = profile.company?.business_type === 'real_estate';
-  const isCraftShop = profile.company?.business_type === 'craft_shop';
+  const isProductShop = isProductBusiness(profile.company?.business_type as BusinessType | null);
   const isBeautySalon = profile.company?.business_type === 'beauty_salon';
 
   const navItems = [
@@ -107,8 +107,8 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
       { path: '/dashboard/projects', label: t['nav.projects'], icon: Building2, badge: 0 },
       { path: '/dashboard/apartments', label: t['nav.apartments'], icon: Home, badge: 0 },
     ] : []),
-    ...(isCraftShop ? [
-      { path: '/dashboard/products', label: t['nav.products'], icon: Gem, badge: 0 },
+    ...(isProductShop ? [
+      { path: '/dashboard/products', label: t['nav.products'], icon: Store, badge: 0 },
     ] : []),
     ...(isBeautySalon ? [
       { path: '/dashboard/calendar', label: t['nav.calendar'] ?? 'Calendar', icon: CalendarDays, badge: 0 },

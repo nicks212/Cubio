@@ -81,6 +81,7 @@ export default function SettingsClient({ profile, company, email }: Props) {
             >
               <option value="real_estate">{t['onboarding.re_title'] ?? 'Real Estate Development'}</option>
               <option value="craft_shop">{t['onboarding.craft_title'] ?? 'Craft Shop'}</option>
+              <option value="shop">{t['onboarding.shop_title'] ?? 'Shop'}</option>
               <option value="beauty_salon">{t['onboarding.salon_title'] ?? 'Beauty Salon / Aesthetics Center'}</option>
             </select>
             <p className="text-xs text-muted-foreground mt-1">

@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 const setupSchema = z.object({
   companyName: z.string().min(1, 'Company name is required'),
-  businessType: z.enum(['real_estate', 'craft_shop', 'beauty_salon'], { message: 'Please select a business type' }),
+  businessType: z.enum(['real_estate', 'craft_shop', 'beauty_salon', 'shop'], { message: 'Please select a business type' }),
   businessDescription: z.string().max(1000).optional().nullable(),
 });
 
