@@ -22,18 +22,18 @@ function compactCompanyInfo(raw: string | null): string {
 }
 
 /**
- * Picks up to `limit` services across distinct categories (one per category first,
+ * Picks up to `limit` services across distinct specialist types (one per type first,
  * then fills). Used only for broad browse so the sample reflects the real range
- * rather than DB insertion order. No hardcoded category names; purely structural.
+ * rather than DB insertion order. No hardcoded type names; purely structural.
  */
-function pickCategoryDiverse(services: ServiceRow[], limit: number): ServiceRow[] {
+function pickTypeDiverse(services: ServiceRow[], limit: number): ServiceRow[] {
   const picked: ServiceRow[] = [];
   const seen = new Set<string>();
   for (const s of services) {
     if (picked.length >= limit) break;
-    const cat = (s.category ?? '').trim().toLowerCase();
-    if (cat && seen.has(cat)) continue;
-    seen.add(cat);
+    const type = (s.specialist_type ?? '').trim().toLowerCase();
+    if (type && seen.has(type)) continue;
+    seen.add(type);
     picked.push(s);
   }
   if (picked.length < limit) {
@@ -83,7 +83,7 @@ export function buildBeautySalonSystemPrompt(
   const isBroadBrowse = matched.length === 0 && SERVICE_BROAD_QUERY_RE.test(userQuery);
   const services = matched.length > 0
     ? matched.slice(0, 8)
-    : (isBroadBrowse ? pickCategoryDiverse(available, 8) : []);
+    : (isBroadBrowse ? pickTypeDiverse(available, 8) : []);
   const hasServices = services.length > 0;
 
   const serviceLines = hasServices
@@ -92,7 +92,6 @@ export function buildBeautySalonSystemPrompt(
         const price = formatPrice(s);
         if (price) parts.push(price);
         if (s.duration_minutes) parts.push(`${s.duration_minutes} min`);
-        if (s.category) parts.push(s.category);
         if (s.specialist_type) parts.push(`by ${s.specialist_type}`);
         if (s.sessions_required && s.sessions_required > 1) parts.push(`${s.sessions_required} sessions`);
         if (s.consultation_required) parts.push('consultation required');

@@ -68,8 +68,8 @@ export async function deleteSpecialist(id: string) {
   return { success: true };
 }
 
-// ── Specialist types & categories (simple name + active lists) ────────────────
-async function createNamed(table: 'specialist_types' | 'service_categories', name: string) {
+// ── Specialist types (simple name + active list) ──────────────────────────────
+async function createNamed(table: 'specialist_types', name: string) {
   const a = await authed();
   if ('error' in a) return { error: a.error };
   const trimmed = name.trim();
@@ -80,7 +80,7 @@ async function createNamed(table: 'specialist_types' | 'service_categories', nam
   return { success: true };
 }
 
-async function deleteNamed(table: 'specialist_types' | 'service_categories', id: string) {
+async function deleteNamed(table: 'specialist_types', id: string) {
   const a = await authed();
   if ('error' in a) return { error: a.error };
   const { error } = await a.supabase.from(table)
@@ -93,8 +93,6 @@ async function deleteNamed(table: 'specialist_types' | 'service_categories', id:
 
 export async function createSpecialistType(name: string) { return createNamed('specialist_types', name); }
 export async function deleteSpecialistType(id: string) { return deleteNamed('specialist_types', id); }
-export async function createCategory(name: string) { return createNamed('service_categories', name); }
-export async function deleteCategory(id: string) { return deleteNamed('service_categories', id); }
 
 // ── Specialist weekly schedule (replace-all) + vacations ──────────────────────
 const scheduleRowSchema = z.object({

@@ -835,9 +835,13 @@ export async function processIncomingMessage(
     CANCEL_RE.test(combinedMessage) || BROWSE_AGAIN_RE.test(combinedMessage);
   const gate = shouldRunLeadAnalysis(fullHistory, combinedMessage, integration.businessType, lastShownApt);
 
-  if (gate.lead || gate.escalation || hasLifecycleSignal) {
+  // Leads are not relevant for beauty salons — they capture reservations, not leads.
+  // Suppress lead creation for salon while leaving escalations + lifecycle untouched.
+  const leadAllowed = gate.lead && integration.businessType !== 'beauty_salon';
+
+  if (leadAllowed || gate.escalation || hasLifecycleSignal) {
     console.info(
-      `${label} [leadGate] Running — lead:${gate.lead} escalation:${gate.escalation} lifecycle:${hasLifecycleSignal}`,
+      `${label} [leadGate] Running — lead:${leadAllowed} escalation:${gate.escalation} lifecycle:${hasLifecycleSignal}`,
     );
     // Awaited (not void) — Vercel can terminate the serverless function immediately after
     // the response is returned, killing fire-and-forget Gemini + Supabase work before it
@@ -854,7 +858,7 @@ export async function processIncomingMessage(
       resolvedNickname,
       msg.provider,
       lastShownApt,
-      gate.lead,
+      leadAllowed,
       gate.escalation,
     );
   } else {

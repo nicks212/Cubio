@@ -80,7 +80,6 @@ export interface ServiceContext {
   services: Array<{
     name: string;
     description?: string | null;
-    category?: string | null;
     price_from?: number | null;
     price_to?: number | null;
     currency?: string | null;

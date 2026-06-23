@@ -296,7 +296,7 @@ async function loadServiceContext(
 
   const { data: serviceRows, error: svcErr } = await supabase
     .from('services')
-    .select('service_name, description, price_from, price_to, currency, duration_minutes, sessions_required, gender_target, consultation_required, service_target, active, specialist_type_id, category:service_categories(name), specialist_type:specialist_types(name)')
+    .select('service_name, description, price_from, price_to, currency, duration_minutes, sessions_required, gender_target, consultation_required, service_target, active, specialist_type_id, specialist_type:specialist_types(name)')
     .eq('company_id', companyId)
     .eq('active', true)
     .is('deleted_at', null)
@@ -311,7 +311,6 @@ async function loadServiceContext(
   const services: ServiceRow[] = ((serviceRows ?? []) as any[]).map(r => ({
     name: r.service_name,
     description: r.description ?? null,
-    category: relName(r.category),
     price_from: r.price_from ?? null,
     price_to: r.price_to ?? null,
     currency: r.currency ?? null,

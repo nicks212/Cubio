@@ -9,7 +9,6 @@ interface Service {
   id: string;
   service_name: string;
   description: string | null;
-  category_id: string | null;
   specialist_type_id: string | null;
   gender_target: string;
   price_from: number | null;
@@ -30,11 +29,10 @@ interface NamedRow { id: string; name: string; }
 
 interface Props {
   services: Service[];
-  categories: NamedRow[];
   specialistTypes: NamedRow[];
 }
 
-export default function ServicesClient({ services, categories, specialistTypes }: Props) {
+export default function ServicesClient({ services, specialistTypes }: Props) {
   const t = useT();
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Service | null>(null);
@@ -52,7 +50,6 @@ export default function ServicesClient({ services, categories, specialistTypes }
   const openAdd = () => { setEditing(null); setPetMode('human'); setModal(true); };
   const openEdit = (s: Service) => { setEditing(s); setPetMode(s.service_target ?? 'human'); setModal(true); };
 
-  const catName = (id: string | null) => categories.find(c => c.id === id)?.name ?? '—';
   const typeName = (id: string | null) => specialistTypes.find(c => c.id === id)?.name ?? '—';
   const priceLabel = (s: Service) => {
     const sym = s.currency === 'USD' ? '$' : '₾';
@@ -82,14 +79,14 @@ export default function ServicesClient({ services, categories, specialistTypes }
           <table className="w-full">
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
-                {[t['services.col_name'] ?? 'Service', t['services.col_category'] ?? 'Category', t['services.col_price'] ?? 'Price', t['services.col_duration'] ?? 'Duration', t['services.col_specialist'] ?? 'Specialist', t['services.col_status'] ?? 'Status', ''].map((h, i) => (
+                {[t['services.col_name'] ?? 'Service', t['services.col_price'] ?? 'Price', t['services.col_duration'] ?? 'Duration', t['services.col_specialist'] ?? 'Specialist', t['services.col_status'] ?? 'Status', ''].map((h, i) => (
                   <th key={i} className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {services.length === 0 ? (
-                <tr><td colSpan={7} className="py-10 text-center text-muted-foreground text-sm">{t['services.empty'] ?? 'No services yet. Add your first one.'}</td></tr>
+                <tr><td colSpan={6} className="py-10 text-center text-muted-foreground text-sm">{t['services.empty'] ?? 'No services yet. Add your first one.'}</td></tr>
               ) : services.map(s => (
                 <tr key={s.id} className="hover:bg-slate-50">
                   <td className="py-3 px-4 text-sm font-medium">
@@ -98,7 +95,6 @@ export default function ServicesClient({ services, categories, specialistTypes }
                       {s.service_target !== 'human' && <PawPrint className="w-3.5 h-3.5 text-pink-500" />}
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-sm text-muted-foreground">{catName(s.category_id)}</td>
                   <td className="py-3 px-4 text-sm">{priceLabel(s)}</td>
                   <td className="py-3 px-4 text-sm text-muted-foreground">{s.duration_minutes ? `${s.duration_minutes} min` : '—'}</td>
                   <td className="py-3 px-4 text-sm text-muted-foreground">{typeName(s.specialist_type_id)}</td>
@@ -141,21 +137,12 @@ export default function ServicesClient({ services, categories, specialistTypes }
                 <textarea name="description" rows={2} defaultValue={editing?.description ?? ''} className={`${inputCls} resize-none`} />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">{t['services.f_category'] ?? 'Category'}</label>
-                  <select name="category_id" defaultValue={editing?.category_id ?? ''} className={inputCls}>
-                    <option value="">—</option>
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">{t['services.f_specialist_type'] ?? 'Specialist type'}</label>
-                  <select name="specialist_type_id" defaultValue={editing?.specialist_type_id ?? ''} className={inputCls}>
-                    <option value="">—</option>
-                    {specialistTypes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">{t['services.f_specialist_type'] ?? 'Specialist type'}</label>
+                <select name="specialist_type_id" defaultValue={editing?.specialist_type_id ?? ''} className={inputCls}>
+                  <option value="">—</option>
+                  {specialistTypes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
               </div>
 
               <div className="grid grid-cols-3 gap-4">

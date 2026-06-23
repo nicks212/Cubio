@@ -101,7 +101,8 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
   const navItems = [
     { path: '/dashboard', label: t['nav.dashboard'], icon: LayoutDashboard, exact: true, badge: 0 },
     { path: '/dashboard/conversations', label: t['nav.conversations'], icon: MessageSquare, badge: 0 },
-    { path: '/dashboard/leads', label: t['nav.leads'], icon: Users, badge: liveLeads },
+    // Leads are not relevant for salons (they use reservations) — hidden for beauty_salon.
+    ...(isBeautySalon ? [] : [{ path: '/dashboard/leads', label: t['nav.leads'], icon: Users, badge: liveLeads }]),
     { path: '/dashboard/escalations', label: t['nav.escalations'], icon: AlertTriangle, badge: liveEscalations },
     ...(isRealEstate ? [
       { path: '/dashboard/projects', label: t['nav.projects'], icon: Building2, badge: 0 },

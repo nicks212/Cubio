@@ -19,16 +19,14 @@ export default async function ServicesPage() {
 
   const companyId = profile?.company_id ?? '';
 
-  const [{ data: services }, { data: categories }, { data: specialistTypes }] = await Promise.all([
+  const [{ data: services }, { data: specialistTypes }] = await Promise.all([
     supabase.from('services').select('*').eq('company_id', companyId).is('deleted_at', null).order('created_at', { ascending: false }),
-    supabase.from('service_categories').select('id, name').eq('company_id', companyId).is('deleted_at', null).order('name'),
     supabase.from('specialist_types').select('id, name').eq('company_id', companyId).is('deleted_at', null).order('name'),
   ]);
 
   return (
     <ServicesClient
       services={services ?? []}
-      categories={categories ?? []}
       specialistTypes={specialistTypes ?? []}
     />
   );

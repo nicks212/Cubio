@@ -2,10 +2,10 @@
 
 import { useState, useActionState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Edit, Trash2, X, UserCog, Tag, Layers, Clock, Plane } from 'lucide-react';
+import { Plus, Edit, Trash2, X, UserCog, Tag, Clock, Plane } from 'lucide-react';
 import {
   createSpecialist, updateSpecialist, deleteSpecialist,
-  createSpecialistType, deleteSpecialistType, createCategory, deleteCategory,
+  createSpecialistType, deleteSpecialistType,
   setSpecialistSchedule, addSpecialistVacation, deleteSpecialistVacation,
 } from './actions';
 import { useT } from '@/components/TranslationsProvider';
@@ -25,7 +25,6 @@ interface VacationRow { id: string; specialist_id: string; start_date: string; e
 interface Props {
   specialists: Specialist[];
   specialistTypes: NamedRow[];
-  categories: NamedRow[];
   schedules: ScheduleRow[];
   vacations: VacationRow[];
 }
@@ -36,9 +35,9 @@ const WEEKDAYS: Array<{ n: number; label: string }> = [
   { n: 4, label: 'Thu' }, { n: 5, label: 'Fri' }, { n: 6, label: 'Sat' }, { n: 0, label: 'Sun' },
 ];
 
-type Tab = 'specialists' | 'types' | 'categories';
+type Tab = 'specialists' | 'types';
 
-export default function SpecialistsClient({ specialists, specialistTypes, categories, schedules, vacations }: Props) {
+export default function SpecialistsClient({ specialists, specialistTypes, schedules, vacations }: Props) {
   const t = useT();
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('specialists');
@@ -60,7 +59,6 @@ export default function SpecialistsClient({ specialists, specialistTypes, catego
   const tabs: Array<{ id: Tab; label: string; icon: typeof UserCog }> = [
     { id: 'specialists', label: t['specialists.tab_specialists'] ?? 'Specialists', icon: UserCog },
     { id: 'types', label: t['specialists.tab_types'] ?? 'Specialist Types', icon: Tag },
-    { id: 'categories', label: t['specialists.tab_categories'] ?? 'Categories', icon: Layers },
   ];
 
   return (
@@ -131,16 +129,6 @@ export default function SpecialistsClient({ specialists, specialistTypes, catego
           emptyLabel={t['specialists.types_empty'] ?? 'No specialist types yet.'}
           onAdd={async (name) => { await createSpecialistType(name); router.refresh(); }}
           onDelete={async (id) => { await deleteSpecialistType(id); router.refresh(); }}
-        />
-      )}
-
-      {tab === 'categories' && (
-        <NamedListEditor
-          rows={categories}
-          placeholder={t['specialists.category_placeholder'] ?? 'e.g. Hair Styling'}
-          emptyLabel={t['specialists.categories_empty'] ?? 'No categories yet.'}
-          onAdd={async (name) => { await createCategory(name); router.refresh(); }}
-          onDelete={async (id) => { await deleteCategory(id); router.refresh(); }}
         />
       )}
 

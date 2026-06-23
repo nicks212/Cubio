@@ -7,7 +7,6 @@ import { z } from 'zod';
 const serviceSchema = z.object({
   service_name: z.string().min(1),
   description: z.string().optional(),
-  category_id: z.string().uuid().optional().nullable(),
   specialist_type_id: z.string().uuid().optional().nullable(),
   gender_target: z.enum(['male', 'female', 'unisex']).default('unisex'),
   price_from: z.coerce.number().nonnegative().optional().nullable(),
@@ -33,7 +32,7 @@ async function getCompanyId(supabase: Awaited<ReturnType<typeof createClient>>, 
 /** Coerce empty-string dropdown values to null so optional UUID FKs validate. */
 function normalizeForm(formData: FormData): Record<string, unknown> {
   const obj = Object.fromEntries(formData) as Record<string, unknown>;
-  for (const k of ['category_id', 'specialist_type_id', 'price_from', 'price_to', 'duration_minutes']) {
+  for (const k of ['specialist_type_id', 'price_from', 'price_to', 'duration_minutes']) {
     if (obj[k] === '' || obj[k] === undefined) obj[k] = null;
   }
   return obj;
