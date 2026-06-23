@@ -16,7 +16,7 @@ export interface LoadContextOptions {
   /**
    * Raw user message text — fed into deterministic product retrieval to catch
    * script-variant queries (e.g. romanized Georgian "taro" vs Georgian "ტარო").
-   * Only used for craft_shop; ignored for real_estate.
+   * Only used for product shops (craft_shop + shop); ignored for real_estate.
    */
   textQuery?: string;
 }

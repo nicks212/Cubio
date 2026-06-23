@@ -31,7 +31,7 @@ export type ShouldAnalyse =
  *
  * @param history          Full conversation history INCLUDING the latest AI reply
  * @param latestMessage    The raw customer message just processed
- * @param businessType     'real_estate' | 'craft_shop'
+ * @param businessType     'real_estate' | 'craft_shop' | 'shop' | 'beauty_salon'
  * @param lastShownAptId   Apartment last shown via SHOW_PHOTOS (from DB) — counts as qualification
  */
 export function shouldRunLeadAnalysis(

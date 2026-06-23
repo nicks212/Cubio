@@ -56,7 +56,7 @@ export interface LeadAnalysis {
  *
  * @param history       Full conversation turns (user + ai)
  * @param latestMessage The raw combined message just sent by the customer
- * @param businessType  'real_estate' | 'craft_shop'
+ * @param businessType  'real_estate' | 'craft_shop' | 'shop' | 'beauty_salon'
  * @param lastShownAptId Apartment last shown via SHOW_PHOTOS (from DB)
  */
 export function analyzeLeadState(
