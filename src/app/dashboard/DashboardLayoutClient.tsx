@@ -219,33 +219,35 @@ export default function DashboardLayoutClient({ profile, children, leadsCount = 
       </header>
 
       {/* Mobile Bottom Tab Bar (mobile only) */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 flex items-stretch pb-[env(safe-area-inset-bottom)]">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 flex items-stretch pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
         {primaryItems.map(({ path, label, icon: Icon, exact, badge }) => {
           const active = isActive(path, exact);
           return (
             <Link
               key={path}
               href={path}
-              className="relative flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1.5 active:bg-slate-50 transition-colors"
+              className="relative flex-1 min-w-0 flex flex-col items-center justify-center gap-1 h-16 active:bg-slate-50 transition-colors"
             >
+              {active && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-primary" />}
               <span className="relative">
-                <Icon className={`w-[22px] h-[22px] ${active ? 'text-primary' : 'text-muted-foreground'}`} />
+                <Icon className={`w-6 h-6 ${active ? 'text-primary' : 'text-muted-foreground'}`} />
                 {badge > 0 && (
                   <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
                     {badge > 9 ? '9+' : String(badge)}
                   </span>
                 )}
               </span>
-              <span className={`text-[10px] leading-none truncate max-w-full px-0.5 ${active ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>{label}</span>
+              <span className={`text-[11px] leading-none truncate max-w-full px-0.5 ${active ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>{label}</span>
             </Link>
           );
         })}
         <button
           onClick={() => setMobileOpen(true)}
-          className="flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 pt-2 pb-1.5 active:bg-slate-50 transition-colors"
+          className="relative flex-1 min-w-0 flex flex-col items-center justify-center gap-1 h-16 active:bg-slate-50 transition-colors"
         >
-          <Menu className={`w-[22px] h-[22px] ${mobileOpen ? 'text-primary' : 'text-muted-foreground'}`} />
-          <span className={`text-[10px] leading-none ${mobileOpen ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>{t['nav.more'] ?? 'More'}</span>
+          {mobileOpen && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-primary" />}
+          <Menu className={`w-6 h-6 ${mobileOpen ? 'text-primary' : 'text-muted-foreground'}`} />
+          <span className={`text-[11px] leading-none ${mobileOpen ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>{t['nav.more'] ?? 'More'}</span>
         </button>
       </nav>
 

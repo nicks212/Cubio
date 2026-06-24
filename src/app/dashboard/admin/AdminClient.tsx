@@ -124,20 +124,22 @@ export default function AdminClient({ users, integrations, localizations, compan
         <p className="text-muted-foreground">{t['admin.subtitle']}</p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-8 w-fit">
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => selectTab(t.id)} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm transition-all ${tab === t.id ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
-            <t.icon className="w-4 h-4" />{t.label}
-          </button>
-        ))}
+      {/* Tabs — horizontally scrollable strip on mobile */}
+      <div className="-mx-4 sm:mx-0 mb-6 sm:mb-8 overflow-x-auto no-scrollbar">
+        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-max mx-4 sm:mx-0 sm:w-fit">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => selectTab(t.id)} className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-lg font-medium text-sm whitespace-nowrap transition-all ${tab === t.id ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+              <t.icon className="w-4 h-4 flex-shrink-0" />{t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Users Tab */}
       {tab === 'users' && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          <div className="overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[640px]">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
                   {[t['admin.col_name'], t['admin.col_email'], t['admin.col_company'], t['admin.col_business'], t['admin.col_admin'], t['admin.col_joined']].map(h => (
@@ -184,7 +186,7 @@ export default function AdminClient({ users, integrations, localizations, compan
                 className="flex-1 bg-transparent text-sm focus:outline-none"
               />
             </div>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">{filteredLocalizations.length} {t['admin.strings_count']} {locSearch && `(${localizations.length} total)`}</p>
               <div className="flex items-center gap-2">
                 <button
@@ -204,8 +206,8 @@ export default function AdminClient({ users, integrations, localizations, compan
             </div>
           </div>
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className="overflow-x-auto no-scrollbar">
+              <table className="w-full min-w-[640px]">
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground w-64">{t['admin.col_key']}</th>
@@ -263,13 +265,13 @@ export default function AdminClient({ users, integrations, localizations, compan
               ].map(({ label, path, icon }) => {
                 const url = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cubio.ge'}${path}`;
                 return (
-                  <div key={path} className="flex items-center gap-3 bg-white border border-blue-200 rounded-lg px-4 py-2.5">
+                  <div key={path} className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-white border border-blue-200 rounded-lg px-4 py-2.5">
                     <span className="text-base flex-shrink-0">{icon}</span>
-                    <span className="text-xs font-medium text-blue-800 w-44 flex-shrink-0">{label}</span>
-                    <code className="flex-1 text-xs font-mono text-blue-900 break-all">{url}</code>
+                    <span className="text-xs font-medium text-blue-800 sm:w-44 flex-shrink-0">{label}</span>
+                    <code className="order-last w-full sm:order-none sm:w-auto sm:flex-1 text-xs font-mono text-blue-900 break-all">{url}</code>
                     <button
                       onClick={() => navigator.clipboard.writeText(url)}
-                      className="flex-shrink-0 text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                      className="flex-shrink-0 ml-auto sm:ml-0 text-xs text-blue-600 hover:text-blue-800 hover:underline"
                       title="Copy"
                     >
                       {t['admin.copy'] ?? 'Copy'}
@@ -285,8 +287,8 @@ export default function AdminClient({ users, integrations, localizations, compan
             </button>
           </div>
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className="overflow-x-auto no-scrollbar">
+              <table className="w-full min-w-[640px]">
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
                     {[t['admin.col_provider'], t['admin.col_company'], t['admin.col_account'], t['admin.col_id'], t['admin.col_status'], ''].map(h => (
@@ -356,28 +358,28 @@ export default function AdminClient({ users, integrations, localizations, compan
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <p className="text-sm text-muted-foreground mb-1">Total Input Tokens</p>
-              <p className="text-2xl font-bold text-foreground">{fmt.format(totalInputTokens)}</p>
+              <p className="text-lg sm:text-2xl font-bold text-foreground break-all">{fmt.format(totalInputTokens)}</p>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <p className="text-sm text-muted-foreground mb-1">Total Output Tokens</p>
-              <p className="text-2xl font-bold text-foreground">{fmt.format(totalOutputTokens)}</p>
+              <p className="text-lg sm:text-2xl font-bold text-foreground break-all">{fmt.format(totalOutputTokens)}</p>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <p className="text-sm text-muted-foreground mb-1">Total Tokens</p>
-              <p className="text-2xl font-bold text-foreground">{fmt.format(totalTokens)}</p>
+              <p className="text-lg sm:text-2xl font-bold text-foreground break-all">{fmt.format(totalTokens)}</p>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <p className="text-sm text-muted-foreground mb-1">Total Unique Users Served</p>
-              <p className="text-2xl font-bold text-foreground">{fmt.format(totalUniqueUsers)}</p>
+              <p className="text-lg sm:text-2xl font-bold text-foreground break-all">{fmt.format(totalUniqueUsers)}</p>
             </div>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className="overflow-x-auto no-scrollbar">
+              <table className="w-full min-w-[640px]">
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
                     {['Company name', 'Total input tokens', 'Total output tokens', 'Total tokens', 'Total unique users served'].map(h => (
