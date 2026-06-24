@@ -130,7 +130,7 @@ export default function ApartmentsClient({ apartments, projects, templates, comp
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">{t('apartments.title')}</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">{t('apartments.title')}</h1>
           <p className="text-muted-foreground">{t('apartments.subtitle')}</p>
         </div>
         <div className="flex gap-2">

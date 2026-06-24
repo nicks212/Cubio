@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition, useMemo } from 'react';
-import { Users, Calendar, FileText, Phone, Mail, MessageSquare, Search, SortAsc, Trash2, CheckCircle2, RotateCcw, X, ChevronDown } from 'lucide-react';
+import { Users, Calendar, FileText, Phone, Mail, MessageSquare, Search, SortAsc, Trash2, CheckCircle2, RotateCcw, X, ChevronDown, ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { Lead } from '@/types/database';
 import type { T } from '@/lib/i18n';
@@ -116,9 +116,9 @@ export default function LeadsClient({ leads: initial, t }: Props) {
         </div>
       )}
 
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-foreground mb-1">{t['leads.title']}</h1>
-        <p className="text-muted-foreground">{t['leads.subtitle']}</p>
+      <div className="mb-5 sm:mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1">{t['leads.title']}</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">{t['leads.subtitle']}</p>
       </div>
 
       {/* Toolbar */}
@@ -161,9 +161,9 @@ export default function LeadsClient({ leads: initial, t }: Props) {
           <p className="text-muted-foreground">{leads.length === 0 ? t['leads.no_leads'] : 'ფილტრი არ დაემთხვა'}</p>
         </div>
       ) : (
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* List */}
-          <div className="lg:col-span-1 space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pr-1">
+        <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
+          {/* List — hidden on mobile once a lead is opened (drill-down) */}
+          <div className={`${selected ? 'hidden lg:block' : ''} lg:col-span-1 space-y-2 lg:max-h-[calc(100vh-280px)] lg:overflow-y-auto lg:pr-1`}>
             {filtered.map(lead => (
               <button
                 key={lead.id}
@@ -198,8 +198,8 @@ export default function LeadsClient({ leads: initial, t }: Props) {
             ))}
           </div>
 
-          {/* Detail */}
-          <div className="lg:col-span-2">
+          {/* Detail — full-width on mobile when a lead is open */}
+          <div className={`${selected ? '' : 'hidden lg:block'} lg:col-span-2`}>
             {!selected ? (
               <div className="bg-white rounded-xl border border-slate-200 p-12 text-center h-full flex items-center justify-center">
                 <div>
@@ -210,8 +210,11 @@ export default function LeadsClient({ leads: initial, t }: Props) {
             ) : (
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 {/* Header */}
-                <div className="p-5 border-b border-slate-200 flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
+                <div className="p-4 sm:p-5 border-b border-slate-200 flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                    <button onClick={() => setSelected(null)} aria-label="Back" className="lg:hidden -ml-1 p-1.5 hover:bg-slate-100 rounded-lg flex-shrink-0">
+                      <ArrowLeft className="w-5 h-5" />
+                    </button>
                     <div className="w-11 h-11 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
                       <span className="text-base font-bold text-primary">
                         {(selected.name ?? selected.provider_nickname ?? '?').charAt(0).toUpperCase()}

@@ -65,29 +65,27 @@ export default async function DashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">{t['dashboard.title']}</h1>
-        <p className="text-muted-foreground">{t['dashboard.subtitle']}</p>
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1 sm:mb-2">{t['dashboard.title']}</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">{t['dashboard.subtitle']}</p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
         {stats.map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="bg-white rounded-xl border border-slate-200 p-6 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between mb-4">
-              <div className={`w-12 h-12 ${color} rounded-xl flex items-center justify-center`}>
-                <Icon className="w-6 h-6 text-white" />
-              </div>
+          <div key={label} className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 hover:shadow-md transition-shadow">
+            <div className={`w-10 h-10 sm:w-12 sm:h-12 ${color} rounded-xl flex items-center justify-center mb-3 sm:mb-4`}>
+              <Icon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
-            <h3 className="text-2xl font-bold text-foreground mb-1">{value}</h3>
-            <p className="text-sm text-muted-foreground">{label}</p>
+            <h3 className="text-xl sm:text-2xl font-bold text-foreground mb-1">{value}</h3>
+            <p className="text-xs sm:text-sm text-muted-foreground">{label}</p>
           </div>
         ))}
       </div>
 
       {/* Recent Leads */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <div className="flex items-center justify-between mb-6">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6">
+        <div className="flex items-center justify-between mb-4 sm:mb-6">
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-primary" />
             {t['dashboard.recent_leads']}

@@ -106,7 +106,7 @@ export default function ConversationsClient({ conversations: initial, companyId 
   });
 
   return (
-    <div className="flex h-[calc(100vh-64px)] overflow-hidden">
+    <div className="flex h-[calc(100dvh-3.5rem-4rem-env(safe-area-inset-bottom))] lg:h-[calc(100vh-64px)] overflow-hidden">
       {/* Sidebar */}
       <div className={`${selected ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 lg:w-96 border-r border-slate-200 bg-white`}>
         <div className="p-4 border-b border-slate-200">

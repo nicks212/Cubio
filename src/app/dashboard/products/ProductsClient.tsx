@@ -237,7 +237,7 @@ export default function ProductsClient({
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">{t('products.title')}</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">{t('products.title')}</h1>
           <p className="text-muted-foreground">{t('products.subtitle')}</p>
         </div>
         <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium">

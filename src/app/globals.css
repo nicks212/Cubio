@@ -48,7 +48,26 @@ body {
   color: var(--foreground);
   font-family: Inter, system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* Don't let mobile Safari auto-inflate text on rotate */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
+
+/* ── Mobile-app polish (touch devices only; desktop pointer untouched) ── */
+@media (pointer: coarse) {
+  /* Kill the grey tap-flash on buttons/links for a native-app feel */
+  a, button, [role="button"], input, select, textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Avoid iOS auto-zoom when focusing inputs (<16px triggers zoom) */
+  input, select, textarea {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* Hide scrollbars on horizontal mobile scrollers while keeping scroll */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 [contenteditable] {
   outline: none;

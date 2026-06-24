@@ -136,7 +136,7 @@ export default function CalendarClient({ reservations, services, specialists, sc
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1400px] mx-auto">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground flex items-center gap-2">
           <CalendarDays className="w-7 h-7 text-primary" />{t['calendar.title'] ?? 'Calendar'}
         </h1>
         <div className="flex items-center gap-2">

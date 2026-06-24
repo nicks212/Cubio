@@ -64,7 +64,7 @@ export default function SpecialistsClient({ specialists, specialistTypes, schedu
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center gap-2">
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2 flex items-center gap-2">
           <UserCog className="w-7 h-7 text-primary" />{t['specialists.title'] ?? 'Specialists'}
         </h1>
         <p className="text-muted-foreground">{t['specialists.subtitle'] ?? 'Manage your specialists, their types, and service categories.'}</p>
@@ -85,8 +85,8 @@ export default function SpecialistsClient({ specialists, specialistTypes, schedu
               <Plus className="w-4 h-4" />{t['specialists.add'] ?? 'Add Specialist'}
             </button>
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <table className="w-full">
+          <div className="bg-white rounded-xl border border-slate-200 overflow-x-auto no-scrollbar">
+            <table className="w-full min-w-[560px] lg:min-w-0">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
                   {[t['specialists.col_name'] ?? 'Name', t['specialists.col_type'] ?? 'Type', t['specialists.col_languages'] ?? 'Languages', t['specialists.col_status'] ?? 'Status', ''].map((h, i) => (

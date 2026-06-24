@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition, useMemo } from 'react';
-import { AlertTriangle, Phone, Mail, FileText, Search, SortAsc, Trash2, CheckCircle2, RotateCcw, X, ChevronDown } from 'lucide-react';
+import { AlertTriangle, Phone, Mail, FileText, Search, SortAsc, Trash2, CheckCircle2, RotateCcw, X, ChevronDown, ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { Escalation } from '@/types/database';
 import type { T } from '@/lib/i18n';
@@ -121,9 +121,9 @@ export default function EscalationsClient({ escalations: initial, t }: Props) {
         </div>
       )}
 
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-foreground mb-1">{t['escalations.title']}</h1>
-        <p className="text-muted-foreground">{t['escalations.subtitle']}</p>
+      <div className="mb-5 sm:mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1">{t['escalations.title']}</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">{t['escalations.subtitle']}</p>
       </div>
 
       {/* Toolbar */}
@@ -166,9 +166,9 @@ export default function EscalationsClient({ escalations: initial, t }: Props) {
           <p className="text-muted-foreground">{escalations.length === 0 ? t['escalations.no_escalations'] : 'ფილტრი არ დაემთხვა'}</p>
         </div>
       ) : (
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* List */}
-          <div className="lg:col-span-1 space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pr-1">
+        <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
+          {/* List — hidden on mobile once an item is opened (drill-down) */}
+          <div className={`${selected ? 'hidden lg:block' : ''} lg:col-span-1 space-y-2 lg:max-h-[calc(100vh-280px)] lg:overflow-y-auto lg:pr-1`}>
             {filtered.map(esc => (
               <button
                 key={esc.id}
@@ -201,8 +201,8 @@ export default function EscalationsClient({ escalations: initial, t }: Props) {
             ))}
           </div>
 
-          {/* Detail */}
-          <div className="lg:col-span-2">
+          {/* Detail — full-width on mobile when an item is open */}
+          <div className={`${selected ? '' : 'hidden lg:block'} lg:col-span-2`}>
             {!selected ? (
               <div className="bg-white rounded-xl border border-slate-200 p-12 text-center h-full flex items-center justify-center">
                 <div>
@@ -213,8 +213,11 @@ export default function EscalationsClient({ escalations: initial, t }: Props) {
             ) : (
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 {/* Header */}
-                <div className="p-5 border-b border-slate-200 flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
+                <div className="p-4 sm:p-5 border-b border-slate-200 flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                    <button onClick={() => setSelected(null)} aria-label="Back" className="lg:hidden -ml-1 p-1.5 hover:bg-slate-100 rounded-lg flex-shrink-0">
+                      <ArrowLeft className="w-5 h-5" />
+                    </button>
                     <div className="w-11 h-11 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
                       <AlertTriangle className="w-5 h-5 text-red-500" />
                     </div>

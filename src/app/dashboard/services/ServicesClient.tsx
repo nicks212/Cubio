@@ -64,7 +64,7 @@ export default function ServicesClient({ services, specialistTypes }: Props) {
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center gap-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2 flex items-center gap-2">
             <Scissors className="w-7 h-7 text-primary" />{t['services.title'] ?? 'Services'}
           </h1>
           <p className="text-muted-foreground">{t['services.subtitle'] ?? 'Manage the services your business offers.'}</p>

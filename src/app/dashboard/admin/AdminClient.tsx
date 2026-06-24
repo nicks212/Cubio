@@ -120,7 +120,7 @@ export default function AdminClient({ users, integrations, localizations, compan
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">{t['admin.title']}</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">{t['admin.title']}</h1>
         <p className="text-muted-foreground">{t['admin.subtitle']}</p>
       </div>
 
