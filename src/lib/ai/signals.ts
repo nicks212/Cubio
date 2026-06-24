@@ -16,6 +16,16 @@
 // 1. INTENT CLASSIFICATION
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * A link / URL in the customer's message. The AI cannot open links (Instagram
+ * stories, web pages, image URLs, etc.) — used to (a) strip the URL from the
+ * product-retrieval query so its tokens don't accidentally match a product, and
+ * (b) instruct the AI to ask the customer to describe the item or send a photo.
+ * Matches full http(s)/www URLs and bare "domain.tld/path" forms.
+ */
+export const URL_RE =
+  /(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+\.(?:com|ge|net|org|io|app|me|ru|co|info|biz|store|shop|link)\b(?:\/\S*)?/i;
+
 /** Pure greeting / farewell / acknowledgement — nothing of business value. */
 export const CHAT_ONLY_RE =
   /^[\s!.,?👍👋🙏💙❤️✅]*(?:hello|hi|hey|ok|okay|good|great|perfect|sure|yes|no|yep|nope|got\s*it|understood|thanks|thank\s*you|thx|ty|bye|goodbye|see\s*you|take\s*care|good\s*morning|good\s*afternoon|good\s*evening|good\s*night|madloba|gmadlob|naxvamdis|kargi|gamarjoba|salami|bodishi|araferi|jerjerobit|გამარჯობა|მოგესალემებით|სალამი|ბოდიში|კარგი|მადლობა|გმადლობ|ნახვამდის|კი|არა|მიხვდი|მიხვდა|გასაგებია|გასაგები|ალბათ|ok!)[\s!.,?👍👋🙏💙❤️✅]*$/i;

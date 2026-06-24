@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { generateReply } from '@/lib/ai';
 import { analyzeLeadState } from '@/lib/leads/detector';
-import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE, CRAFT_BROAD_QUERY_RE, REFERENCE_FOLLOWUP_RE, MORE_LIKE_RE } from '@/lib/ai/signals';
+import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE, CRAFT_BROAD_QUERY_RE, REFERENCE_FOLLOWUP_RE, MORE_LIKE_RE, URL_RE } from '@/lib/ai/signals';
 import { detectLeadAndEscalation } from '@/lib/ai/detect';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
@@ -12,7 +12,7 @@ import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
 import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts } from '@/lib/ai/embeddings';
 import { persistAIUsage } from '@/lib/ai/usage';
 import { normalizeQuery, retrieveProducts } from '@/lib/ai/productRetrieval';
-import { translateProductForEnglish, detectReplyLanguage } from '@/lib/ai/geoTranslation';
+import { translateProductForEnglish, detectReplyLanguage, compactCompanyInfoForEnglish } from '@/lib/ai/geoTranslation';
 import { redis } from '@/lib/redis';
 import { createHash } from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -279,6 +279,17 @@ export async function processIncomingMessage(
   const replyLanguage = detectReplyLanguage(combinedMessage);
   console.info(`${label} [language] replyLanguage=${replyLanguage}`);
 
+  // ── Link / URL handling (all business types) ────────────────────────────────
+  // The AI cannot open links (Instagram stories, web pages, image URLs). Detect a
+  // link so generateReply can ask the customer to describe the item or send a photo
+  // instead of guessing. Also strip the URL from the product-retrieval query so its
+  // tokens (e.g. "instagram", "com") never accidentally match a catalog product.
+  const linkSent = URL_RE.test(combinedMessage);
+  const retrievalText = (linkSent
+    ? combinedMessage.replace(new RegExp(URL_RE.source, 'gi'), ' ').replace(/\s+/g, ' ').trim()
+    : combinedMessage).trim();
+  if (linkSent) console.info(`${label} [link] URL detected — retrieval text: "${retrievalText.slice(0, 60)}"`);
+
   // 6. Detect intent — fast regex first; AI classifier fallback for ambiguous short messages
   //    (romanized Georgian like "fotoebs", "suratebi", "vnaxo" can't be caught by keywords alone).
   //    When regex returns null (ambiguous), run AI classifier IN PARALLEL with DB queries
@@ -339,8 +350,8 @@ export async function processIncomingMessage(
   //     with zero sequential latency — uses the already-deployed pgvector index.
   //     History was pre-loaded at step 3c (before message save) — no DB fetch here.
   const textVectorSearchPromise: Promise<string[]> =
-    isProductBusiness(integration.businessType) && combinedMessage.trim() && similarProductNames.length === 0
-      ? searchSimilarProducts(integration.companyId, combinedMessage.trim(), 5)
+    isProductBusiness(integration.businessType) && retrievalText && similarProductNames.length === 0
+      ? searchSimilarProducts(integration.companyId, retrievalText, 5)
       : Promise.resolve([]);
 
   const [aiIntent, textVectorNames, businessContext] = await Promise.all([
@@ -358,7 +369,7 @@ export async function processIncomingMessage(
       priorityApartmentNumbers: similarApartmentNumbers,
       priorityProductNames: similarProductNames,
       imageSearchQuery: imageSearchQuery ?? undefined,
-      textQuery: combinedMessage.trim() || undefined,
+      textQuery: retrievalText || undefined,
     }),
   ]);
 
@@ -606,6 +617,7 @@ export async function processIncomingMessage(
     offerEscalation,
     replyLanguage,
     { companyId: integration.companyId, conversationId },
+    linkSent,
   );
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);
@@ -755,7 +767,10 @@ export async function processIncomingMessage(
   if (showPhotosMatch && imageUrlsToSend.length === 0) {
     const isGeo = replyLanguage === 'ka';
     const biz = (finalBusinessContext as { businessDescription?: string }).businessDescription ?? null;
-    const companyLine = biz ? `\n\n${biz.slice(0, 150)}` : '';
+    // Localize the company line: Georgian keeps the source text; English is fully
+    // transliterated/translated so no raw Georgian leaks into an English reply.
+    const companyText = biz ? (isGeo ? biz.slice(0, 150) : compactCompanyInfoForEnglish(biz)) : '';
+    const companyLine = companyText ? `\n\n${companyText}` : '';
     cleanReply = isGeo
       ? `ამ პროდუქტის ფოტო ამჟამად ხელმიუწვდომელია.${companyLine ? `\n\nმაღაზიაში შეგიძლიათ ნახოთ პირდაპირ:${companyLine}` : ''}`
       : `We don't have photos for this item right now.${companyLine ? `\n\nYou're welcome to visit us:${companyLine}` : ''}`;
@@ -1188,11 +1203,20 @@ function buildSafeCraftReply(
 ): string {
   // Language from the single authority (current message), never from history.
   const isGeorgian = replyLanguage === 'ka';
-  const products = context.products;
-  const companyInfo = extractCompactCompanyInfo(context.businessDescription);
+  // English replies must contain ZERO raw Georgian: translate every product field and
+  // transliterate company info to Latin. Georgian replies keep the source text as-is.
+  const sourceProducts = context.products;
+  const products = isGeorgian ? sourceProducts : sourceProducts.map(translateProductForEnglish);
+  const contactLine = isGeorgian
+    ? formatGeorgianContact(extractCompactCompanyInfo(context.businessDescription))
+    : compactCompanyInfoForEnglish(context.businessDescription);
+  // Map retrieval hits (which carry original names) to the display (possibly translated) product.
   const matchedProducts = retrievalHits
     .slice(0, 2)
-    .map(hit => products.find(product => product.name === hit.name))
+    .map(hit => {
+      const idx = sourceProducts.findIndex(product => product.name === hit.name);
+      return idx >= 0 ? products[idx] : undefined;
+    })
     .filter(Boolean) as ProductContext['products'];
   const categories = takeUniqueProductValues(products.map(product => product.category), 3);
   const materials = takeUniqueProductValues(products.map(product => product.material), 3);
@@ -1202,24 +1226,22 @@ function buildSafeCraftReply(
 
   if (reason === 'vague_turn_recommendation') {
     return isGeorgian
-      ? 'ზუსტად რომ შეგირჩიო, მითხარი რა ტიპის ნივთს ეძებ — მაგალითად საჩუქარი, მასალა, ზოდიაქო თუ ბიუჯეტი.'
-      : 'To choose accurately, tell me what kind of item you want, for example a gift, material, zodiac theme, or budget.';
+      ? 'ზუსტად რომ შეგირჩიო, მითხარი რა ტიპის ნივთს ეძებ — მაგალითად საჩუქარი, მასალა, სტილი თუ ბიუჯეტი.'
+      : 'To choose accurately, tell me what kind of item you want — for example a gift, material, style, or budget.';
   }
 
   if (matchedProducts.length > 0) {
     const productText = isGeorgian
       ? matchedProducts.map(formatCraftProductSnippetGeorgian).join(' ასევე ')
       : matchedProducts.map(formatCraftProductSnippetEnglish).join(' Also, ');
-    const invite = buildCraftInvite(companyInfo, isGeorgian);
-    return isGeorgian
-      ? `${productText}. ${invite}`.trim()
-      : `${productText}. ${invite}`.trim();
+    const invite = buildCraftInvite(contactLine, isGeorgian);
+    return `${productText}. ${invite}`.trim();
   }
 
   const overview = isGeorgian
     ? buildCraftOverviewGeorgian(categories, materials, minPrice, maxPrice)
     : buildCraftOverviewEnglish(categories, materials, minPrice, maxPrice);
-  const invite = buildCraftInvite(companyInfo, isGeorgian);
+  const invite = buildCraftInvite(contactLine, isGeorgian);
   return [overview, invite].filter(Boolean).join(' ').trim();
 }
 
@@ -1263,20 +1285,21 @@ function buildCraftOverviewEnglish(
   return `${parts.join(' ')}.`;
 }
 
-function buildCraftInvite(
-  companyInfo: { address: string | null; hours: string | null; phone: string | null },
-  isGeorgian: boolean,
-): string {
-  const facts = [companyInfo.address, companyInfo.hours, companyInfo.phone ? `phone ${companyInfo.phone}` : null].filter(Boolean);
-  if (facts.length > 0) {
+function buildCraftInvite(contactLine: string, isGeorgian: boolean): string {
+  if (contactLine.trim()) {
     return isGeorgian
-      ? `დანარჩენი დეტალებისთვის შეგიძლიათ მოგვწეროთ, დაგვირეკოთ ან გვესტუმროთ: ${facts.join(' | ')}.`
-      : `For the remaining details, you can message, call, or visit us: ${facts.join(' | ')}.`;
+      ? `დანარჩენი დეტალებისთვის შეგიძლიათ მოგვწეროთ, დაგვირეკოთ ან გვესტუმროთ: ${contactLine}.`
+      : `For more details, you can message, call, or visit us: ${contactLine}.`;
   }
 
   return isGeorgian
     ? 'დანარჩენი დეტალებისთვის მოგვწერეთ ან გვესტუმრეთ მაღაზიაში.'
-    : 'For the remaining details, message us or visit the shop.';
+    : 'For more details, message us or visit the shop.';
+}
+
+/** Georgian contact line — keeps the source Georgian address/hours, Georgian phone label. */
+function formatGeorgianContact(info: { address: string | null; hours: string | null; phone: string | null }): string {
+  return [info.address, info.hours, info.phone ? `ტელ: ${info.phone}` : null].filter(Boolean).join(' | ');
 }
 
 function extractCompactCompanyInfo(raw: string | null): { address: string | null; hours: string | null; phone: string | null } {

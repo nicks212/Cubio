@@ -47,6 +47,17 @@ const PROFILE_COPY: Record<BusinessType, { domainFence: string; scope: string }>
  *   - 'chat' intent skips business context and uses a lean micro-prompt.
  */
 
+/**
+ * Injected (for every business type) when the customer's message contains a link.
+ * The model cannot open links — so instead of guessing what the link shows (which
+ * led to recommending random products), it must ask for a description or a photo.
+ * Phrased as a rule, not a fixed sentence, so Gemini localizes it to the reply language.
+ */
+const LINK_RULE =
+  'LINK / URL: The customer\'s message contains a link or URL. You CANNOT open links, web pages, images, or external content of any kind. ' +
+  'Do NOT guess what the link shows and do NOT recommend or name any product based on it. ' +
+  'In the customer\'s own language, briefly tell them you can\'t open links, and ask them to either describe the item in words or send a photo of it directly here.';
+
 /** Token estimate — 1 token ≈ 2 chars for Georgian-heavy text */
 const estimateTokens = (text: string): number => Math.ceil(text.length / 2);
 const MAX_INPUT_TOKENS = 2000;
@@ -80,6 +91,8 @@ export async function generateReply(
   /** Single language authority, computed upstream from the current customer message. */
   replyLanguage: 'ka' | 'en' = 'en',
   usageContext?: Omit<AIUsageContext, 'feature' | 'model'>,
+  /** True when the current customer message contains a link/URL the AI cannot open. */
+  linkSent = false,
 ): Promise<string> {
   // ── Chat intent: lean micro-prompt, no business context ───────────────────
   if (intent === 'chat') {
@@ -99,6 +112,7 @@ export async function generateReply(
       `${domainFence} ` +
       `${LANGUAGE_RULE} ` +
       `${firstMsgDisclosure}` +
+      `${linkSent ? `${LINK_RULE} ` : ''}` +
       `1–2 sentences max. Be conversational. ` +
       `If company details are limited, ask one short clarifying question instead of guessing. ` +
       `If they mention seeing an ad or coming to inquire — warmly ask what they are looking for. ` +
@@ -168,6 +182,11 @@ export async function generateReply(
   if (!isFirstMessage) {
     // Hard constraint — injected FIRST so it overrides the model's tendency to greet
     systemParts.unshift('NO GREETING: Do NOT use გამარჯობა, hello, hi, or any greeting. Start directly with your answer.');
+  }
+  // Link handling takes priority — when present, the AI must not recommend products
+  // off a link it can't open; it asks for a description or photo instead.
+  if (linkSent) {
+    systemParts.unshift(LINK_RULE);
   }
   if (isFirstMessage) {
     systemParts.push(
