@@ -153,6 +153,46 @@ export async function adminListMessages(conversationId: string) {
   return { messages: data ?? [] };
 }
 
+export async function adminListLeads(companyId: string) {
+  if (!await isAdmin()) return { error: 'Unauthorized', leads: [] };
+  if (!companyId) return { leads: [] };
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('leads')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false });
+  if (error) return { error: error.message, leads: [] };
+  return { leads: data ?? [] };
+}
+
+export async function adminListEscalations(companyId: string) {
+  if (!await isAdmin()) return { error: 'Unauthorized', escalations: [] };
+  if (!companyId) return { escalations: [] };
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('escalations')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false });
+  if (error) return { error: error.message, escalations: [] };
+  return { escalations: data ?? [] };
+}
+
+export async function adminListReservations(companyId: string) {
+  if (!await isAdmin()) return { error: 'Unauthorized', reservations: [] };
+  if (!companyId) return { reservations: [] };
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('reservations')
+    .select('*, service:services(service_name), specialist:specialists(specialist_name)')
+    .eq('company_id', companyId)
+    .order('reservation_date', { ascending: false })
+    .order('reservation_start_time', { ascending: false });
+  if (error) return { error: error.message, reservations: [] };
+  return { reservations: data ?? [] };
+}
+
 export async function upsertTermsContent(language: string, content: string): Promise<{ success?: boolean; error?: string }> {
   if (!await isAdmin()) return { error: 'Unauthorized' };
   const supabase = createAdminClient();

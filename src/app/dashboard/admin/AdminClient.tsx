@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useActionState, useCallback } from 'react';
-import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight, RotateCcw, Search, FileText, BarChart3, MessageSquare } from 'lucide-react';
+import { Users, Languages, Plug, Edit, Trash2, X, Plus, ToggleLeft, ToggleRight, RotateCcw, Search, FileText, BarChart3, MessageSquare, Target, AlertTriangle, CalendarDays } from 'lucide-react';
 import {
   toggleUserAdmin, upsertLocalization, deleteLocalization,
   createIntegration, updateIntegration, deleteIntegration, toggleIntegration,
@@ -11,8 +11,11 @@ import { formatDate } from '@/lib/utils';
 import { useT } from '@/components/TranslationsProvider';
 import RichTextEditor from '@/components/RichTextEditor';
 import AdminConversations from './AdminConversations';
+import AdminLeads from './AdminLeads';
+import AdminEscalations from './AdminEscalations';
+import AdminReservations from './AdminReservations';
 
-type Tab = 'users' | 'localizations' | 'integrations' | 'terms' | 'usage' | 'conversations';
+type Tab = 'users' | 'localizations' | 'integrations' | 'terms' | 'usage' | 'conversations' | 'leads' | 'escalations' | 'reservations';
 
 const PROVIDERS = ['facebook', 'instagram', 'telegram', 'whatsapp', 'viber'] as const;
 const providerIcons: Record<string, string> = { facebook: '📘', instagram: '📸', telegram: '✈️', whatsapp: '💬', viber: '📱' };
@@ -21,7 +24,7 @@ interface Props {
   users: Array<{ id: string; full_name: string | null; email: string | null; is_admin: boolean; created_at: string; company?: { company_name: string; business_type: string } | null }>;
   integrations: Array<{ id: string; company_id: string; provider: string; provider_account_id: string; account_name: string; access_token: string; refresh_token?: string | null; is_active: boolean; created_at: string; company?: { company_name: string } | null }>;
   localizations: Array<{ id: string | null; keyword: string; localization_text: string; localization_text_en: string }>;
-  companies: Array<{ id: string; company_name: string }>;
+  companies: Array<{ id: string; company_name: string; business_type?: string | null }>;
   termsContent: Array<{ language: string; content: string; updated_at: string }>;
   usageReport: Array<{ companyId: string; companyName: string; inputTokens: number; outputTokens: number; totalTokens: number; uniqueUsersServed: number }>;
   selectedMonth: string;
@@ -108,12 +111,21 @@ export default function AdminClient({ users, integrations, localizations, compan
   // Recompute when showBlanks or locSearch changes
   const blankCount = localizations.filter(l => !l.localization_text.trim() || !l.localization_text_en.trim()).length;
 
+  // Each section only lists the companies it applies to — mirroring the dashboard
+  // rules: leads are hidden for salons, reservations exist only for salons, and
+  // escalations apply to every business type.
+  const leadCompanies = companies.filter(c => c.business_type !== 'beauty_salon');
+  const reservationCompanies = companies.filter(c => c.business_type === 'beauty_salon');
+
   const tabs = [
     { id: 'users' as Tab, label: t['admin.tab_users'] ?? 'Users', icon: Users },
     { id: 'localizations' as Tab, label: t['admin.tab_localizations'] ?? 'Localizations', icon: Languages },
     { id: 'integrations' as Tab, label: t['admin.tab_integrations'] ?? 'Integrations', icon: Plug },
     { id: 'usage' as Tab, label: 'Usage', icon: BarChart3 },
     { id: 'conversations' as Tab, label: t['admin.tab_conversations'] ?? 'Conversations', icon: MessageSquare },
+    { id: 'leads' as Tab, label: t['admin.tab_leads'] ?? 'Leads', icon: Target },
+    { id: 'escalations' as Tab, label: t['admin.tab_escalations'] ?? 'Escalations', icon: AlertTriangle },
+    { id: 'reservations' as Tab, label: t['admin.tab_reservations'] ?? 'Reservations', icon: CalendarDays },
     { id: 'terms' as Tab, label: t['admin.tab_terms'] ?? 'წესები', icon: FileText },
   ];
 
@@ -413,6 +425,21 @@ export default function AdminClient({ users, integrations, localizations, compan
       {/* Conversations Tab */}
       {tab === 'conversations' && (
         <AdminConversations companies={companies} />
+      )}
+
+      {/* Leads Tab */}
+      {tab === 'leads' && (
+        <AdminLeads companies={leadCompanies} />
+      )}
+
+      {/* Escalations Tab */}
+      {tab === 'escalations' && (
+        <AdminEscalations companies={companies} />
+      )}
+
+      {/* Reservations Tab */}
+      {tab === 'reservations' && (
+        <AdminReservations companies={reservationCompanies} />
       )}
 
       {/* Terms Tab */}

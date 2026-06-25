@@ -19,7 +19,7 @@ function resolveMonthRange(month?: string | null) {
   return { selectedMonth, startIso, endIso };
 }
 
-const ADMIN_TABS = ['users', 'localizations', 'integrations', 'usage', 'conversations', 'terms'] as const;
+const ADMIN_TABS = ['users', 'localizations', 'integrations', 'usage', 'conversations', 'leads', 'escalations', 'reservations', 'terms'] as const;
 type AdminTab = (typeof ADMIN_TABS)[number];
 
 type AdminPageProps = {
@@ -51,7 +51,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     adminClient.from('profiles').select('*, company:companies(company_name, business_type)').order('created_at', { ascending: false }),
     adminClient.from('localizations').select('id, keyword, localization_text, localization_text_en').order('keyword'),
     adminClient.from('integrations').select('*, company:companies(company_name)').order('created_at', { ascending: false }),
-    adminClient.from('companies').select('id, company_name').order('company_name'),
+    adminClient.from('companies').select('id, company_name, business_type').order('company_name'),
     adminClient.from('terms_content').select('language, content, updated_at'),
     adminClient
       .from('ai_usage_events')
