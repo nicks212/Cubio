@@ -122,7 +122,13 @@ export function buildBeautySalonSystemPrompt(
   }
 
   if (!hasServices) {
-    modeLines.push(`NO MATCH: Ask exactly one short clarifying question — which service, area, or concern. Do NOT name or price any specific service.`);
+    modeLines.push(
+      `NO MATCH (we do NOT offer the requested service): ` +
+      `(1) Honestly and warmly acknowledge we don't currently offer that specific service. ` +
+      `(2) NEVER name, price, or substitute an unrelated service. ` +
+      `(3) Continue naturally: in one short sentence, ask what area or concern they have ` +
+      `(e.g. hair, nails, skincare, brows) and offer to show what we do provide. Keep it to ~2 short, friendly sentences.`,
+    );
   }
 
   // ── Availability context (deterministic backend data the assistant reasons over) ──

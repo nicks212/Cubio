@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server';
-import { generateReply } from '@/lib/ai';
+import { generateReply, generateEscalationHandoff } from '@/lib/ai';
 import { analyzeLeadState } from '@/lib/leads/detector';
 import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE, CRAFT_BROAD_QUERY_RE, REFERENCE_FOLLOWUP_RE, MORE_LIKE_RE, URL_RE } from '@/lib/ai/signals';
 import { detectLeadAndEscalation } from '@/lib/ai/detect';
@@ -9,7 +9,7 @@ import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
 import { bufferAndClaim, isStampHolder, acquireLock, drainBuffer, releaseLock, DEBOUNCE_MS } from './messageBuffer';
 import { detectIntent, detectPhotoType, classifyIntentAI } from '@/lib/ai/intentDetector';
 import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
-import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts } from '@/lib/ai/embeddings';
+import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts, STRONG_PRODUCT_VECTOR_SIMILARITY } from '@/lib/ai/embeddings';
 import { persistAIUsage } from '@/lib/ai/usage';
 import { normalizeQuery, retrieveProducts } from '@/lib/ai/productRetrieval';
 import { translateProductForEnglish, detectReplyLanguage, compactCompanyInfoForEnglish } from '@/lib/ai/geoTranslation';
@@ -351,7 +351,9 @@ export async function processIncomingMessage(
   //     History was pre-loaded at step 3c (before message save) — no DB fetch here.
   const textVectorSearchPromise: Promise<string[]> =
     isProductBusiness(integration.businessType) && retrievalText && similarProductNames.length === 0
-      ? searchSimilarProducts(integration.companyId, retrievalText, 5)
+      // Strict similarity bar so only genuinely-relevant semantic matches surface;
+      // weak neighbours fall through to NO_RELEVANT_MATCH (see loadBusinessContext).
+      ? searchSimilarProducts(integration.companyId, retrievalText, 5, STRONG_PRODUCT_VECTOR_SIMILARITY)
       : Promise.resolve([]);
 
   const [aiIntent, textVectorNames, businessContext] = await Promise.all([
@@ -540,12 +542,14 @@ export async function processIncomingMessage(
     // Redis unavailable — soft escalation skipped; hard escalation (ANGER_RE) still active
   }
 
-  // Confirmed soft escalation: skip AI, send contact, persist escalation record
+  // Confirmed soft escalation: skip the sales AI, send a natural handoff line, persist record.
+  // The handoff is generated (varied, localized to the CURRENT message) — not a fixed phrase.
   if (escalationConfirmed) {
-    const isGeo = replyLanguage === 'ka';
-    const contactMsg = buildEscalationContactMessage(
+    const contactMsg = await generateEscalationHandoff(
+      combinedMessage,
       (businessContext as ApartmentContext).businessDescription,
-      isGeo,
+      replyLanguage,
+      { companyId: integration.companyId, conversationId },
     );
     await supabase.from('messages').insert({
       conversation_id: conversationId,
@@ -1605,27 +1609,6 @@ async function persistEscalation(
     console.error('[pipeline] persistEscalation error:', err);
   }
 }
-
-/**
- * Composes a natural escalation confirmation message with the company's contact info.
- * Extracts the phone number from businessDescription when available.
- * Scalable: works for real_estate, craft_shop, and any future business type.
- */
-function buildEscalationContactMessage(
-  businessDescription: string | null | undefined,
-  isGeorgian: boolean,
-): string {
-  // Extract first phone-like pattern from the business description
-  const phoneMatch = businessDescription
-    ? /(?:\+?\d[\d\s\-()]{5,15}\d)/.exec(businessDescription)
-    : null;
-  const phone = phoneMatch ? `\n📞 ${phoneMatch[0].trim()}` : '';
-
-  return isGeorgian
-    ? `ჩვენი წარმომადგენელი მალე დაგიკავშირდებათ!${phone}`
-    : `A representative will be with you shortly!${phone}`;
-}
-
 // ── Meta sender name resolution ───────────────────────────────────────────────
 // Facebook/Instagram webhooks don't include the sender's display name.
 // Attempt 1: direct PSID/IGSID lookup (requires pages_user_profiles — often blocked by Meta privacy)

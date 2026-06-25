@@ -310,10 +310,21 @@ export async function searchSimilarApartments(
  *
  * @returns array of product names ordered by similarity (best match first)
  */
+/**
+ * Cosine-similarity bar for a TEXT product query to count as a confident semantic
+ * match. Raised from the permissive default (0.25) because 0.25 surfaced barely-related
+ * neighbours (e.g. "pheromones" → "Essential Oil"), which the pipeline then presented as
+ * the requested product. Below this bar the query is treated as NO_RELEVANT_MATCH and the
+ * assistant says we don't carry it instead of recommending something unrelated. Tunable.
+ * NOTE: the image-similarity path intentionally keeps its own (looser) default threshold.
+ */
+export const STRONG_PRODUCT_VECTOR_SIMILARITY = 0.45;
+
 export async function searchSimilarProducts(
   companyId: string,
   queryText: string,
   limit = 5,
+  matchThreshold = 0.25,
 ): Promise<string[]> {
   const embedding = await generateTextEmbedding(queryText, TaskType.RETRIEVAL_QUERY);
   if (!embedding) return [];
@@ -323,7 +334,7 @@ export async function searchSimilarProducts(
     const { data, error } = await supabase.rpc('match_products', {
       query_embedding: embedding,
       company_filter: companyId,
-      match_threshold: 0.25,
+      match_threshold: matchThreshold,
       match_count: limit,
     });
 

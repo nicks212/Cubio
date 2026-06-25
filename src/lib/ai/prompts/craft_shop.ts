@@ -224,9 +224,12 @@ export function buildCraftShopSystemPrompt(
     );
   } else if (!hasProducts) {
     modeLines.push(
-      hasSpecialtyAttrs
-        ? `NO MATCH: Ask exactly one short clarifying question — type, material, zodiac sign, or budget. Do NOT name or price any specific product.`
-        : `NO MATCH: Ask exactly one short clarifying question — type, material, or budget. Do NOT name or price any specific product.`,
+      `NO MATCH (we do NOT carry the requested item): ` +
+      `(1) Honestly and warmly acknowledge we don't currently have that specific item. ` +
+      `(2) NEVER name, price, substitute, or hint at an unrelated product — there is genuinely no relevant product to show. ` +
+      `(3) Continue the sale naturally: in one short sentence, ask what TYPE or category they're interested in ` +
+      `${hasSpecialtyAttrs ? '(e.g. type, material, zodiac, occasion, or budget)' : '(e.g. type, material, occasion, or budget)'} ` +
+      `and offer to show what we do have. Keep it to ~2 short, friendly sentences.`,
     );
   }
 

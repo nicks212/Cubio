@@ -7,7 +7,8 @@ export type AIUsageFeature =
   | 'lead_detect'
   | 'escalation_detect'
   | 'image_describe'
-  | 'voice_transcribe';
+  | 'voice_transcribe'
+  | 'escalation_handoff';
 
 export interface AIUsageContext {
   companyId: string;

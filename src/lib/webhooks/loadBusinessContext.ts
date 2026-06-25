@@ -178,11 +178,10 @@ export async function loadBusinessContext(
     for (const n of options.priorityProductNames) pushUnique(byName(n));
   }
 
-  // 2. Token retrieval — only when vector did not pre-filter. Confident matches are
-  //    added; a weak top score is held aside (step 4) so it can be displaced by a
-  //    proper category fallback first.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let weakTokenHits: any[] = [];
+  // 2. Token retrieval — only when vector did not pre-filter. ONLY confident matches
+  //    (strong score) are surfaced. A weak top score is intentionally dropped (no
+  //    best-effort fallback) so it becomes NO_RELEVANT_MATCH rather than an unrelated
+  //    recommendation. Same-category alternatives can still fire below (step 3).
   if (!options.priorityProductNames?.length && retrievalQuery) {
     const retrievalHits = retrieveProducts(allProducts, retrievalQuery);
     const topScore = retrievalHits[0]?.score ?? 0;
@@ -192,11 +191,10 @@ export async function loadBusinessContext(
     } else {
       console.info(`[loadBusinessContext] retrieval[${retrievalSource}]: no matches above threshold for "${retrievalQuery.slice(0, 40)}"`);
     }
+    // STRICT RELEVANCE GATE: only a confident token match counts as the requested product.
     if (topScore >= STRONG_RETRIEVAL_SCORE) {
       for (const h of retrievalHits) pushUnique(byName(h.name));
       tokenRetrievalHitCount = retrievalHits.length;
-    } else {
-      weakTokenHits = retrievalHits.map(h => byName(h.name)).filter(Boolean);
     }
   }
 
@@ -223,13 +221,13 @@ export async function loadBusinessContext(
     }
   }
 
-  // 4. Best-effort — if nothing else matched, surface the weak token hits (genuine
-  //    field matches, just low score) rather than asking a needless clarifying
-  //    question. These are real matches, NOT insertion-order padding.
-  if (matched.length === 0 && weakTokenHits.length > 0) {
-    for (const p of weakTokenHits) pushUnique(p);
-    tokenRetrievalHitCount = weakTokenHits.length;
-    console.info(`[loadBusinessContext] using ${weakTokenHits.length} weak token hit(s) as best-effort matches`);
+  // 4. NO_RELEVANT_MATCH — a specific item was requested but nothing confident matched
+  //    (no strong vector, no strong token, no same-category alternative). We deliberately
+  //    surface ZERO products so the prompt's NO MATCH recovery flow honestly says we don't
+  //    carry it and asks what category the customer wants. Weak coincidental hits are NEVER
+  //    passed to the model — this is what permanently prevents irrelevant recommendations.
+  if (matched.length === 0 && retrievalQuery) {
+    console.info(`[loadBusinessContext] NO_RELEVANT_MATCH for "${retrievalQuery.slice(0, 40)}" — surfacing 0 products (recovery flow)`);
   }
 
   // 5. Similar side-suggestions — when we DID find the requested product(s), append a
