@@ -9,7 +9,8 @@ import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
 import { bufferAndClaim, isStampHolder, acquireLock, drainBuffer, releaseLock, DEBOUNCE_MS } from './messageBuffer';
 import { detectIntent, detectPhotoType, classifyIntentAI } from '@/lib/ai/intentDetector';
 import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
-import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts, STRONG_PRODUCT_VECTOR_SIMILARITY } from '@/lib/ai/embeddings';
+import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts, searchSimilarProductsScored, STRONG_PRODUCT_VECTOR_SIMILARITY, type ScoredProductMatch } from '@/lib/ai/embeddings';
+import { gateConfidentVectorMatches } from '@/lib/ai/vectorGate';
 import { persistAIUsage } from '@/lib/ai/usage';
 import { normalizeQuery, retrieveProducts } from '@/lib/ai/productRetrieval';
 import { translateProductForEnglish, detectReplyLanguage, compactCompanyInfoForEnglish } from '@/lib/ai/geoTranslation';
@@ -349,14 +350,14 @@ export async function processIncomingMessage(
   //     For product shops, searchSimilarProducts runs alongside the intent classifier
   //     with zero sequential latency — uses the already-deployed pgvector index.
   //     History was pre-loaded at step 3c (before message save) — no DB fetch here.
-  const textVectorSearchPromise: Promise<string[]> =
+  // Retrieve scored candidates (≥ STRONG bar) so the relevance gate below can tell a
+  // focused cross-language match from a diffuse cluster of vaguely-related neighbours.
+  const textVectorSearchPromise: Promise<ScoredProductMatch[]> =
     isProductBusiness(integration.businessType) && retrievalText && similarProductNames.length === 0
-      // Strict similarity bar so only genuinely-relevant semantic matches surface;
-      // weak neighbours fall through to NO_RELEVANT_MATCH (see loadBusinessContext).
-      ? searchSimilarProducts(integration.companyId, retrievalText, 5, STRONG_PRODUCT_VECTOR_SIMILARITY)
+      ? searchSimilarProductsScored(integration.companyId, retrievalText, 5, STRONG_PRODUCT_VECTOR_SIMILARITY)
       : Promise.resolve([]);
 
-  const [aiIntent, textVectorNames, businessContext] = await Promise.all([
+  const [aiIntent, textVectorScored, businessContext] = await Promise.all([
     needsAIClassify
       ? classifyIntentAI(combinedMessage, { companyId: integration.companyId, conversationId }).then(r => {
           console.info(`${label} AI intent classifier: '${r.intent}'${r.wantsEscalation ? ' [ESCALATE]' : ''} for: "${combinedMessage.slice(0, 60)}"`);
@@ -374,6 +375,16 @@ export async function processIncomingMessage(
       textQuery: retrievalText || undefined,
     }),
   ]);
+
+  // RELEVANCE GATE: a text-vector hit only counts as a match when it is a genuine, focused
+  // semantic match — not one of a diffuse cluster. This is what stops a query for an item we
+  // do NOT stock ("wooden frog") from surfacing the whole figurine neighbourhood (horse,
+  // Buddha, Krishna…) just because they embed close together. Below the bar → NO_RELEVANT_MATCH.
+  const textVectorNames: string[] = gateConfidentVectorMatches(textVectorScored);
+  if (textVectorScored.length > 0) {
+    const raw = textVectorScored.map(h => `${h.name}=${h.similarity.toFixed(2)}`).join(', ');
+    console.info(`${label} [vector-gate] candidates: [${raw}] → kept: [${textVectorNames.join(', ') || 'none (diffuse/weak → NO_RELEVANT_MATCH)'}]`);
+  }
 
   // Merge text-vector results into priority names (after image vector, before token retrieval).
   // Only add names not already surfaced by the image vector search.

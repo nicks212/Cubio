@@ -316,7 +316,14 @@ export function extractCategoryKeywords(query: string): string[] | null {
     .map(stemGeoToken)
     .filter(t => !EN_STOPWORDS.has(t));
   for (const { queryKeywords, fieldPatterns } of EN_CATEGORY_MAP) {
-    if (tokens.some(t => queryKeywords.some(k => t === k || t.startsWith(k) || k.startsWith(t)))) {
+    if (tokens.some(t => queryKeywords.some(k =>
+      t === k ||
+      // Prefix matches require BOTH sides ≥ 4 chars — mirrors the scorer's getMatchedTokens
+      // guard. Without it, short tokens (esp. Georgian function words like "რო"/"ro") match
+      // a category keyword by prefix ("rosary".startsWith("ro")), dragging an unrelated
+      // category (and its products) into an unrelated query. "taro"→"tarot" still matches.
+      (t.length >= 4 && k.length >= 4 && (t.startsWith(k) || k.startsWith(t)))
+    ))) {
       return fieldPatterns;
     }
   }

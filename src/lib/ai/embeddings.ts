@@ -320,12 +320,21 @@ export async function searchSimilarApartments(
  */
 export const STRONG_PRODUCT_VECTOR_SIMILARITY = 0.45;
 
-export async function searchSimilarProducts(
+/** A product name plus its cosine similarity (0–1) to the query, from match_products. */
+export interface ScoredProductMatch { name: string; similarity: number }
+
+/**
+ * Like searchSimilarProducts but RETAINS the cosine similarity the match_products RPC
+ * already computes (it was previously discarded). Scores let callers tell a genuine,
+ * focused semantic match apart from a diffuse cluster of vaguely-related neighbours —
+ * see gateConfidentVectorMatches(). Ordered best-first.
+ */
+export async function searchSimilarProductsScored(
   companyId: string,
   queryText: string,
   limit = 5,
-  matchThreshold = 0.25,
-): Promise<string[]> {
+  matchThreshold = STRONG_PRODUCT_VECTOR_SIMILARITY,
+): Promise<ScoredProductMatch[]> {
   const embedding = await generateTextEmbedding(queryText, TaskType.RETRIEVAL_QUERY);
   if (!embedding) return [];
 
@@ -342,14 +351,32 @@ export async function searchSimilarProducts(
       if (error.message.includes('does not exist') || error.message.includes('function')) {
         console.info('[embeddings] match_products RPC not available — using text search');
       } else {
-        console.warn('[embeddings] searchSimilarProducts error:', error.message);
+        console.warn('[embeddings] searchSimilarProductsScored error:', error.message);
       }
       return [];
     }
 
-    return ((data ?? []) as Array<{ name: string }>).map(r => r.name);
+    return ((data ?? []) as Array<{ name: string; similarity: number | null }>).map(r => ({
+      name: r.name,
+      similarity: r.similarity ?? 0,
+    }));
   } catch (err) {
-    console.warn('[embeddings] searchSimilarProducts error (non-fatal):', err);
+    console.warn('[embeddings] searchSimilarProductsScored error (non-fatal):', err);
     return [];
   }
+}
+
+/**
+ * Name-only similarity search. Thin wrapper over searchSimilarProductsScored — keeps the
+ * existing image-similarity call sites (which want the looser 0.25 default) unchanged.
+ *
+ * @returns array of product names ordered by similarity (best match first)
+ */
+export async function searchSimilarProducts(
+  companyId: string,
+  queryText: string,
+  limit = 5,
+  matchThreshold = 0.25,
+): Promise<string[]> {
+  return (await searchSimilarProductsScored(companyId, queryText, limit, matchThreshold)).map(r => r.name);
 }
