@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import type { BusinessContext, ServiceContext } from '@/lib/ai';
-import { retrieveProducts, extractCategoryKeywords, retrieveProductsByCategory } from '@/lib/ai/productRetrieval';
+import { retrieveProducts, extractCategoryKeywords, retrieveProductsByCategory, normalizeProductName } from '@/lib/ai/productRetrieval';
 import type { BusinessType } from '@/types/database';
 import { generateAvailableSlots } from '@/lib/services/availability';
 import { parseRequestedDate } from '@/lib/services/dateParse';
@@ -154,8 +154,11 @@ export async function loadBusinessContext(
   const byName = (name: string): any => allProducts.find((p: any) => p.name.toLowerCase() === name.toLowerCase());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const matched: any[] = [];
+  // Dedup on a NORMALIZED name (case/whitespace/punctuation folded) so two almost-identical
+  // catalog entries (e.g. "ვარდისფერი კვარცი, ყელსაბამი" vs "ვარდისფერი კვარცი ყელსაბამი")
+  // surface only once instead of looking like the same product suggested twice.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pushUnique = (p: any) => { if (p && !matched.some(m => m.name.toLowerCase() === p.name.toLowerCase())) matched.push(p); };
+  const pushUnique = (p: any) => { if (p && !matched.some(m => normalizeProductName(m.name) === normalizeProductName(p.name))) matched.push(p); };
 
   let tokenRetrievalHitCount = 0;
   let categoryFallbackHitCount = 0;
@@ -230,25 +233,11 @@ export async function loadBusinessContext(
     console.info(`[loadBusinessContext] NO_RELEVANT_MATCH for "${retrievalQuery.slice(0, 40)}" — surfacing 0 products (recovery flow)`);
   }
 
-  // 5. Similar side-suggestions — when we DID find the requested product(s), append a
-  //    few same-category items so the assistant can emphasize the requested one and
-  //    then offer alternatives ("yes, we have the Doll Tarot — we also have …").
-  //    Skipped when nothing specific was requested (broad browse / category fallback /
-  //    weak best-effort already returns a set).
-  if (primaryMatchCount > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const primaryCat = String((matched[0] as any)?.category ?? '').toLowerCase().trim();
-    if (primaryCat) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sims = (allProducts as any[]).filter(p =>
-        p.in_stock &&
-        String(p.category ?? '').toLowerCase().trim() === primaryCat &&
-        !matched.some(m => m.name.toLowerCase() === p.name.toLowerCase()),
-      ).slice(0, 3);
-      for (const s of sims) pushUnique(s);
-      if (sims.length > 0) console.info(`[loadBusinessContext] appended ${sims.length} similar "${primaryCat}" suggestion(s) after ${primaryMatchCount} requested match(es)`);
-    }
-  }
+  // NOTE: We deliberately do NOT append proactive "similar" same-category suggestions.
+  // The reply may only name products the customer genuinely asked for (strong token ∪
+  // gated vector ∪ same-category-when-the-item-isn't-stocked). Auto-padding with extra
+  // shelf-mates is what produced duplicate-looking suggestions and let the catalog's
+  // populous categories (e.g. deity statues) ride into unrelated answers.
 
   return {
     products: allProducts,

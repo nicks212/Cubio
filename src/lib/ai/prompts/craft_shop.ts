@@ -1,39 +1,11 @@
 import type { ProductContext } from '../types';
 import { CRAFT_BROAD_QUERY_RE } from '../signals';
-import { translateProductForEnglish, compactCompanyInfoForEnglish, detectReplyLanguage } from '../geoTranslation';
+import { translateProductForEnglish, compactCompanyInfoForEnglish, translateToEnglish, detectReplyLanguage } from '../geoTranslation';
 
 type ProductRow = ProductContext['products'][0];
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[\s-]+/g, '_').slice(0, 40);
-}
-
-/**
- * Picks up to `limit` products spread across distinct categories (one per category
- * first, then fills any remainder). Used ONLY for broad "what do you sell?" browse
- * turns so the sample reflects the shop's actual range instead of the catalog's
- * insertion order — preventing one early-inserted category (e.g. statues) from
- * dominating the list. No hardcoded category names; purely structural.
- */
-function pickCategoryDiverse(products: ProductRow[], limit: number): ProductRow[] {
-  const picked: ProductRow[] = [];
-  const seenCategory = new Set<string>();
-  // First pass: one product per distinct category.
-  for (const p of products) {
-    if (picked.length >= limit) break;
-    const cat = (p.category ?? '').trim().toLowerCase();
-    if (cat && seenCategory.has(cat)) continue;
-    seenCategory.add(cat);
-    picked.push(p);
-  }
-  // Second pass: fill any remaining slots with not-yet-picked products.
-  if (picked.length < limit) {
-    for (const p of products) {
-      if (picked.length >= limit) break;
-      if (!picked.includes(p)) picked.push(p);
-    }
-  }
-  return picked;
 }
 
 function buildPhotoKeySection(products: ProductRow[], translatedNames?: Map<string, string>): string {
@@ -101,13 +73,24 @@ export function buildCraftShopSystemPrompt(
   // statues fill the empty slots on weak/ambiguous queries.
   const matched = (context.matchedProducts ?? []).filter(p => p.in_stock);
 
-  // Broad catalog browse ("what do you sell?") has no specific match. Show a
-  // category-diverse sample (one product per distinct category) so the reply reflects
-  // the real range of the shop rather than whatever happens to sit first in the DB.
+  // ONLY genuinely-matched products are ever named in a reply. A broad browse
+  // ("what do you sell?") has no specific match, so we surface the shop's CATEGORY NAMES
+  // (below) and ask the customer to narrow — we never dump a sample of specific products,
+  // which is how the catalog's populous categories (e.g. deity statues) used to leak in.
   const isBroadBrowse = matched.length === 0 && CRAFT_BROAD_QUERY_RE.test(userQuery);
-  const products = matched.length > 0
-    ? matched.slice(0, 6)
-    : (isBroadBrowse ? pickCategoryDiverse(available, 6) : []);
+  const products = matched.slice(0, 6);
+
+  // Distinct category names for the broad-browse overview (deduped, capped, non-empty).
+  const browseCategories: string[] = [];
+  if (isBroadBrowse) {
+    const seenCat = new Set<string>();
+    for (const p of available) {
+      const cat = (p.category ?? '').trim();
+      const key = cat.toLowerCase();
+      if (cat && !seenCat.has(key)) { seenCat.add(key); browseCategories.push(cat); }
+      if (browseCategories.length >= 8) break;
+    }
+  }
 
   // ── Translation preprocessing — architecture-level fix for Bug 1 ─────────
   // When the customer writes in English, all Georgian text fields are translated
@@ -222,6 +205,12 @@ export function buildCraftShopSystemPrompt(
         ? `PHOTO REQUEST: Your ENTIRE reply must be exactly one line — SHOW_PHOTOS: <key> — copying the key verbatim from PHOTO KEYS below. No other text before or after.`
         : `PHOTO REQUEST: No product matched. Ask the customer which product they want photos of.`,
     );
+  } else if (isBroadBrowse && browseCategories.length > 0) {
+    modeLines.push(
+      `CATALOG OVERVIEW: The customer is browsing broadly and named no specific item. ` +
+      `Do NOT list or invent specific products. In one warm, natural sentence, mention the ` +
+      `kinds of things we carry (see CATEGORIES WE CARRY below) and ask which type interests them.`,
+    );
   } else if (!hasProducts) {
     modeLines.push(
       `NO MATCH (we do NOT carry the requested item): ` +
@@ -316,6 +305,11 @@ export function buildCraftShopSystemPrompt(
       `REQUESTED — what the customer asked about (confirm & highlight these, with exact price):\n${requested}\n\n` +
       `SIMILAR OPTIONS — offer briefly as a couple of extra suggestions:\n${similar}`,
     );
+  } else if (isBroadBrowse && browseCategories.length > 0) {
+    // Broad browse: surface category NAMES only (no specific products) so populous
+    // categories can't leak specific items the customer never asked for.
+    const cats = isEnglishQuery ? browseCategories.map(c => translateToEnglish(c)) : browseCategories;
+    sections.push(`CATEGORIES WE CARRY (mention these naturally; do NOT name specific products):\n${cats.join(', ')}`);
   } else {
     sections.push(`PRODUCTS:\n${productLines}`);
   }

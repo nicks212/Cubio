@@ -13,41 +13,32 @@ import type { ScoredProductMatch } from './embeddings';
  * diffuse neighbourhood can never masquerade as the requested product.
  *
  * RULE (purely structural — no product names, no per-product logic):
- *   1. The single best hit must clear a CONFIDENT cosine bar. A genuine cross-language
- *      match (e.g. "ამეთვისტოს გულსაკიდი" → "Amethyst Pendant") sits well above it; a
- *      vaguely-related cluster sits below → everything is dropped (NO_RELEVANT_MATCH).
- *   2. Keep the leader plus any near-tie within a small margin (so two genuinely-relevant
- *      variants both surface), and drop the diffuse tail.
+ *   Keep every hit that clears a CONFIDENT cosine bar. A genuine match (e.g. cross-language
+ *   "ამეთვისტოს გულსაკიდი" → "Amethyst Pendant", or each of several requested stones) sits
+ *   above the bar and survives. A vaguely-related cluster — what a query for an item we do
+ *   NOT stock pulls in — sits BELOW the bar, so it all drops (NO_RELEVANT_MATCH). The bar
+ *   alone separates "asked-for" from "merely nearby"; we intentionally do NOT also collapse
+ *   to a single leader, because that discarded the 2nd/3rd genuinely-requested item.
  *
- * Both constants are tunable from production logs (searchSimilarProductsScored logs the
- * raw similarities, and gateConfidentVectorMatches logs its decision).
+ * The bar is tunable from production logs (searchSimilarProductsScored logs the raw
+ * similarities, and the caller logs the gate decision).
  */
 
 /** A text-vector hit must reach this cosine similarity to count as a real match. */
 export const CONFIDENT_VECTOR_SIMILARITY = 0.55;
 
-/** Keep hits within this cosine margin of the top hit; drop the rest as a diffuse tail. */
-export const VECTOR_LEADER_MARGIN = 0.08;
-
 /**
- * Filters scored vector hits down to genuinely-confident, focused matches.
- * Returns product names (best-first), or [] when the neighbourhood is diffuse/weak.
+ * Filters scored vector hits down to the genuinely-confident ones (≥ the bar).
+ * Returns product names (best-first), or [] when nothing is confident.
  * Pure function — no I/O — so it is fully unit-testable with synthetic scores.
  */
 export function gateConfidentVectorMatches(
   hits: ScoredProductMatch[],
   confidentBar = CONFIDENT_VECTOR_SIMILARITY,
-  leaderMargin = VECTOR_LEADER_MARGIN,
 ): string[] {
   if (hits.length === 0) return [];
-  const sorted = [...hits].sort((a, b) => b.similarity - a.similarity);
-  const top = sorted[0].similarity;
-
-  // 1. The best hit itself must be a confident semantic match.
-  if (top < confidentBar) return [];
-
-  // 2. Keep the leader and near-ties; drop the diffuse tail.
-  return sorted
-    .filter(h => h.similarity >= confidentBar && top - h.similarity <= leaderMargin)
+  return hits
+    .filter(h => h.similarity >= confidentBar)
+    .sort((a, b) => b.similarity - a.similarity)
     .map(h => h.name);
 }

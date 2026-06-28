@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { retrieveProducts, extractCategoryKeywords, type ProductLike } from '../productRetrieval';
+import { retrieveProducts, extractCategoryKeywords, normalizeProductName, type ProductLike } from '../productRetrieval';
 import { gateConfidentVectorMatches } from '../vectorGate';
 
 /**
@@ -58,9 +58,9 @@ describe('deterministic retrieval — genuine in-catalog queries still match (ga
   });
 });
 
-describe('vector relevance gate — diffuse clusters collapse, focused matches survive', () => {
+describe('vector relevance gate — confident bar keeps every genuine match, drops diffuse clusters', () => {
   it('diffuse figurine cluster (frog case) → [] (NO_RELEVANT_MATCH)', () => {
-    // Wooden-frog query pulls the whole figurine neighbourhood at ~0.45-0.50: no clear leader.
+    // Wooden-frog query pulls the whole figurine neighbourhood at ~0.45-0.50: all below the bar.
     const hits = [
       { name: 'ცხენი', similarity: 0.50 },
       { name: 'დრაკონი', similarity: 0.49 },
@@ -72,7 +72,7 @@ describe('vector relevance gate — diffuse clusters collapse, focused matches s
   });
 
   it('clear solo cross-language match → kept', () => {
-    // "ამეთვისტოს გულსაკიდი" → "Amethyst Pendant": one confident leader, weak rest.
+    // "ამეთვისტოს გულსაკიდი" → "Amethyst Pendant": one confident match, weak rest.
     const hits = [
       { name: 'Amethyst Pendant', similarity: 0.72 },
       { name: 'Silver Ring', similarity: 0.40 },
@@ -80,16 +80,42 @@ describe('vector relevance gate — diffuse clusters collapse, focused matches s
     expect(gateConfidentVectorMatches(hits)).toEqual(['Amethyst Pendant']);
   });
 
-  it('two genuine same-kind variants → both kept; weak tail dropped', () => {
+  it('THREE genuinely-requested stones with a spread → ALL kept (Bug B)', () => {
+    // Customer asked for several stones; each is genuinely confident (≥ 0.55) but spread
+    // across 0.72→0.60. The old leader-margin (0.08) wrongly dropped the 0.60 one.
     const hits = [
-      { name: 'Silver Ring', similarity: 0.70 },
-      { name: 'Gold Ring', similarity: 0.65 },
-      { name: 'Necklace', similarity: 0.45 },
+      { name: 'Rose Quartz', similarity: 0.72 },
+      { name: 'Selenite', similarity: 0.66 },
+      { name: 'Amethyst', similarity: 0.60 },
     ];
-    expect(gateConfidentVectorMatches(hits)).toEqual(['Silver Ring', 'Gold Ring']);
+    expect(gateConfidentVectorMatches(hits)).toEqual(['Rose Quartz', 'Selenite', 'Amethyst']);
+  });
+
+  it('mixed: confident requested items kept, sub-bar neighbours dropped', () => {
+    const hits = [
+      { name: 'Rose Quartz', similarity: 0.70 },
+      { name: 'Selenite', similarity: 0.58 },
+      { name: 'Buddha', similarity: 0.49 },
+      { name: 'Krishna', similarity: 0.47 },
+    ];
+    expect(gateConfidentVectorMatches(hits)).toEqual(['Rose Quartz', 'Selenite']);
   });
 
   it('empty input → []', () => {
     expect(gateConfidentVectorMatches([])).toEqual([]);
+  });
+});
+
+describe('product-name normalization — near-identical entries collapse to one', () => {
+  it('same name differing only by punctuation/whitespace/case normalizes equal', () => {
+    const a = normalizeProductName('ვარდისფერი კვარცი, ყელსაბამი');
+    const b = normalizeProductName('ვარდისფერი კვარცი ყელსაბამი ');
+    const c = normalizeProductName('ვარდისფერი  კვარცი   ყელსაბამი');
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+  });
+
+  it('genuinely different products do NOT collapse', () => {
+    expect(normalizeProductName('Rose Quartz')).not.toBe(normalizeProductName('Rose Quartz Necklace'));
   });
 });

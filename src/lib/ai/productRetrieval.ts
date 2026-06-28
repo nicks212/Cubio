@@ -217,6 +217,16 @@ export function normalizeQuery(query: string): string {
   return q;
 }
 
+/**
+ * Normalizes a product NAME for duplicate detection: folds case, and collapses all
+ * punctuation/whitespace runs to a single space. Keeps the original script (no Latin
+ * transliteration) so two near-identical catalog entries that differ only by a comma,
+ * trailing space, or casing are treated as the same product and surfaced once.
+ */
+export function normalizeProductName(name: string): string {
+  return name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
 // ─── Category-level fallback retrieval ────────────────────────────────────────
 // Used when full-text retrieval returns 0 results for a query that contains a
 // recognisable product category keyword (e.g. "square shaped candles" → candle).

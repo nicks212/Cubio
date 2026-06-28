@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { generateReply, generateEscalationHandoff } from '@/lib/ai';
 import { analyzeLeadState } from '@/lib/leads/detector';
-import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE, CRAFT_BROAD_QUERY_RE, REFERENCE_FOLLOWUP_RE, MORE_LIKE_RE, URL_RE } from '@/lib/ai/signals';
+import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE, CRAFT_BROAD_QUERY_RE, REFERENCE_FOLLOWUP_RE, URL_RE } from '@/lib/ai/signals';
 import { detectLeadAndEscalation } from '@/lib/ai/detect';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
@@ -12,7 +12,7 @@ import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
 import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts, searchSimilarProductsScored, STRONG_PRODUCT_VECTOR_SIMILARITY, type ScoredProductMatch } from '@/lib/ai/embeddings';
 import { gateConfidentVectorMatches } from '@/lib/ai/vectorGate';
 import { persistAIUsage } from '@/lib/ai/usage';
-import { normalizeQuery, retrieveProducts } from '@/lib/ai/productRetrieval';
+import { normalizeQuery, retrieveProducts, normalizeProductName } from '@/lib/ai/productRetrieval';
 import { translateProductForEnglish, detectReplyLanguage, compactCompanyInfoForEnglish } from '@/lib/ai/geoTranslation';
 import { redis } from '@/lib/redis';
 import { createHash } from 'crypto';
@@ -407,10 +407,18 @@ export async function processIncomingMessage(
         // Vector is the strongest signal, so these lead — but they NEVER pad with
         // unmatched catalog rows.
         const existingMatched = prodCtx.matchedProducts ?? [];
-        const matchedNames = new Set(existingMatched.map(p => p.name.toLowerCase()));
-        const newMatched = newNames
-          .map(n => allProds.find(p => p.name.toLowerCase() === n.toLowerCase()))
-          .filter((p): p is ProductContext['products'][0] => !!p && !matchedNames.has(p.name.toLowerCase()));
+        // Dedup on normalized name so a vector hit that is a near-duplicate of an already
+        // matched product (or of another vector hit) is not surfaced twice.
+        const seenNorm = new Set(existingMatched.map(p => normalizeProductName(p.name)));
+        const newMatched: ProductContext['products'] = [];
+        for (const n of newNames) {
+          const prod = allProds.find(p => p.name.toLowerCase() === n.toLowerCase());
+          if (!prod) continue;
+          const norm = normalizeProductName(prod.name);
+          if (seenNorm.has(norm)) continue;
+          seenNorm.add(norm);
+          newMatched.push(prod);
+        }
         prodCtx.matchedProducts = [...newMatched, ...existingMatched];
       }
     }
@@ -517,7 +525,7 @@ export async function processIncomingMessage(
     REFERENCE_FOLLOWUP_RE.test(combinedMessage)
   ) {
     const pc = finalBusinessContext as ProductContext;
-    const resolved = resolveDiscussedProducts(pc.products, history, lastShownApt, MORE_LIKE_RE.test(combinedMessage));
+    const resolved = resolveDiscussedProducts(pc.products, history, lastShownApt);
     if (resolved.length > 0) {
       pc.matchedProducts = resolved;
       pc.tokenRetrievalHits = resolved.length;
@@ -999,17 +1007,17 @@ function stripInternalReplyArtifacts(text: string): string {
 
 /**
  * Resolves the product(s) a follow-up message implicitly refers to, for conversational
- * reference resolution ("what's the price?", "I like it", "show me another").
+ * reference resolution ("what's the price?", "I like it").
  * Sources (NO hardcoded names): (1) the last shown product, (2) products named in the
  * most recent AI message, matched against the catalog in original OR English-translated
- * form. When `wantAlternatives` is set, same-category siblings are appended so
- * "another/similar" surfaces real alternatives. Returns up to 6 products, discussed-first.
+ * form. Resolves ONLY the specifically-referenced product(s) — it never expands into
+ * same-category siblings (that let populous categories leak in). Returns up to 6,
+ * discussed-first.
  */
 function resolveDiscussedProducts(
   products: ProductContext['products'],
   history: MessageHistoryEntry[],
   lastShownId: string | null,
-  wantAlternatives: boolean,
 ): ProductContext['products'] {
   const out: ProductContext['products'] = [];
   const seen = new Set<string>();
@@ -1034,16 +1042,11 @@ function resolveDiscussedProducts(
       if ((n1.length >= 3 && hay.includes(n1)) || (n2.length >= 3 && hay.includes(n2))) add(p);
     }
   }
-  // 3. "another / similar / more" → append same-category siblings of the first discussed product.
-  if (wantAlternatives && out.length > 0) {
-    const cat = (out[0].category ?? '').trim().toLowerCase();
-    if (cat) {
-      for (const p of products) {
-        if (out.length >= 6) break;
-        if ((p.category ?? '').trim().toLowerCase() === cat) add(p);
-      }
-    }
-  }
+  // NOTE: We deliberately do NOT expand "another / similar / more" into same-category
+  // siblings. Dumping every shelf-mate is what let populous categories (deity statues)
+  // ride into a follow-up the customer didn't ask for. We resolve ONLY the specific
+  // product(s) actually referenced; if the customer wants other options and we have no
+  // genuine match, the recovery flow honestly points them to call/visit.
   return out.slice(0, 6);
 }
 
@@ -1057,13 +1060,32 @@ function guardCraftCatalogReply(
     return { reply, replaced: false, reason: null };
   }
 
-  const retrievalHits = retrieveProducts(context.products, userMessage, 0.22);
-  const topConfidence = retrievalHits[0]?.confidence ?? 0;
   const budgetRaw = /(\d[\d,\s]*)\s*(?:₾|\$|gel|lari|ლარ)/i.exec(userMessage);
   const customerBudget = budgetRaw ? parseFloat(budgetRaw[1].replace(/[,\s]/g, '')) : null;
   const broadCatalogQuery = CRAFT_BROAD_QUERY_RE.test(userMessage);
-  const vectorSearchHitGuard = (context.vectorHits ?? 0) > 0;
-  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || retrievalHits.length > 0 || vectorSearchHitGuard;
+
+  // The ONLY products this reply may name are the ones genuinely surfaced THIS turn.
+  // Anything else it names is an unsupported recommendation (history echo, or a product
+  // that slipped in through any other path) and gets rewritten — this is what makes the
+  // "only suggest what was asked for & in stock" rule hold identically on every turn.
+  const surfacedProducts = (context.matchedProducts ?? []).filter(p => p.in_stock);
+  const surfacedNorm = new Set(surfacedProducts.map(p => normalizeProductName(p.name)));
+  const surfacedHits = surfacedProducts.map(p => ({ name: p.name, confidence: 1 }));
+  const hasSurfaced = surfacedNorm.size > 0;
+
+  const normalizedReply = normalizeQuery(reply);
+  const surfacedQueryNames = surfacedProducts.map(p => normalizeQuery(p.name)).filter(n => n.length >= 3);
+  const mentionedUnsurfacedProduct = context.products.some(p => {
+    if (surfacedNorm.has(normalizeProductName(p.name))) return false;
+    const n = normalizeQuery(p.name);
+    if (n.length < 3 || !normalizedReply.includes(n)) return false;
+    // Ignore a generic name that is merely a substring of a surfaced product the reply
+    // legitimately named (e.g. unsurfaced "Quartz" inside surfaced "Rose Quartz").
+    if (surfacedQueryNames.some(sn => sn.includes(n))) return false;
+    return true;
+  });
+
+  const shouldListSpecificProducts = !!context.imageSearchQuery || customerBudget !== null || hasSurfaced;
   const shouldUseCatalogOverview = broadCatalogQuery || customerBudget !== null;
   const needsClarifyingQuestion = !shouldListSpecificProducts && !shouldUseCatalogOverview;
   const mentionedAllowedProduct = replyMentionsCatalogProduct(reply, context.products);
@@ -1080,7 +1102,7 @@ function guardCraftCatalogReply(
   const wrongProductPrice = validateCraftProductPricePairing(reply, context.products);
   const inventedProductName = replyContainsInventedProductName(reply, context.products);
 
-  if (!invalidPhone && !suspiciousVagueRecommendation && !unsupportedPrice && !wrongProductPrice && !inventedProductName) {
+  if (!invalidPhone && !suspiciousVagueRecommendation && !unsupportedPrice && !wrongProductPrice && !inventedProductName && !mentionedUnsurfacedProduct) {
     return { reply, replaced: false, reason: null };
   }
 
@@ -1092,10 +1114,12 @@ function guardCraftCatalogReply(
         ? 'wrong_product_price'
         : inventedProductName
           ? 'invented_product_name'
-          : 'vague_turn_recommendation';
+          : mentionedUnsurfacedProduct
+            ? 'unrequested_product'
+            : 'vague_turn_recommendation';
 
   return {
-    reply: buildSafeCraftReply(userMessage, context, retrievalHits, reason, replyLanguage),
+    reply: buildSafeCraftReply(userMessage, context, surfacedHits, reason, replyLanguage),
     replaced: true,
     reason,
   };
