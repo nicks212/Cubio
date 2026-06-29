@@ -30,6 +30,21 @@ export const LANGUAGE_RULE =
   'Transliterate personal and place names rather than translating them ' +
   '(e.g. "Ia Kargareteli" stays as "Ia Kargareteli", not translated to a meaning).';
 
+/**
+ * Forceful, top-priority language directive. LANGUAGE_RULE (above) carries the detailed
+ * translation examples but sits mid-prompt; on a Georgian-business prompt the model would
+ * sometimes default the whole reply to Georgian even for an English customer, and would
+ * leave catalog product names in their stored Latin spelling inside a Georgian reply
+ * (half-Georgian / half-English). This lock is injected FIRST so the output language and
+ * script are decided up front and applied to every word — including product names.
+ */
+export const LANGUAGE_LOCK =
+  'LANGUAGE LOCK (highest priority — overrides every other instruction): Write your ENTIRE reply in EXACTLY ONE language, decided from THIS customer message. ' +
+  'If the message is in English (or any non-Georgian language) → reply 100% in English. ' +
+  'If the message is Georgian — either Georgian script OR Georgian typed in Latin letters ("gamarjoba", "minda", "gaqvs", "bina") → reply 100% in Georgian. ' +
+  'NEVER mix two languages or scripts in one reply. Write EVERY product name in the SAME language/script as the rest of your reply — transliterate it phonetically when the catalog stores it differently (e.g. in a Georgian reply write "ოპალი", not "Opali"; "ლაბრადორიტი", not "Labradorite"). ' +
+  'Keep numeric prices and genuinely-branded English titles (e.g. "The Wild Wood Tarot") exactly as given.';
+
 export function buildGlobalSystemPrompt(photosSent = false): string {
   const photoRule = photosSent
     ? `PHOTOS: Photos were sent earlier in this conversation. Re-send them whenever the customer asks — emit SHOW_PHOTOS: XXXX as usual. Never refuse to re-send photos when asked. Never say "photos were already sent" as a refusal.`

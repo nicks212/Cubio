@@ -1,5 +1,5 @@
 import { model } from './model';
-import { buildGlobalSystemPrompt, LANGUAGE_RULE } from './prompts/global';
+import { buildGlobalSystemPrompt, LANGUAGE_RULE, LANGUAGE_LOCK } from './prompts/global';
 import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
 import { buildBeautySalonSystemPrompt } from './prompts/beauty_salon';
@@ -151,6 +151,7 @@ export async function generateReply(
       ? `This is their very first message: you MUST open with a warm greeting AND clearly tell them — naturally, in your own words, never a canned line — that they're chatting with the business's AI assistant who can ${PROFILE_COPY[businessType].scope}. This transparency is required on this first message only. `
       : '';
     const chatSystemInstruction =
+      `${LANGUAGE_LOCK} ` +
       `You are a warm, natural sales assistant${bizHint}. ` +
       `${domainFence} ` +
       `${LANGUAGE_RULE} ` +
@@ -241,6 +242,9 @@ export async function generateReply(
       'ESCALATION (this turn only): Include a brief, natural offer to connect the customer with a company representative — one sentence, no apologies. Ask if they would like that.',
     );
   }
+  // Language lock goes in LAST so it lands FIRST (unshift) — ahead of NO GREETING / LINK
+  // RULE — making it the single highest-priority directive the model reads.
+  systemParts.unshift(LANGUAGE_LOCK);
   const systemInstructionText = systemParts.filter(Boolean).join('\n\n');
 
   // ── Token-guarded history slice ────────────────────────────────────────────
