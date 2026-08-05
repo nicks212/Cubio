@@ -169,10 +169,11 @@ function assemble(o: {
       ? fullCompanyInfoForEnglish(o.businessDescription)
       : compactCompanyInfo(o.businessDescription);
     sections.push(
-      `COMPANY INFO (the salon's own details — authoritative): ${infoText}\n` +
-      `  • This may include a temporary CLOSURE, holiday, or announcement. When the customer asks about hours, ` +
-      `whether you're open (now or on a given date), or visiting, read this carefully and state any such detail; ` +
-      `never contradict it or invent hours/closures not written here.`,
+      `COMPANY INFO — the salon's own details, your authoritative background knowledge (NOT a script to read out): ${infoText}\n` +
+      `  • Treat this as knowledge in your head and weave only the relevant bit into your reply NATURALLY, in your own warm words, the way one person explains to another. NEVER quote, copy, or paste sentences from it, and never repeat an announcement word-for-word. ` +
+      `It may hold hours, a temporary CLOSURE/holiday, an announcement, or rules (e.g. whether pets are welcome). ` +
+      `When the customer asks anything about the salon — open now or on a date, visiting, etc. — answer conversationally and fold in any relevant detail (e.g. "yes, we're open today until 9 PM — just so you know, we'll be closed Aug 7–16"). ` +
+      `Never contradict this info and never invent hours/closures/terms that aren't written here.`,
     );
   }
 

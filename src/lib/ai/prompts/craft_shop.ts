@@ -268,11 +268,11 @@ export function buildCraftShopSystemPrompt(
       ? fullCompanyInfoForEnglish(context.businessDescription)
       : compactCompanyInfo(context.businessDescription);
     sections.push(
-      `COMPANY INFO (the shop's own details — authoritative): ${infoText}\n` +
-      `  • This may include a temporary CLOSURE, holiday, delivery/payment terms, or an announcement. ` +
-      `When the customer asks about hours, whether you're open (now or on a given date), visiting, or delivery, ` +
-      `read this carefully and state any such detail; never contradict it or claim you lack the info if it's written here. ` +
-      `Do NOT invent delivery, shipping, payment or schedule details that are not written here.`,
+      `COMPANY INFO — the shop's own details, your authoritative background knowledge (NOT a script to read out): ${infoText}\n` +
+      `  • Treat this as knowledge in your head and weave only the relevant bit into your reply NATURALLY, in your own warm words, the way one person explains to another. NEVER quote, copy, or paste sentences from it, never repeat a formal announcement word-for-word, and never dump the whole thing. ` +
+      `It may hold hours, a temporary CLOSURE/holiday, delivery or payment terms, an announcement, or rules like whether pets are welcome. ` +
+      `When the customer asks anything about the shop — open now or on a date, visiting, delivery, pets, etc. — answer conversationally and fold in any relevant detail (e.g. "yes, we're open today until 9 PM — just so you know, we'll be closed Aug 7–16" or "of course, you're welcome, and pets are fine too"). ` +
+      `Never contradict this info, never claim you lack something that's written here, and never invent details that aren't.`,
     );
   }
 
