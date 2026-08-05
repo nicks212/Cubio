@@ -320,6 +320,19 @@ export function compactCompanyInfoForEnglish(raw: string | null): string {
   return translateToEnglish(n.slice(0, 160));
 }
 
+/**
+ * FULL shop description rendered for an English reply — whitespace-normalized, capped to
+ * the stored 1000-char limit, with every Georgian word translated to English so that
+ * closures, holidays, delivery terms, promos and policies the owner wrote SURVIVE.
+ * Unlike compactCompanyInfoForEnglish (which keeps only address/hours/phone), this keeps
+ * everything. Prices, numbers and Latin/English text pass through unchanged.
+ */
+export function fullCompanyInfoForEnglish(raw: string | null): string {
+  if (!raw) return '';
+  const n = raw.replace(/\s+/g, ' ').trim().slice(0, 1000);
+  return translateToEnglish(n);
+}
+
 // Type constraint for product translation — matches ProductContext['products'][0]
 type TranslatableProduct = {
   name: string;

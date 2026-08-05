@@ -1,6 +1,6 @@
 import type { ProductContext } from '../types';
 import { CRAFT_BROAD_QUERY_RE } from '../signals';
-import { translateProductForEnglish, compactCompanyInfoForEnglish, translateToEnglish, detectReplyLanguage } from '../geoTranslation';
+import { translateProductForEnglish, fullCompanyInfoForEnglish, translateToEnglish, detectReplyLanguage } from '../geoTranslation';
 
 type ProductRow = ProductContext['products'][0];
 
@@ -25,12 +25,11 @@ function buildPhotoKeySection(products: ProductRow[], translatedNames?: Map<stri
 
 function compactCompanyInfo(raw: string | null): string {
   if (!raw) return '';
-  const n = raw.replace(/\s+/g, ' ').trim();
-  const phone = /(?:\+?\d[\d\s\-()]{5,15}\d)/.exec(n)?.[0]?.trim() ?? null;
-  const hours = /(?:მუშაობს|working hours?|open)\s*[^,.\n]{0,80}/i.exec(n)?.[0]?.trim() ?? null;
-  const addr = /(?:მისამართი|address)\s*[:,-]?\s*[^,.\n]{3,80}/i.exec(n)?.[0]?.trim() ?? null;
-  const parts = [addr, hours, phone ? `phone ${phone}` : null].filter(Boolean);
-  return parts.length > 0 ? parts.join(' | ') : n.slice(0, 140);
+  // Send the FULL owner-written description (whitespace-normalized, capped to the stored
+  // 1000-char limit) — NOT just address/hours/phone. The owner may put a temporary
+  // closure, holiday, delivery terms, promo or policy anywhere in this text; stripping it
+  // to three fields is exactly what made the AI miss the "closed Aug 7–16" notice.
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 1000);
 }
 
 /**
@@ -118,13 +117,17 @@ export function buildCraftShopSystemPrompt(
   // so its non-emptiness IS the retrieval signal — no separate guard needed.
   const hasProducts = displayProducts.length > 0;
 
-  // Product line WITHOUT the category label — the assistant must refer to products by
-  // their own names, not announce/repeat the category for each item.
+  // The customer-facing part of each line is ONLY "Name: Price". The description is put
+  // on its own indented "about" line, clearly labelled as context — so the model uses it
+  // to understand/describe the item but never fuses it into the product NAME it shows
+  // (which produced names like "The Original Tarot Klasikuri Raideri").
   const fmtLine = (p: typeof displayProducts[number]) => {
     const sym = p.currency === 'USD' ? '$' : '₾';
-    const parts: string[] = [`• ${p.name}: ${sym}${p.price}`];
-    if (p.description) parts.push((p.description as string).slice(0, 120));
-    return parts.join(' | ');
+    const line = `• ${p.name}: ${sym}${p.price}`;
+    if (p.description) {
+      return `${line}\n    (about — context only, NOT part of the name: ${(p.description as string).slice(0, 120)})`;
+    }
+    return line;
   };
 
   // Split into directly-REQUESTED product(s) vs SIMILAR side-suggestions so the reply
@@ -166,8 +169,10 @@ export function buildCraftShopSystemPrompt(
       );
     } else if (products.length >= 2) {
       modeLines.push(
-        `PRESENT: Present each matched product by name with its exact price, naturally and conversationally. ` +
-        `Refer to products by their own names; do NOT repeat the product category for each item.`,
+        `PRESENT: If one of the PRODUCTS below is exactly the item the customer named, present it directly by name and price. ` +
+        `If NONE of them is the specific item they asked for (they are related/same-category options, not an exact match), ` +
+        `FIRST briefly and honestly say we don't have that specific item, THEN offer these as similar options ("we don't have X, but we do have Y and Z"). ` +
+        `Only ever offer genuinely related items — never unrelated ones. Refer to products by their own names; do NOT repeat the category for each item.`,
       );
     }
   }
@@ -178,11 +183,12 @@ export function buildCraftShopSystemPrompt(
   if (opts.transactional) {
     modeLines.push(
       `ORDER & LOGISTICS: The customer is discussing the purchase itself — ordering, quantity, ` +
-      `pre-order, reservation, bulk, or delivery — not just browsing. Acknowledge their request ` +
-      `warmly and address the ordering/quantity/logistics question FIRST, in your own words ` +
-      `(confirm what's possible and ask the single most useful clarifying detail, e.g. how many or when). ` +
-      `You MAY briefly mention that relevant options exist in PRODUCTS, but do NOT open with or dump a product list. ` +
-      `Treat this as a serious buyer.`,
+      `pre-order, reservation, bulk, delivery or payment. Acknowledge their request warmly and address it FIRST. ` +
+      `CRITICAL: For delivery, shipping, payment methods or any such terms/prices, state ONLY what is written in ` +
+      `COMPANY INFO. If it is not written there, do NOT invent a price, fee, or method — instead say those can be ` +
+      `arranged by contacting or visiting the shop, and share the phone/address from COMPANY INFO. ` +
+      `Ask the single most useful clarifying detail (e.g. how many, or which item). Do NOT open with or dump a ` +
+      `product list, and do NOT attach an unrelated product to a logistics question.`,
     );
   }
 
@@ -255,12 +261,19 @@ export function buildCraftShopSystemPrompt(
   ];
 
   if (context.businessDescription) {
-    // Use English-formatted company info when customer writes English.
-    // compactCompanyInfoForEnglish() deterministically translates address/hours patterns.
+    // FULL owner-written description (translated for English replies). It may contain a
+    // temporary closure, holiday, delivery terms, promo or policy — all of which the AI
+    // must be able to see and honour.
     const infoText = isEnglishQuery
-      ? compactCompanyInfoForEnglish(context.businessDescription)
+      ? fullCompanyInfoForEnglish(context.businessDescription)
       : compactCompanyInfo(context.businessDescription);
-    sections.push(`COMPANY INFO: ${infoText}`);
+    sections.push(
+      `COMPANY INFO (the shop's own details — authoritative): ${infoText}\n` +
+      `  • This may include a temporary CLOSURE, holiday, delivery/payment terms, or an announcement. ` +
+      `When the customer asks about hours, whether you're open (now or on a given date), visiting, or delivery, ` +
+      `read this carefully and state any such detail; never contradict it or claim you lack the info if it's written here. ` +
+      `Do NOT invent delivery, shipping, payment or schedule details that are not written here.`,
+    );
   }
 
   sections.push(
@@ -273,7 +286,7 @@ export function buildCraftShopSystemPrompt(
       `  • Quote prices exactly as listed — never recall a price from conversation history.`,
       `  • Only name products in the PRODUCTS list — never invent or recall a product not listed here.`,
       `  • If PRODUCTS shows "(no products matched this message)" — ask one clarifying question before naming any product or price.`,
-      `PRESENTATION: Refer to every product by its own name with its exact price. NEVER announce or repeat the product category for each item (avoid patterns like "tarot card X tarot, tarot card Y tarot"). Sound natural and conversational — not a mechanical list.`,
+      `PRESENTATION: Refer to every product by its EXACT name (the text before the ":") with its exact price. NEVER append the category, material, or any "about" text to the product name — the "about" note is only to help you describe it in a sentence, never part of the name. Avoid patterns like "tarot card X tarot". Sound natural and conversational — not a mechanical list.`,
       `CATEGORY FALLBACK: If the customer asked for a specific item that is not present in PRODUCTS:`,
       `  • Identify the semantic category of what they requested (e.g. stone → crystals/minerals; candle → candles; tarot → tarot decks).`,
       `  • Suggest ONLY alternatives from that same category found in PRODUCTS.`,

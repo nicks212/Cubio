@@ -84,7 +84,7 @@ export function buildRealEstateSystemPrompt(
     : '';
 
   const businessInfo = context.businessDescription
-    ? `COMPANY INFO: ${context.businessDescription}\n\n`
+    ? `COMPANY INFO (the company's own details — authoritative; may include a temporary closure, holiday, hours, or announcement — state such details when asked about hours/visiting, and never invent hours/closures/terms not written here): ${context.businessDescription}\n\n`
     : '';
 
   const filterNote = (wantRooms ?? maxPrice)

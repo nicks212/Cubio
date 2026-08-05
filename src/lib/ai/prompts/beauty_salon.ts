@@ -1,5 +1,5 @@
 import type { ServiceContext } from '../types';
-import { compactCompanyInfoForEnglish, detectReplyLanguage } from '../geoTranslation';
+import { fullCompanyInfoForEnglish, detectReplyLanguage } from '../geoTranslation';
 
 type ServiceRow = ServiceContext['services'][0];
 
@@ -13,12 +13,9 @@ const SERVICE_BROAD_QUERY_RE =
 /** Compact the free-text business_description down to address / hours / phone. */
 function compactCompanyInfo(raw: string | null): string {
   if (!raw) return '';
-  const n = raw.replace(/\s+/g, ' ').trim();
-  const phone = /(?:\+?\d[\d\s\-()]{5,15}\d)/.exec(n)?.[0]?.trim() ?? null;
-  const hours = /(?:მუშაობს|working hours?|open)\s*[^,.\n]{0,80}/i.exec(n)?.[0]?.trim() ?? null;
-  const addr = /(?:მისამართი|address)\s*[:,-]?\s*[^,.\n]{3,80}/i.exec(n)?.[0]?.trim() ?? null;
-  const parts = [addr, hours, phone ? `phone ${phone}` : null].filter(Boolean);
-  return parts.length > 0 ? parts.join(' | ') : n.slice(0, 140);
+  // FULL owner-written description (not just address/hours/phone) so temporary closures,
+  // holidays, and announcements reach the AI. Whitespace-normalized, capped to 1000.
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 1000);
 }
 
 /**
@@ -169,9 +166,14 @@ function assemble(o: {
 
   if (o.businessDescription) {
     const infoText = o.isEnglishQuery
-      ? compactCompanyInfoForEnglish(o.businessDescription)
+      ? fullCompanyInfoForEnglish(o.businessDescription)
       : compactCompanyInfo(o.businessDescription);
-    sections.push(`COMPANY INFO: ${infoText}`);
+    sections.push(
+      `COMPANY INFO (the salon's own details — authoritative): ${infoText}\n` +
+      `  • This may include a temporary CLOSURE, holiday, or announcement. When the customer asks about hours, ` +
+      `whether you're open (now or on a given date), or visiting, read this carefully and state any such detail; ` +
+      `never contradict it or invent hours/closures not written here.`,
+    );
   }
 
   sections.push(
