@@ -67,9 +67,10 @@ function formatPrice(s: ServiceRow): string {
 export function buildBeautySalonSystemPrompt(
   context: ServiceContext,
   userQuery = '',
-  opts: { replyLanguage?: 'ka' | 'en' } = {},
+  opts: { replyLanguage?: 'ka' | 'en'; offerExhausted?: boolean } = {},
 ): string {
   const isEnglishQuery = (opts.replyLanguage ?? detectReplyLanguage(userQuery)) === 'en';
+  const offerExhausted = opts.offerExhausted === true;
 
   const available = context.services.filter(s => s.active);
   const catFallbackHits = context.categoryFallbackHits ?? 0;
@@ -105,27 +106,41 @@ export function buildBeautySalonSystemPrompt(
   // ── Conditional instruction blocks ──────────────────────────────────────────
   const modeLines: string[] = [];
 
-  if (hasServices && services.length >= 2) {
-    modeLines.push(`PRESENT ALL: ${services.length} services matched. List every one with its name, price, and duration — do not omit or summarize any.`);
-  }
-
-  // Category alternatives — only same-category services were promoted (no specific match).
-  if (catFallbackHits > 0 && (context.tokenRetrievalHits ?? 0) === 0) {
+  // "Already answered / keeps asking" guard: the customer is restating a request we've
+  // already declined and nothing relevant matched again this turn. Suppress ALL service
+  // output and reply naturally — never re-run a fresh list of alternatives.
+  if (offerExhausted) {
     modeLines.push(
-      `CATEGORY ALTERNATIVES: The exact service requested isn't listed. The SERVICES below are ` +
-      `same-category alternatives only. Acknowledge that, then present ONLY these. ` +
-      `FORBIDDEN: do not name services from any other category.`,
+      `ALREADY ANSWERED — the customer is asking again for a service we've already told them we ` +
+      `don't offer, and nothing fits this turn either. Do NOT list, name, or suggest any service ` +
+      `(there are none to offer). In ONE warm, brief, natural sentence, gently acknowledge we still ` +
+      `don't provide that specific service, then either invite them to visit or contact us or ask what ` +
+      `OTHER area (hair, nails, skincare, brows…) they'd like. Vary your wording from your previous ` +
+      `reply; never repeat the same phrasing and never push more options.`,
     );
-  }
+  } else {
+    if (hasServices && services.length >= 2) {
+      modeLines.push(`PRESENT ALL: ${services.length} services matched. List every one with its name, price, and duration — do not omit or summarize any.`);
+    }
 
-  if (!hasServices) {
-    modeLines.push(
-      `NO MATCH (we do NOT offer the requested service): ` +
-      `(1) Honestly and warmly acknowledge we don't currently offer that specific service. ` +
-      `(2) NEVER name, price, or substitute an unrelated service. ` +
-      `(3) Continue naturally: in one short sentence, ask what area or concern they have ` +
-      `(e.g. hair, nails, skincare, brows) and offer to show what we do provide. Keep it to ~2 short, friendly sentences.`,
-    );
+    // Category alternatives — only same-category services were promoted (no specific match).
+    if (catFallbackHits > 0 && (context.tokenRetrievalHits ?? 0) === 0) {
+      modeLines.push(
+        `CATEGORY ALTERNATIVES: The exact service requested isn't listed. The SERVICES below are ` +
+        `same-category alternatives only. Acknowledge that, then present ONLY these. ` +
+        `FORBIDDEN: do not name services from any other category.`,
+      );
+    }
+
+    if (!hasServices) {
+      modeLines.push(
+        `NO MATCH (we do NOT offer the requested service): ` +
+        `(1) Honestly and warmly acknowledge we don't currently offer that specific service. ` +
+        `(2) NEVER name, price, or substitute an unrelated service. ` +
+        `(3) Continue naturally: in one short sentence, ask what area or concern they have ` +
+        `(e.g. hair, nails, skincare, brows) and offer to show what we do provide. Keep it to ~2 short, friendly sentences.`,
+      );
+    }
   }
 
   // ── Availability context (deterministic backend data the assistant reasons over) ──
@@ -149,6 +164,7 @@ export function buildBeautySalonSystemPrompt(
     modeLines,
     serviceLines,
     hasServices,
+    offerExhausted,
   });
 }
 
@@ -161,6 +177,7 @@ function assemble(o: {
   modeLines: string[];
   serviceLines: string;
   hasServices: boolean;
+  offerExhausted: boolean;
 }): string {
   const sections: string[] = ['BEAUTY / AESTHETICS SERVICE ASSISTANT'];
 
@@ -222,7 +239,11 @@ function assemble(o: {
     sections.push(o.modeLines.join('\n'));
   }
 
-  sections.push(`SERVICES:\n${o.serviceLines}`);
+  // When we've already said we don't offer this and the customer keeps asking, omit the
+  // SERVICES list entirely — the ALREADY ANSWERED instruction handles the whole reply.
+  if (!o.offerExhausted) {
+    sections.push(`SERVICES:\n${o.serviceLines}`);
+  }
 
   return sections.join('\n\n').trim();
 }

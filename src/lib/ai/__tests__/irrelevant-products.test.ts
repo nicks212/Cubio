@@ -80,6 +80,35 @@ describe('vector relevance gate — confident bar keeps every genuine match, dro
     expect(gateConfidentVectorMatches(hits)).toEqual(['Amethyst Pendant']);
   });
 
+  it('mid-strength diffuse cluster (Tibetan-bowl case) → [] (NO_RELEVANT_MATCH)', () => {
+    // Item we do NOT stock. In a tiny thematically-uniform esoteric catalog the whole
+    // "spiritual" cluster creeps just over the 0.55 bar, but NONE reaches the 0.62 leader
+    // bar — so there is no confident "here is the item" and the lot is dropped. This is the
+    // exact production failure: "თასი" surfaced incense/mandala/sun/Buddha as "similar".
+    const hits = [
+      { name: 'ცხენი', similarity: 0.60 },
+      { name: 'ტაროს დასტა', similarity: 0.59 },
+      { name: 'საკმეველი', similarity: 0.58 },
+      { name: 'მანდალას სიმბოლო', similarity: 0.57 },
+      { name: 'ᗷᑌᗪᗪᕼᗩ', similarity: 0.56 },
+    ];
+    expect(gateConfidentVectorMatches(hits)).toEqual([]);
+  });
+
+  it('a clear leader (≥ leader bar) keeps itself and its genuine peers', () => {
+    const hits = [
+      { name: 'Amethyst Pendant', similarity: 0.68 },
+      { name: 'Amethyst Ring', similarity: 0.56 },
+    ];
+    expect(gateConfidentVectorMatches(hits)).toEqual(['Amethyst Pendant', 'Amethyst Ring']);
+  });
+
+  it('lone mid-band hit: kept by default, dropped when the query has no lexical anchor', () => {
+    const hits = [{ name: 'Rose Quartz', similarity: 0.58 }];
+    expect(gateConfidentVectorMatches(hits)).toEqual(['Rose Quartz']);
+    expect(gateConfidentVectorMatches(hits, { requireLeader: true })).toEqual([]);
+  });
+
   it('THREE genuinely-requested stones with a spread → ALL kept (Bug B)', () => {
     // Customer asked for several stones; each is genuinely confident (≥ 0.55) but spread
     // across 0.72→0.60. The old leader-margin (0.08) wrongly dropped the 0.60 one.

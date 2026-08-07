@@ -47,7 +47,7 @@ function compactCompanyInfo(raw: string | null): string {
 export function buildCraftShopSystemPrompt(
   context: ProductContext,
   userQuery = '',
-  opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean; transactional?: boolean; replyLanguage?: 'ka' | 'en'; businessType?: 'craft_shop' | 'shop' } = {},
+  opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean; transactional?: boolean; replyLanguage?: 'ka' | 'en'; businessType?: 'craft_shop' | 'shop'; offerExhausted?: boolean } = {},
 ): string {
 
   // Birthstone/zodiac attributes only exist for the craft_shop niche. The generic
@@ -157,6 +157,24 @@ export function buildCraftShopSystemPrompt(
   // ── Conditional instruction blocks ──────────────────────────────────────────
   const modeLines: string[] = [];
 
+  // "Already answered / keeps asking" guard: the customer is restating a request we've
+  // already declined and nothing relevant matched again this turn. Suppress ALL product
+  // output and reply naturally — never re-run a fresh list of alternatives (the "annoying,
+  // keeps suggesting random products" bug). This block replaces every per-turn product rule.
+  const offerExhausted = opts.offerExhausted === true;
+  if (offerExhausted) {
+    modeLines.push(
+      `ALREADY ANSWERED — the customer is asking again for something we've already told them ` +
+      `we don't carry, and we still have nothing that fits. Do NOT list, name, or suggest any ` +
+      `product this turn (there are none to offer). In ONE warm, brief, natural sentence, gently ` +
+      `acknowledge we still don't have that specific item, then move the conversation forward ` +
+      `differently — either invite them to visit or contact the shop (use COMPANY INFO) or ask ` +
+      `what OTHER kind of thing they'd like. Vary your wording from your previous reply; never ` +
+      `repeat the same phrasing and never push more options.`,
+    );
+  }
+
+  if (!offerExhausted) {
   // Transactional turns (order/quantity/reservation/delivery/payment) must NOT lead with
   // a product dump — handled by the ORDER & LOGISTICS block below. Suppress the forced
   // "present all" listing in that case.
@@ -165,7 +183,8 @@ export function buildCraftShopSystemPrompt(
       modeLines.push(
         `RECOMMEND: First confirm and highlight the REQUESTED product(s) by name with the exact price — this is what the customer asked about. ` +
         `Then, in your own natural words, briefly offer the SIMILAR OPTIONS as one or two extra suggestions. ` +
-        `Keep it conversational — do NOT dump a flat list, and never repeat the product category for each item.`,
+        `Keep it conversational — do NOT dump a flat list, and never repeat the product category for each item. ` +
+        `Offer these once; if the customer isn't interested, don't keep proposing more items.`,
       );
     } else if (products.length >= 2) {
       modeLines.push(
@@ -254,6 +273,7 @@ export function buildCraftShopSystemPrompt(
       `Never claim a product is the same as the one in the photo, and never name an item not in PRODUCTS.`,
     );
   }
+  } // end if (!offerExhausted)
 
   // ── Assemble sections ────────────────────────────────────────────────────────
   const sections: string[] = [
@@ -311,7 +331,10 @@ export function buildCraftShopSystemPrompt(
     sections.push(modeLines.join('\n'));
   }
 
-  if (hasSimilars) {
+  if (offerExhausted) {
+    // Products intentionally omitted — the ALREADY ANSWERED instruction above handles the
+    // whole reply. Handing over any list here is exactly what we're trying to stop.
+  } else if (hasSimilars) {
     const requested = displayProducts.slice(0, primaryCount).map(fmtLine).join('\n');
     const similar = displayProducts.slice(primaryCount).map(fmtLine).join('\n');
     sections.push(
@@ -327,7 +350,7 @@ export function buildCraftShopSystemPrompt(
     sections.push(`PRODUCTS:\n${productLines}`);
   }
 
-  if (photoKeys) {
+  if (photoKeys && !offerExhausted) {
     sections.push(photoKeys);
   }
 

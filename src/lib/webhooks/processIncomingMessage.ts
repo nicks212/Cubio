@@ -12,7 +12,7 @@ import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
 import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts, searchSimilarProductsScored, STRONG_PRODUCT_VECTOR_SIMILARITY, type ScoredProductMatch } from '@/lib/ai/embeddings';
 import { gateConfidentVectorMatches } from '@/lib/ai/vectorGate';
 import { persistAIUsage } from '@/lib/ai/usage';
-import { normalizeQuery, retrieveProducts, normalizeProductName } from '@/lib/ai/productRetrieval';
+import { normalizeQuery, retrieveProducts, normalizeProductName, extractCategoryKeywords } from '@/lib/ai/productRetrieval';
 import { translateProductForEnglish, detectReplyLanguage, compactCompanyInfoForEnglish } from '@/lib/ai/geoTranslation';
 import { redis } from '@/lib/redis';
 import { createHash } from 'crypto';
@@ -378,9 +378,21 @@ export async function processIncomingMessage(
 
   // RELEVANCE GATE: a text-vector hit only counts as a match when it is a genuine, focused
   // semantic match — not one of a diffuse cluster. This is what stops a query for an item we
-  // do NOT stock ("wooden frog") from surfacing the whole figurine neighbourhood (horse,
-  // Buddha, Krishna…) just because they embed close together. Below the bar → NO_RELEVANT_MATCH.
-  const textVectorNames: string[] = gateConfidentVectorMatches(textVectorScored);
+  // do NOT stock ("wooden frog", "Tibetan bowl") from surfacing the whole figurine/decor
+  // neighbourhood (horse, Buddha, incense…) just because they embed close together in a small
+  // thematically-uniform catalog. A diffuse mid-band cloud → NO_RELEVANT_MATCH.
+  //
+  // When the query has NO lexical/category anchor (deterministic token retrieval found nothing
+  // AND the query maps to no known category), there is nothing to corroborate a lone mid-band
+  // vector hit — so require a focused leader before trusting it.
+  const anchorCtx = businessContext as ProductContext;
+  const hasLexicalAnchor =
+    (anchorCtx.tokenRetrievalHits ?? 0) > 0 ||
+    (anchorCtx.categoryFallbackHits ?? 0) > 0 ||
+    (retrievalText ? extractCategoryKeywords(retrievalText) !== null : false);
+  const textVectorNames: string[] = gateConfidentVectorMatches(textVectorScored, {
+    requireLeader: !hasLexicalAnchor,
+  });
   if (textVectorScored.length > 0) {
     const raw = textVectorScored.map(h => `${h.name}=${h.similarity.toFixed(2)}`).join(', ');
     console.info(`${label} [vector-gate] candidates: [${raw}] → kept: [${textVectorNames.join(', ') || 'none (diffuse/weak → NO_RELEVANT_MATCH)'}]`);

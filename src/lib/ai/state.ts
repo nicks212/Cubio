@@ -19,6 +19,7 @@ import {
   PHONE_EXTRACT_RE,
   PRODUCT_DISSATISFIED_RE,
 } from './signals';
+import { normalizeQuery } from './productRetrieval';
 
 export interface ConversationState {
   budget: string | null;
@@ -204,6 +205,49 @@ export function extractConversationState(
     lastShownAptId,
     aptConfirmed,
   };
+}
+
+// Georgian query/filler words (romanized, as normalizeQuery emits) plus a few English
+// ones that carry NO product signal. Stripped before comparing two messages for "same
+// request", so different asks that merely share a verb ("X gaqvt?" vs "Y gaqvt?") are not
+// mistaken for a repeat. Structural stopword list — no product names, no reply phrases.
+const REQUEST_FILLER = new Set([
+  'gakvt', 'gaqvt', 'gvakvs', 'makvs', 'aris', 'khom', 'xom', 'tu', 'ras',
+  'romeli', 'ginda', 'gindat', 'minda', 'unda', 'kargi', 'raime', 'rame',
+  'do', 'you', 'have', 'the', 'any', 'got', 'are', 'show', 'want', 'need', 'please',
+]);
+
+/** Romanized content words of a message (≥3 chars, filler stripped) for repeat comparison. */
+function requestContentTokens(message: string): Set<string> {
+  const norm = normalizeQuery(message); // transliterate → latin, lowercase, strip punctuation
+  const toks = (norm.match(/[a-z0-9]{3,}/g) ?? []).filter(t => !REQUEST_FILLER.has(t));
+  return new Set(toks);
+}
+
+/**
+ * True when the customer's CURRENT message asks again for essentially the SAME thing as
+ * their previous message — a repeat. The caller combines this with "nothing matched this
+ * turn" to stop the assistant re-offering a fresh list of alternatives for an item we have
+ * already said we don't carry (the "annoying, keeps suggesting random products" bug).
+ *
+ * Language-agnostic: compares romanized content-word overlap, so Georgian, romanized
+ * Georgian and English all work, with zero product names hard-coded. `history` is the
+ * pre-save snapshot, so its last user turn is the PREVIOUS message (not the current one).
+ */
+export function isRepeatedRequest(
+  history: Array<{ role: string; content: string }>,
+  currentMessage: string,
+): boolean {
+  const cur = requestContentTokens(currentMessage);
+  if (cur.size === 0) return false; // no content words (emoji / bare ack) → not a product repeat
+  const prevUserMsg = [...history].reverse().find(m => m.role === 'user')?.content ?? '';
+  if (!prevUserMsg) return false;
+  const prev = requestContentTokens(prevUserMsg);
+  if (prev.size === 0) return false;
+  let common = 0;
+  for (const t of cur) if (prev.has(t)) common++;
+  // Half or more of the current message's content words recurred → the same ask restated.
+  return common / cur.size >= 0.5;
 }
 
 /**

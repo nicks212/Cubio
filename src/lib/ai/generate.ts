@@ -3,7 +3,7 @@ import { buildGlobalSystemPrompt, LANGUAGE_RULE, LANGUAGE_LOCK } from './prompts
 import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
 import { buildBeautySalonSystemPrompt } from './prompts/beauty_salon';
-import { extractConversationState, formatStateForPrompt } from './state';
+import { extractConversationState, formatStateForPrompt, isRepeatedRequest } from './state';
 import { BUYING_INTENT_RE, PHOTO_RE, TRANSACTION_INTENT_RE } from './signals';
 import { persistAIUsage, type AIUsageContext } from './usage';
 import type { BusinessContext, ApartmentContext, ProductContext, ServiceContext } from './types';
@@ -200,12 +200,22 @@ export async function generateReply(
   if (!state.lastShownAptId && lastShownAptId) state.lastShownAptId = lastShownAptId;
   const stateLine = formatStateForPrompt(state);
 
+  // ── "Already answered / keeps asking" guard ─────────────────────────────────
+  // When the customer restates the SAME request as last turn AND nothing relevant matched
+  // this turn, we've already told them we don't carry it — the assistant must NOT re-run a
+  // fresh list of alternatives (the "annoying, keeps suggesting random products" bug).
+  // Repeat detection is language-agnostic; "nothing matched" is the empty matched list.
+  const repeatedRequest = isRepeatedRequest(conversationHistory, message);
+
   // ── Layer 2: Business-type rules + compact inventory ──────────────────────────
   const businessPrompt =
     businessType === 'real_estate'
       ? buildRealEstateSystemPrompt(context as ApartmentContext, message)
       : businessType === 'beauty_salon'
-        ? buildBeautySalonSystemPrompt(context as ServiceContext, message, { replyLanguage })
+        ? buildBeautySalonSystemPrompt(context as ServiceContext, message, {
+            replyLanguage,
+            offerExhausted: repeatedRequest && ((context as ServiceContext).matchedServices?.length ?? 0) === 0,
+          })
         : buildCraftShopSystemPrompt(context as ProductContext, message, {
             buyingIntent: state.buyingIntent || BUYING_INTENT_RE.test(message),
             productDissatisfied: state.productDissatisfied,
@@ -213,6 +223,7 @@ export async function generateReply(
             transactional: TRANSACTION_INTENT_RE.test(message),
             replyLanguage,
             businessType,
+            offerExhausted: repeatedRequest && ((context as ProductContext).matchedProducts?.length ?? 0) === 0,
           });
 
   // ── System instruction ─────────────────────────────────────────────────────
