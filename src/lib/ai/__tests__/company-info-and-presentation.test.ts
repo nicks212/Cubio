@@ -53,6 +53,35 @@ describe('#3/#6 craft prompt — clean product line + full company info', () => 
   });
 });
 
+describe('#1 category rule — product line is name + price, instruction forbids category tags', () => {
+  const product = {
+    name: 'ავანტურინი',
+    price: 15,
+    currency: 'GEL',
+    in_stock: true,
+    category: 'ქვა',
+    description: 'ბუნებრივი, დაუმუშავებელი ქვა — შანსების ქვა',
+  };
+  const ctx = {
+    products: [product],
+    matchedProducts: [product],
+    businessDescription: null,
+    primaryMatchCount: 1,
+  } as unknown as ProductContext;
+  const prompt = buildCraftShopSystemPrompt(ctx, 'ავანტურინი', { replyLanguage: 'ka' });
+
+  it('renders the product as `• name: ₾price` with the category NOT fused into the line', () => {
+    expect(prompt).toContain('• ავანტურინი: ₾15');
+    expect(prompt).not.toContain('ავანტურინი: ₾15 | ქვა');
+    expect(prompt).not.toContain('ავანტურინი: ₾15, ქვა');
+  });
+
+  it('instruction tells the model to lead with name+price and never tag the category as identity', () => {
+    expect(prompt).toMatch(/lead with just that — name \+ price/i);
+    expect(prompt).toMatch(/never state, append, or tag the product's category/i);
+  });
+});
+
 describe('#4 retrieval — a description-only match is found', () => {
   const catalog: ProductLike[] = [
     { name: 'Silver Necklace', category: 'jewelry', description: 'A handmade necklace made from rose quartz, a symbol of love and calm.' },

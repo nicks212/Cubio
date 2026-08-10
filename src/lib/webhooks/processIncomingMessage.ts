@@ -314,6 +314,11 @@ export async function processIncomingMessage(
         imageBase64 = Buffer.from(buf).toString('base64');
         imageMimeType = (imgRes.headers.get('content-type') ?? 'image/jpeg').split(';')[0];
         console.info(`${label} Downloaded customer image (${(buf.byteLength / 1024).toFixed(0)}KB, ${imageMimeType})`);
+        // Keep a copy so the image shows in the conversation view (the provider link expires).
+        const storedUrl = await storeIncomingImage(supabase, integration.companyId, conversationId, buf, imageMimeType);
+        if (storedUrl && savedMessageId) {
+          await supabase.from('messages').update({ image_urls: [storedUrl] }).eq('id', savedMessageId);
+        }
       }
     } catch (err) {
       console.warn(`${label} Failed to download customer image (non-fatal):`, err);
@@ -832,13 +837,14 @@ export async function processIncomingMessage(
     console.info(`${label} [escalation] Offer sent — awaiting customer confirmation`);
   }
 
-  // 9. Save AI reply
-  await supabase.from('messages').insert({
-    conversation_id: conversationId,
-    company_id: integration.companyId,
-    role: 'ai',
-    content: cleanReply,
-  });
+  // 9. Save AI reply (with any product photos it sent, so they appear in the conversation view)
+  const aiMsgRow = { conversation_id: conversationId, company_id: integration.companyId, role: 'ai' as const, content: cleanReply };
+  const { error: aiSaveErr } = await supabase.from('messages').insert({ ...aiMsgRow, image_urls: imageUrlsToSend });
+  if (aiSaveErr && /image_urls/i.test(aiSaveErr.message)) {
+    // image_urls column not migrated yet (migration 020) — still save the reply text.
+    console.warn(`${label} messages.image_urls missing — saving AI reply without images. Apply migration 020.`);
+    await supabase.from('messages').insert(aiMsgRow);
+  }
 
   // Update conversation updated_at
   await supabase
@@ -1297,17 +1303,49 @@ function buildSafeCraftReply(
 }
 
 function formatCraftProductSnippetGeorgian(product: ProductContext['products'][0]): string {
+  // Product NAME + price only. Material (a real attribute) is fine; the CATEGORY is never
+  // appended — the owner's rule is "name always, category never".
   const parts = [`${product.name} გვაქვს ${formatCraftPrice(product)}-ად`];
   if (product.material) parts.push(`${product.material} მასალაში`);
-  else if (product.category) parts.push(product.category);
   return parts.join(', ');
 }
 
 function formatCraftProductSnippetEnglish(product: ProductContext['products'][0]): string {
+  // Product NAME + price only — never the category (see Georgian counterpart).
   const parts = [`We currently have ${product.name} for ${formatCraftPrice(product)}`];
   if (product.material) parts.push(`in ${product.material}`);
-  else if (product.category) parts.push(product.category);
   return parts.join(', ');
+}
+
+/**
+ * Copies a customer-sent image into our public `conversation-media` bucket and returns its
+ * public URL (or null on failure). Provider image links (Messenger/Instagram/…) are signed
+ * and expire, so we keep our own copy for the conversation view. Copies are auto-removed
+ * after ~1 month by /api/cron/cleanup-media. Raw bytes are stored as-is (providers already
+ * deliver web-displayable JPEG/PNG) — no compression on the hot webhook path.
+ */
+async function storeIncomingImage(
+  supabase: ReturnType<typeof createAdminClient>,
+  companyId: string,
+  conversationId: string,
+  bytes: ArrayBuffer,
+  mime: string,
+): Promise<string | null> {
+  try {
+    const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : mime.includes('gif') ? 'gif' : 'jpg';
+    const path = `${companyId}/${conversationId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error } = await supabase.storage
+      .from('conversation-media')
+      .upload(path, Buffer.from(bytes), { contentType: mime, upsert: false });
+    if (error) {
+      console.warn('[media] conversation image upload failed (non-fatal):', error.message);
+      return null;
+    }
+    return supabase.storage.from('conversation-media').getPublicUrl(path).data.publicUrl;
+  } catch (err) {
+    console.warn('[media] conversation image upload error (non-fatal):', err);
+    return null;
+  }
 }
 
 function buildCraftOverviewGeorgian(

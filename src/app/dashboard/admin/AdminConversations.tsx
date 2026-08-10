@@ -5,6 +5,7 @@ import { MessageSquare, Search, User, Clock, ChevronRight, ChevronLeft, BotOff, 
 import type { Conversation, Message } from '@/types/database';
 import { formatDateTime } from '@/lib/utils';
 import { useT } from '@/components/TranslationsProvider';
+import MessageImages from '@/components/MessageImages';
 import { adminListConversations, adminListMessages } from './actions';
 
 const statusColors: Record<string, string> = {
@@ -244,6 +245,7 @@ export default function AdminConversations({ companies }: Props) {
                   <div key={msg.id} className={`flex ${msg.role === 'agent' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${msg.role === 'agent' ? 'bg-primary text-white rounded-br-sm' : msg.role === 'ai' ? 'bg-blue-100 text-blue-900 rounded-bl-sm' : 'bg-white border border-slate-200 rounded-bl-sm'}`}>
                       {msg.role === 'ai' && <p className="text-xs font-medium mb-1 opacity-70">{t['conversations.ai_assistant'] ?? 'AI assistant'}</p>}
+                      <MessageImages urls={msg.image_urls} />
                       {msg.content}
                       <p className={`text-xs mt-1 ${msg.role === 'agent' ? 'text-white/70' : 'text-muted-foreground'}`}>{formatDateTime(msg.created_at)}</p>
                     </div>

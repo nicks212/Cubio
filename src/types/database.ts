@@ -153,6 +153,8 @@ export interface Message {
   company_id: string;
   content: string;
   role: 'user' | 'agent' | 'ai';
+  /** Public URLs of images on this message (customer-sent copies + product photos sent). */
+  image_urls?: string[];
   created_at: string;
 }
 

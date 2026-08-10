@@ -7,5 +7,11 @@
     "src/app/api/webhook/**": {
       "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/cleanup-media",
+      "schedule": "0 3 * * *"
+    }
+  ]
 }

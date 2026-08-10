@@ -27,12 +27,13 @@ interface Props {
   companies: Array<{ id: string; company_name: string; business_type?: string | null }>;
   termsContent: Array<{ language: string; content: string; updated_at: string }>;
   usageReport: Array<{ companyId: string; companyName: string; inputTokens: number; outputTokens: number; totalTokens: number; uniqueUsersServed: number }>;
-  selectedMonth: string;
+  fromDate: string;
+  toDate: string;
   usageTrackingReady: boolean;
   initialTab?: Tab;
 }
 
-export default function AdminClient({ users, integrations, localizations, companies, termsContent, usageReport, selectedMonth, usageTrackingReady, initialTab = 'users' }: Props) {
+export default function AdminClient({ users, integrations, localizations, companies, termsContent, usageReport, fromDate, toDate, usageTrackingReady, initialTab = 'users' }: Props) {
   const t = useT();
   const [tab, setTab] = useState<Tab>(initialTab);
 
@@ -42,7 +43,7 @@ export default function AdminClient({ users, integrations, localizations, compan
     setTab(id);
     const url = new URL(window.location.href);
     url.searchParams.set('tab', id);
-    if (id !== 'usage') url.searchParams.delete('month');
+    if (id !== 'usage') { url.searchParams.delete('month'); url.searchParams.delete('from'); url.searchParams.delete('to'); }
     window.history.replaceState(null, '', url.toString());
   }, []);
   const [intModal, setIntModal] = useState(false);
@@ -345,24 +346,53 @@ export default function AdminClient({ users, integrations, localizations, compan
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 className="text-xl font-semibold text-foreground">Company AI Usage</h2>
-              <p className="text-sm text-muted-foreground">Per-company usage by Tbilisi calendar month. Counters reset each month.</p>
+              <p className="text-sm text-muted-foreground">Per-company usage for the selected period (Tbilisi time). Unique users are counted once across the whole range — no double counting between months.</p>
             </div>
-            <form method="GET" className="flex items-end gap-3">
+            {/* Date-range picker — recalculates usage over [from, to] inclusive. */}
+            <form method="GET" className="flex flex-wrap items-end gap-3">
               <input type="hidden" name="tab" value="usage" />
-              <div>
-                <label className="block text-sm font-medium mb-2">Month</label>
+              <div className="flex-1 min-w-[8.5rem]">
+                <label className="block text-sm font-medium mb-2">From</label>
                 <input
-                  type="month"
-                  name="month"
-                  defaultValue={selectedMonth}
-                  className="px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  type="date"
+                  name="from"
+                  defaultValue={fromDate}
+                  max={toDate}
+                  className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                 />
               </div>
-              <button type="submit" className="px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm">
+              <div className="flex-1 min-w-[8.5rem]">
+                <label className="block text-sm font-medium mb-2">To</label>
+                <input
+                  type="date"
+                  name="to"
+                  defaultValue={toDate}
+                  min={fromDate}
+                  className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <button type="submit" className="px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium text-sm whitespace-nowrap">
                 Load
               </button>
             </form>
           </div>
+
+          {/* Quick pick — a whole calendar month (sets the range to that month's first..last day). */}
+          <form method="GET" className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="tab" value="usage" />
+            <div className="min-w-[10rem]">
+              <label className="block text-sm font-medium mb-2 text-muted-foreground">Or pick a whole month</label>
+              <input
+                type="month"
+                name="month"
+                defaultValue={fromDate.slice(0, 7)}
+                className="px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
+            <button type="submit" className="px-4 py-2.5 bg-slate-100 text-foreground rounded-lg hover:bg-slate-200 font-medium text-sm whitespace-nowrap">
+              Load month
+            </button>
+          </form>
 
           {!usageTrackingReady && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -403,7 +433,7 @@ export default function AdminClient({ users, integrations, localizations, compan
                   {usageReport.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="py-8 px-4 text-center text-muted-foreground">
-                        No company usage data for {selectedMonth}.
+                        No company usage data for {fromDate} → {toDate}.
                       </td>
                     </tr>
                   ) : usageReport.map(row => (

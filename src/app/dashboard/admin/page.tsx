@@ -3,27 +3,51 @@ import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { DEFAULT_TRANSLATIONS, DEFAULT_TRANSLATIONS_EN } from '@/lib/i18n';
 import AdminClient from './AdminClient';
 
-// Cubio bills per Tbilisi (UTC+4, no DST) calendar month, so "May" means May in
-// Georgia — not the UTC month. Each month is queried independently, so counters
-// naturally reset at every month boundary.
+// Cubio bills per Tbilisi (UTC+4, no DST) time, so a "day" means that day in Georgia —
+// not the UTC day. The report window is an inclusive [from, to] range of Tbilisi calendar
+// days; usage + unique users are queried once over the whole window (so a user active in
+// two different months inside the range is still counted once — the Set dedupes).
 const TBILISI_OFFSET_HOURS = 4;
 
-function resolveMonthRange(month?: string | null) {
-  const valid = typeof month === 'string' && /^\d{4}-\d{2}$/.test(month) ? month : null;
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const isDateStr = (s?: string | null): s is string => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+const isMonthStr = (s?: string | null): s is string => typeof s === 'string' && /^\d{4}-\d{2}$/.test(s);
+
+function resolveDateRange(params: { from?: string | null; to?: string | null; month?: string | null }) {
   const nowTbilisi = new Date(Date.now() + TBILISI_OFFSET_HOURS * 3_600_000);
-  const selectedMonth = valid ?? `${nowTbilisi.getUTCFullYear()}-${String(nowTbilisi.getUTCMonth() + 1).padStart(2, '0')}`;
-  const [year, monthNum] = selectedMonth.split('-').map(Number);
-  // Tbilisi-local midnight on the 1st of the month, expressed as a UTC instant.
-  const startIso = new Date(Date.UTC(year, monthNum - 1, 1, -TBILISI_OFFSET_HOURS)).toISOString();
-  const endIso = new Date(Date.UTC(year, monthNum, 1, -TBILISI_OFFSET_HOURS)).toISOString();
-  return { selectedMonth, startIso, endIso };
+  const todayStr = `${nowTbilisi.getUTCFullYear()}-${pad2(nowTbilisi.getUTCMonth() + 1)}-${pad2(nowTbilisi.getUTCDate())}`;
+
+  let fromDate: string;
+  let toDate: string;
+  if (isDateStr(params.from) || isDateStr(params.to)) {
+    // Explicit range — fill a missing side from the other, defaulting to today.
+    fromDate = isDateStr(params.from) ? params.from : (isDateStr(params.to) ? params.to : todayStr);
+    toDate = isDateStr(params.to) ? params.to : (isDateStr(params.from) ? params.from : todayStr);
+  } else if (isMonthStr(params.month)) {
+    // Month quick-pick → first..last calendar day of that month.
+    const [y, m] = params.month.split('-').map(Number);
+    fromDate = `${params.month}-01`;
+    toDate = `${params.month}-${pad2(new Date(Date.UTC(y, m, 0)).getUTCDate())}`;
+  } else {
+    // Default: current Tbilisi month up to today.
+    fromDate = `${nowTbilisi.getUTCFullYear()}-${pad2(nowTbilisi.getUTCMonth() + 1)}-01`;
+    toDate = todayStr;
+  }
+  if (fromDate > toDate) [fromDate, toDate] = [toDate, fromDate]; // tolerate reversed input
+
+  const [fy, fm, fd] = fromDate.split('-').map(Number);
+  const [ty, tm, td] = toDate.split('-').map(Number);
+  // Tbilisi-local midnight boundaries expressed as UTC instants; end is exclusive (day after `to`).
+  const startIso = new Date(Date.UTC(fy, fm - 1, fd, -TBILISI_OFFSET_HOURS)).toISOString();
+  const endIso = new Date(Date.UTC(ty, tm - 1, td + 1, -TBILISI_OFFSET_HOURS)).toISOString();
+  return { fromDate, toDate, startIso, endIso };
 }
 
 const ADMIN_TABS = ['users', 'localizations', 'integrations', 'usage', 'conversations', 'leads', 'escalations', 'reservations', 'terms'] as const;
 type AdminTab = (typeof ADMIN_TABS)[number];
 
 type AdminPageProps = {
-  searchParams?: Promise<{ month?: string; tab?: string }>;
+  searchParams?: Promise<{ month?: string; from?: string; to?: string; tab?: string }>;
 };
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
@@ -36,7 +60,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   const adminClient = createAdminClient();
   const params = searchParams ? await searchParams : {};
-  const { selectedMonth, startIso, endIso } = resolveMonthRange(params?.month ?? null);
+  const { fromDate, toDate, startIso, endIso } = resolveDateRange({
+    from: params?.from ?? null,
+    to: params?.to ?? null,
+    month: params?.month ?? null,
+  });
   const initialTab: AdminTab = ADMIN_TABS.includes(params?.tab as AdminTab) ? (params!.tab as AdminTab) : 'users';
 
   const [
@@ -153,7 +181,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       companies={companies ?? []}
       termsContent={termsRows ?? []}
       usageReport={usageReport}
-      selectedMonth={selectedMonth}
+      fromDate={fromDate}
+      toDate={toDate}
       usageTrackingReady={usageTrackingReady}
       initialTab={initialTab}
     />
