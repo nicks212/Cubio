@@ -45,6 +45,42 @@ export const LANGUAGE_LOCK =
   'NEVER mix two languages or scripts in one reply. Write EVERY product name in the SAME language/script as the rest of your reply — transliterate it phonetically when the catalog stores it differently (e.g. in a Georgian reply write "ოპალი", not "Opali"; "ლაბრადორიტი", not "Labradorite"). ' +
   'Keep numeric prices and genuinely-branded English titles (e.g. "The Wild Wood Tarot") exactly as given.';
 
+/**
+ * The language lock with the verdict already filled in.
+ *
+ * The backend decides the reply language deterministically (detectReplyLanguage, which
+ * reads Georgian script AND romanized Georgian), so the model is told the answer rather
+ * than asked to re-derive it. Leaving the decision to the model is what produced English
+ * replies to customers writing Georgian in Latin letters: every other block in the prompt
+ * (translated product data, "do not output Georgian script") pushed toward English, and
+ * the model followed the data instead of the rule.
+ */
+export function buildLanguageLock(replyLanguage: 'ka' | 'en'): string {
+  const verdict = replyLanguage === 'ka'
+    ? 'REPLY LANGUAGE — ALREADY DECIDED: Georgian. This customer is writing Georgian (in Georgian script, or in Latin letters — "gamarjoba", "gaqvt", "minda"). Write your ENTIRE reply in Georgian, in Georgian script, including every product name. Do NOT answer in English and do NOT reply in Latin letters, whatever script the customer used.'
+    : 'REPLY LANGUAGE — ALREADY DECIDED: English. Write your ENTIRE reply in English, including every product name. Do NOT output Georgian script.';
+  return `${verdict}\n${LANGUAGE_LOCK}`;
+}
+
+/**
+ * Injected when the customer's turn contains more than one question.
+ *
+ * Messages are debounced and merged, so a burst often arrives as several separate
+ * questions at once ("do you have a physical store?" + "do you sell rudraksha?").
+ * Given one blob the model answered whichever part it noticed and silently dropped the
+ * rest, which reads as ignoring the customer. The asks are listed back to it explicitly
+ * so none can be missed, and the answer order is pinned to the order they were asked.
+ */
+export function buildMultiAskRule(numberedAsks: string): string {
+  return (
+    `THE CUSTOMER ASKED SEVERAL THINGS IN ONE GO — answer EVERY one of them:\n${numberedAsks}\n` +
+    `Address each point above, in the SAME order the customer raised it, in one flowing reply. ` +
+    `Do not skip a question, do not merge two of them into a vague answer, and do not answer only the last one. ` +
+    `Keep it natural and conversational — a couple of short sentences per point, not a numbered list back at them. ` +
+    `If you genuinely cannot answer one of them, say so briefly for that specific point instead of ignoring it.`
+  );
+}
+
 export function buildGlobalSystemPrompt(photosSent = false): string {
   const photoRule = photosSent
     ? `PHOTOS: Photos were sent earlier in this conversation. Re-send them whenever the customer asks — emit SHOW_PHOTOS: XXXX as usual. Never refuse to re-send photos when asked. Never say "photos were already sent" as a refusal.`
@@ -63,7 +99,7 @@ PRICES: Quote prices ONLY from product entries in the current prompt (e.g. "• 
 ACCURACY: Use ONLY the data in this prompt. Conversation history is context for understanding the customer's intent ONLY — NEVER extract product names, prices, descriptions, or availability from history to answer product questions. Product information must come exclusively from TOP PRODUCTS in the business prompt.
   • Product / catalog questions → answer from TOP PRODUCTS. The products listed ARE the available catalog. Never claim you have no information when products are present.
   • Short social messages (thanks, ok, why, goodbye, any phrase ≤ 4 words) → respond naturally and briefly. Never route these through a no-info fallback.
-  • No good match for what they asked → do NOT offer a random, default, or unrelated product to fill the gap. FIRST ask ONE short, natural clarifying question to understand what they want (type, style, budget, occasion). Suggest an alternative ONLY when a genuinely same-category one exists in TOP PRODUCTS. If, after clarifying, nothing truly fits → briefly say so and, when COMPANY INFO has an address / phone / hours, share them so the customer can visit or call.
+  • WE DON'T HAVE WHAT THEY ASKED FOR → answer in two steps, never one. STEP 1 (this reply): say plainly and warmly that we don't carry that specific item, then ASK whether they'd like to see what we do have that's close to it. Name NO product, price, or substitute in this reply — not even a related one. STEP 2 (only after they say yes): present the related items. If instead they name something else, follow that. Offering alternatives before they were asked for is what makes the assistant feel pushy and off-topic.
   • Completely unrelated topic (weather, history, math) → briefly redirect to the shop.
   • If a fact, product, price, photo, or business detail is not present in the provided context, do not guess or fill gaps from world knowledge or conversation history.
   • COMPANY INFO is your background knowledge, NOT a script: draw on ALL of it (hours, closures/holidays, delivery/payment terms, announcements, rules like pets welcome) and answer in your OWN natural words, the way a person explains to another — NEVER quote, copy, paste, or read out its sentences, and never dump the whole thing.

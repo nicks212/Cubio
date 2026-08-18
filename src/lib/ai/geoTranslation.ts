@@ -153,25 +153,151 @@ export function containsGeorgian(text: string): boolean {
   return GEO_SCRIPT_RE.test(text);
 }
 
+// \u2500\u2500\u2500 Romanized-Georgian recognition \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Georgian customers routinely type Georgian in Latin letters ("gamarjoba", "bina
+// gaqvs?", "rudraksha gaqvt?"). Those messages carry no Georgian script, so a
+// script-only test read them as English and the whole turn answered in English.
+// Recognition uses two independent, language-level signals \u2014 no product names, no
+// per-customer phrases:
+//   1. HIGH-FREQUENCY FUNCTION WORDS \u2014 pronouns, question words, copulas, greetings.
+//      These are the words every Georgian sentence is built from, whatever the topic.
+//   2. ORTHOGRAPHIC SHAPE \u2014 consonant clusters and case/plural endings that Georgian
+//      romanization produces constantly and English essentially never does.
+// An English counter-lexicon keeps genuinely English messages on "en", so a shared
+// spelling ("is", "car") can never outvote real English function words.
+
+/**
+ * Georgian function words whose romanization is unmistakably Georgian \u2014 no common
+ * English (or other Latin-script) word shares the spelling, so one is enough to
+ * settle the language.
+ */
+const KA_ROMAN_WORDS = new Set([
+  // pronouns / determiners
+  'shen', 'chven', 'tqven', 'tkven', 'isini', 'chemi', 'sheni', 'chveni', 'tqveni',
+  'tkveni', 'magas', 'amas', 'yvela', 'yvelaferi',
+  // question words
+  'ratom', 'rato', 'rogor', 'rogora', 'romeli', 'romelia', 'saidan', 'rodis',
+  'ramdeni', 'ramden', 'ramdenia', 'ramdenad',
+  // copulas / auxiliaries / very common verbs
+  'aris', 'arian', 'iyo', 'ikneba', 'iqneba', 'xar', 'khar', 'xart', 'khart', 'var', 'vart',
+  'gaqvt', 'gakvt', 'gaqvs', 'gakvs', 'gvaqvs', 'gvakvs', 'maqvs', 'makvs',
+  'minda', 'mindoda', 'gindat', 'ginda', 'unda', 'mchirdeba', 'mtsirdeba',
+  'shemidzlia', 'sheidzleba', 'vnaxe', 'vnaxo', 'vnaxav', 'momwons', 'momtsons',
+  'vitsi', 'vici', 'ician', 'gakete', 'gaketeba',
+  // particles / conjunctions / adverbs
+  'xom', 'khom', 'diakh', 'diax', 'kidev', 'ukve', 'magram', 'iqneb', 'ikneb',
+  'albat', 'albad', 'ubralod', 'kargi', 'kargad', 'tsota', 'bevri', 'zustad',
+  'exla', 'ekhla', 'akhla', 'axla', 'dges', 'dghes', 'xval', 'khval', 'gushin',
+  // social formulas
+  'gamarjoba', 'gamarjobat', 'madloba', 'gmadlobt', 'gmadlob', 'bodishi',
+  'ukatsravad', 'ukacravad', 'nakhvamdis', 'naxvamdis', 'gtxovt', 'gthovt', 'gtkhovt',
+  'batono', 'kalbatono', 'brdzandebit',
+  // shopping / business vocabulary that is grammar, not product identity
+  'fasi', 'fasad', 'ghirs', 'girs', 'raodenoba', 'maghazia', 'magazia',
+  'shekveta', 'shekvetis', 'mitsodeba', 'gaqidva', 'gakidva', 'gaqidvashi',
+]);
+
+/**
+ * Georgian function words that collide with an English (or other Latin) spelling \u2014
+ * "is", "sad", "ram", "me", "mere". Each counts as partial evidence only, so
+ * "my name is Nick" stays English while "sad xart?" still reads as Georgian.
+ */
+const KA_AMBIGUOUS_WORDS = new Set([
+  'me', 'is', 'es', 'eg', 'ase', 'ise', 'ra', 'ras', 'ram', 'sad', 'vin', 'vis',
+  'tu', 'da', 'an', 'ki', 'ara', 'ari', 'kide', 'jer', 'mere', 'anu', 'cota',
+  'zust', 'salami',
+]);
+
+/** English function words \u2014 the counterweight that keeps English messages on "en". */
+const EN_MARKER_WORDS = new Set([
+  'the', 'and', 'you', 'your', 'have', 'has', 'do', 'does', 'did', 'are', 'was', 'were',
+  'this', 'that', 'these', 'those', 'what', 'which', 'where', 'when', 'why', 'how',
+  'can', 'could', 'would', 'should', 'will', 'want', 'need', 'please', 'thanks',
+  'thank', 'hello', 'hi', 'hey', 'for', 'with', 'from', 'about', 'there', 'here',
+  'much', 'many', 'some', 'any', 'available', 'price', 'store', 'shop', 'open',
+  'buy', 'sell', 'send', 'show', 'give', 'know', 'looking', 'interested',
+  'my', 'name', 'it', 'of', 'in', 'on', 'to', 'if', 'or', 'not', 'but', 'all',
+  'get', 'see', 'one', 'also', 'just', 'like', 'good', 'day', 'today', 'tomorrow',
+  'address', 'photo', 'photos', 'picture', 'pictures', 'order', 'delivery', 'cost',
+]);
+
+/**
+ * Orthographic fingerprints of romanized Georgian. Each alternative is a cluster or
+ * ending that Georgian romanization produces routinely and English does not:
+ * word-initial consonant stacks (mts-, tkv-, brdz-, gv-, shv-), the aspirate/affricate
+ * digraphs (dz, ts, kh, gh, zh), and the case/plural endings (-ebi, -shi, -tvis, -ze).
+ */
+const KA_SHAPE_RES: RegExp[] = [
+  /\b(?:mts|mkh|mch|mtk|tkv|tqv|brdz|prts|gv|zv|dzv|shv|chv|tsk|tskh|khv|ghv|rdz|mdz)[a-z]/i,
+  /[a-z](?:dz|gh|kh|zh|ts|dgh)[a-z]/i,
+  /[a-z]{2,}(?:ebi|ebis|ebshi|ebit|shi|tvis|istvis|dan|amde|obit)\b/i,
+  /\b(?:v|sh|ch|ts|dz|kh|gh)[bcdfgklmnpqrstvxz][a-z]/i,
+];
+
+/** Latin words in the text, lowercased. */
+const latinWords = (text: string): string[] => (text.toLowerCase().match(/[a-z]{2,}/g) ?? []);
+
+/**
+ * True when a Latin-script message is Georgian typed in Latin letters.
+ * Scores Georgian evidence (function words + orthographic shape) against English
+ * function words; Georgian must both clear a floor and out-score English.
+ */
+export function looksRomanizedGeorgian(text: string): boolean {
+  const words = latinWords(text);
+  if (words.length === 0) return false;
+
+  let kaWordHits = 0;
+  let kaAmbiguousHits = 0;
+  let enWordHits = 0;
+  for (const w of words) {
+    if (KA_ROMAN_WORDS.has(w)) kaWordHits++;
+    else if (KA_AMBIGUOUS_WORDS.has(w)) kaAmbiguousHits++;
+    if (EN_MARKER_WORDS.has(w)) enWordHits++;
+  }
+  const shapeHits = KA_SHAPE_RES.reduce((n, re) => n + (re.test(text) ? 1 : 0), 0);
+
+  // Unmistakable words count fully; orthographic shape and English-colliding words
+  // count partially \u2014 vocabulary is decisive, the rest only corroborates.
+  const kaScore = kaWordHits + shapeHits * 0.5 + kaAmbiguousHits * 0.35;
+  // A lone weak signal ("is", one cluster) is never enough on its own.
+  if (kaScore < 1) return false;
+  // Georgian must also out-weigh the English evidence, so a Georgian word dropped into
+  // an English sentence ("do you have da Buddha") cannot flip the whole reply.
+  return kaScore > enWordHits;
+}
+
 /**
  * THE single authority for reply language across the whole system.
  *
- * Rule: Georgian script in the CURRENT customer message \u21D2 "ka", otherwise "en".
- * Every non-Georgian language (English, Russian-latin, Spanish, \u2026) defaults to "en".
+ * Rule: the CURRENT customer message decides. Georgian script OR romanized Georgian
+ * \u21D2 "ka"; every other language (English, Russian-latin, Spanish, \u2026) \u21D2 "en".
  *
- * Deliberately ignores conversation history: the assistant's own prior replies
- * contain Georgian product names, so any history-based check would permanently
- * flip foreign-language conversations to Georgian once a product was shown.
+ * Deliberately ignores the assistant's own prior replies: they contain Georgian
+ * product names, so a history-based check would permanently flip foreign-language
+ * conversations to Georgian once a product was shown. `priorCustomerText` (earlier
+ * CUSTOMER messages only) is consulted solely when the current message carries no
+ * language signal at all \u2014 a bare "ok", "\uD83D\uDC4D" or a phone number \u2014 so a one-word reply
+ * inside a Georgian conversation is not answered in English.
  *
- * For a debounced burst ("msg1\nmsg2") the most-recent line decides \u2014 that is the
- * message the customer is waiting on a reply to. Romanized Georgian ("minda",
- * "gamarjoba") has no Georgian script and therefore resolves to "en", unchanged
- * from the previous isEnglishQuery behaviour.
+ * For a debounced burst ("msg1\nmsg2") the most recent line that actually carries a
+ * signal decides; a trailing "?" or emoji line falls through to the line before it.
  */
-export function detectReplyLanguage(currentMessage: string): 'ka' | 'en' {
-  const lastLine = (currentMessage.split('\n').at(-1) ?? '').trim();
-  const probe = lastLine.length > 0 ? lastLine : currentMessage;
-  return GEO_SCRIPT_RE.test(probe) ? 'ka' : 'en';
+export function detectReplyLanguage(currentMessage: string, priorCustomerText = ''): 'ka' | 'en' {
+  // Most recent line first \u2014 that is the message the customer awaits a reply to.
+  const lines = currentMessage.split('\n').map(l => l.trim()).filter(Boolean).reverse();
+  for (const line of lines) {
+    if (GEO_SCRIPT_RE.test(line)) return 'ka';
+    if (looksRomanizedGeorgian(line)) return 'ka';
+    // A line with real words that matched no Georgian signal is a positive "en" verdict.
+    if (latinWords(line).length > 0) return 'en';
+  }
+  // No line carried any language signal (emoji, digits, punctuation only) \u2014 fall back
+  // to what this customer has been writing so far.
+  if (priorCustomerText) {
+    if (GEO_SCRIPT_RE.test(priorCustomerText)) return 'ka';
+    if (looksRomanizedGeorgian(priorCustomerText)) return 'ka';
+  }
+  return 'en';
 }
 
 // Georgian nominative vowels stripped during stemming (Latin-comment safe constant).

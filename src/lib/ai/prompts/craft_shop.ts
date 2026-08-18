@@ -47,7 +47,20 @@ function compactCompanyInfo(raw: string | null): string {
 export function buildCraftShopSystemPrompt(
   context: ProductContext,
   userQuery = '',
-  opts: { buyingIntent?: boolean; productDissatisfied?: boolean; photoIntent?: boolean; transactional?: boolean; replyLanguage?: 'ka' | 'en'; businessType?: 'craft_shop' | 'shop'; offerExhausted?: boolean } = {},
+  opts: {
+    buyingIntent?: boolean;
+    productDissatisfied?: boolean;
+    photoIntent?: boolean;
+    transactional?: boolean;
+    replyLanguage?: 'ka' | 'en';
+    businessType?: 'craft_shop' | 'shop';
+    offerExhausted?: boolean;
+    /**
+     * The customer has just said yes to our offer to show related items. The products
+     * below are the ones we deliberately held back last turn — present them now.
+     */
+    alternativesAccepted?: boolean;
+  } = {},
 ): string {
 
   // Birthstone/zodiac attributes only exist for the craft_shop niche. The generic
@@ -154,6 +167,22 @@ export function buildCraftShopSystemPrompt(
   // vague queries like "რა ღირს" (price question with no specific product in context).
   const photoKeys = (hasProducts || opts.photoIntent) ? buildPhotoKeySection(products, photoNameMap) : '';
 
+  // ── Offer-before-listing gate ───────────────────────────────────────────────
+  // When the ONLY thing retrieval found is same-category alternatives, the customer's
+  // actual item is not in stock. Dumping substitutes in that same breath is what makes
+  // the assistant feel like it ignored the question ("do you have rudraksha?" → "here's
+  // a mala and an amethyst"). So we hold the list back: this turn says we don't have it
+  // and asks whether they'd like to see what's close; the products are surfaced only on
+  // the turn after they say yes (alternativesAccepted, set by the pipeline).
+  const onlyCategoryAlternatives =
+    catFallbackHits > 0 &&
+    (context.tokenRetrievalHits ?? 0) === 0 &&
+    (context.vectorHits ?? 0) === 0;
+  // offerExhausted wins when both apply: the customer has asked a third time and its
+  // "acknowledge and move on" wording already covers the situation without re-offering.
+  const withholdAlternatives =
+    onlyCategoryAlternatives && opts.alternativesAccepted !== true && opts.offerExhausted !== true;
+
   // ── Conditional instruction blocks ──────────────────────────────────────────
   const modeLines: string[] = [];
 
@@ -174,7 +203,28 @@ export function buildCraftShopSystemPrompt(
     );
   }
 
-  if (!offerExhausted) {
+  if (withholdAlternatives) {
+    modeLines.push(
+      `WE DON'T HAVE THE REQUESTED ITEM — ASK BEFORE OFFERING ANYTHING ELSE. Retrieval found no ` +
+      `match for what the customer named; only loosely related items exist. In this reply: ` +
+      `(1) warmly and honestly say we don't carry that specific item, and ` +
+      `(2) ask whether they'd like you to show what we do have that's close to it. ` +
+      `FORBIDDEN this turn: naming any product, quoting any price, describing any substitute, or ` +
+      `emitting SHOW_PHOTOS. Wait for their answer — if they say yes, you'll present the items next turn. ` +
+      `Two short, friendly sentences.`,
+    );
+  }
+
+  if (opts.alternativesAccepted) {
+    modeLines.push(
+      `THEY SAID YES — the customer just accepted your offer to see what we have that's close to ` +
+      `the item we don't stock. Present the PRODUCTS below now, by name and exact price, warmly and ` +
+      `conversationally. Do not re-apologise for the missing item and do not ask again whether they ` +
+      `want to see them — they already said yes.`,
+    );
+  }
+
+  if (!offerExhausted && !withholdAlternatives) {
   // Transactional turns (order/quantity/reservation/delivery/payment) must NOT lead with
   // a product dump — handled by the ORDER & LOGISTICS block below. Suppress the forced
   // "present all" listing in that case.
@@ -189,8 +239,9 @@ export function buildCraftShopSystemPrompt(
     } else if (products.length >= 2) {
       modeLines.push(
         `PRESENT: If one of the PRODUCTS below is exactly the item the customer named, present it directly by name and price. ` +
-        `If NONE of them is the specific item they asked for (they are related/same-category options, not an exact match), ` +
-        `FIRST briefly and honestly say we don't have that specific item, THEN offer these as similar options ("we don't have X, but we do have Y and Z"). ` +
+        `If NONE of them is the specific item they asked for (they are related options, not an exact match), do NOT list them: ` +
+        `honestly say we don't have that specific item and ask whether they'd like to see what we have that's close — ` +
+        `then present them only if they say yes. ` +
         `Only ever offer genuinely related items — never unrelated ones. Refer to products by their own names; do NOT repeat the category for each item.`,
       );
     }
@@ -215,11 +266,10 @@ export function buildCraftShopSystemPrompt(
   // but no specific token/vector match existed.  The PRODUCTS section at this point
   // contains ONLY same-category items (slice capped at catFallbackHits above), making it
   // structurally impossible for Gemini to suggest unrelated categories.
-  if (catFallbackHits > 0 && (context.tokenRetrievalHits ?? 0) === 0 && (context.vectorHits ?? 0) === 0) {
+  if (onlyCategoryAlternatives) {
     modeLines.push(
       `CATEGORY ALTERNATIVES: The specific item requested is not in stock. ` +
       `The PRODUCTS listed below are same-category alternatives only. ` +
-      `Acknowledge the requested item is unavailable, then present ONLY these alternatives. ` +
       `FORBIDDEN: Do not name or suggest products from any other category.`,
     );
   }
@@ -240,10 +290,10 @@ export function buildCraftShopSystemPrompt(
     modeLines.push(
       `NO MATCH (we do NOT carry the requested item): ` +
       `(1) Honestly and warmly acknowledge we don't currently have that specific item. ` +
-      `(2) NEVER name, price, substitute, or hint at an unrelated product — there is genuinely no relevant product to show. ` +
-      `(3) Continue the sale naturally: in one short sentence, ask what TYPE or category they're interested in ` +
-      `${hasSpecialtyAttrs ? '(e.g. type, material, zodiac, occasion, or budget)' : '(e.g. type, material, occasion, or budget)'} ` +
-      `and offer to show what we do have. Keep it to ~2 short, friendly sentences.`,
+      `(2) NEVER name, price, substitute, or hint at any product — there is genuinely no relevant product to show. ` +
+      `(3) Then ASK — don't assume: offer to show what we do have and ask what TYPE or category interests them ` +
+      `${hasSpecialtyAttrs ? '(e.g. type, material, zodiac, occasion, or budget)' : '(e.g. type, material, occasion, or budget)'}. ` +
+      `Present products only once they've told you or said yes. Keep it to ~2 short, friendly sentences.`,
     );
   }
 
@@ -334,6 +384,10 @@ export function buildCraftShopSystemPrompt(
   if (offerExhausted) {
     // Products intentionally omitted — the ALREADY ANSWERED instruction above handles the
     // whole reply. Handing over any list here is exactly what we're trying to stop.
+  } else if (withholdAlternatives) {
+    // Same reasoning, one turn earlier: the customer has not yet said they want to see
+    // alternatives, so the model is given none to leak. The pipeline remembers them and
+    // passes them back with alternativesAccepted once the customer says yes.
   } else if (hasSimilars) {
     const requested = displayProducts.slice(0, primaryCount).map(fmtLine).join('\n');
     const similar = displayProducts.slice(primaryCount).map(fmtLine).join('\n');
@@ -350,7 +404,7 @@ export function buildCraftShopSystemPrompt(
     sections.push(`PRODUCTS:\n${productLines}`);
   }
 
-  if (photoKeys && !offerExhausted) {
+  if (photoKeys && !offerExhausted && !withholdAlternatives) {
     sections.push(photoKeys);
   }
 

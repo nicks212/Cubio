@@ -1,5 +1,6 @@
 import { model } from './model';
-import { buildGlobalSystemPrompt, LANGUAGE_RULE, LANGUAGE_LOCK } from './prompts/global';
+import { buildGlobalSystemPrompt, LANGUAGE_RULE, buildLanguageLock, buildMultiAskRule } from './prompts/global';
+import { splitCustomerAsks, formatAsksForPrompt } from './messageParts';
 import { buildRealEstateSystemPrompt } from './prompts/real_estate';
 import { buildCraftShopSystemPrompt } from './prompts/craft_shop';
 import { buildBeautySalonSystemPrompt } from './prompts/beauty_salon';
@@ -136,7 +137,20 @@ export async function generateReply(
   usageContext?: Omit<AIUsageContext, 'feature' | 'model'>,
   /** True when the current customer message contains a link/URL the AI cannot open. */
   linkSent = false,
+  /**
+   * True when the customer has just accepted our offer to see related items after we
+   * told them we don't stock what they asked for. The withheld products are back in
+   * `context` for this turn and may finally be presented.
+   */
+  alternativesAccepted = false,
 ): Promise<string> {
+  // A debounced burst can carry several questions. Splitting them lets the prompt
+  // require an answer to each one instead of whichever the model happens to notice.
+  const customerAsks = splitCustomerAsks(message);
+  const multiAskRule = customerAsks.length > 1
+    ? buildMultiAskRule(formatAsksForPrompt(customerAsks))
+    : null;
+  const languageLock = buildLanguageLock(replyLanguage);
   // ── Chat intent: lean micro-prompt, no business context ───────────────────
   if (intent === 'chat') {
     // Inject a short business hint so the AI responds contextually to openers like
@@ -151,13 +165,14 @@ export async function generateReply(
       ? `This is their very first message: you MUST open with a warm greeting AND clearly tell them — naturally, in your own words, never a canned line — that they're chatting with the business's AI assistant who can ${PROFILE_COPY[businessType].scope}. This transparency is required on this first message only. `
       : '';
     const chatSystemInstruction =
-      `${LANGUAGE_LOCK} ` +
+      `${languageLock} ` +
       `You are a warm, natural sales assistant${bizHint}. ` +
       `${domainFence} ` +
       `${LANGUAGE_RULE} ` +
       `${firstMsgDisclosure}` +
       `${linkSent ? `${LINK_RULE} ` : ''}` +
-      `1–2 sentences max. Be conversational. ` +
+      `${multiAskRule ? `${multiAskRule} ` : ''}` +
+      `1–2 sentences max${multiAskRule ? ' per question they asked' : ''}. Be conversational. ` +
       `If company details are limited, ask one short clarifying question instead of guessing. ` +
       `If they mention seeing an ad or coming to inquire — warmly ask what they are looking for. ` +
       `If they say thanks, say you're welcome. If they say goodbye, wish them well.`;
@@ -224,6 +239,7 @@ export async function generateReply(
             replyLanguage,
             businessType,
             offerExhausted: repeatedRequest && ((context as ProductContext).matchedProducts?.length ?? 0) === 0,
+            alternativesAccepted,
           });
 
   // ── System instruction ─────────────────────────────────────────────────────
@@ -253,9 +269,14 @@ export async function generateReply(
       'ESCALATION (this turn only): Include a brief, natural offer to connect the customer with a company representative — one sentence, no apologies. Ask if they would like that.',
     );
   }
+  // Multiple questions in one burst: the "answer every one, in order" rule sits near the
+  // top so it frames the whole reply rather than being read after the product blocks.
+  if (multiAskRule) {
+    systemParts.unshift(multiAskRule);
+  }
   // Language lock goes in LAST so it lands FIRST (unshift) — ahead of NO GREETING / LINK
   // RULE — making it the single highest-priority directive the model reads.
-  systemParts.unshift(LANGUAGE_LOCK);
+  systemParts.unshift(languageLock);
   const systemInstructionText = systemParts.filter(Boolean).join('\n\n');
 
   // ── Token-guarded history slice ────────────────────────────────────────────

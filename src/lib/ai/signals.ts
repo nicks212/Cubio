@@ -37,9 +37,14 @@ export const BUSINESS_QUERY_RE =
 /** Broad catalog inquiry — no specific product asked, customer wants to browse.
  *  Used by the prompt builder to distinguish "what do you sell?" (show catalog)
  *  from a specific category query with no retrieval hit (ask clarifying question).
- *  Exported here so both processIncomingMessage and the prompt builder share one source. */
+ *  Exported here so both processIncomingMessage and the prompt builder share one source.
+ *
+ *  The customer must be asking what the shop CARRIES. Bare "shop" / "store" / "მაღაზია"
+ *  used to qualify on their own, so "do you have a physical store?" was read as browsing:
+ *  the assistant answered with a tour of its categories and never addressed the product
+ *  question sent alongside it. Mentioning the shop is not a request to browse it. */
 export const CRAFT_BROAD_QUERY_RE =
-  /what\s+do\s+you\s+(?:sell|have)|what\s+(?:products|items)\s+do\s+you\s+have|what'?s\s+available|catalog|shop|store|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s+[\u10D0-\u10FF\w]+\s*გაქვთ|რა\s*იყიდება|კატალოგ|მაღაზია/i;
+  /what\s+do\s+you\s+(?:sell|have|offer|stock)\b|what\s+(?:products|items|things)\s+do\s+you\s+(?:have|sell)|what'?s\s+(?:available|in\s+(?:the\s+)?(?:shop|store))|\bcatalog(?:ue)?\b|რას\s*(?:ყიდით|გაქვთ)|რა\s*გაქვთ|რა\s+[\u10D0-\u10FF\w]+\s*გაქვთ|რა\s*იყიდება|რა\s*პროდუქტ|კატალოგ|მაღაზიაში\s*რა/i;
 
 /** Message contains a photo/image request anywhere.
  *  Covers Georgian script, romanized Georgian (latin chars), English, Russian. */
@@ -143,6 +148,21 @@ export const MORE_LIKE_RE =
  */
 export const CUSTOM_REQUEST_RE =
   /\b(?:custom|bespoke|negotiat|special\s*(?:price|deal|offer|request|discount)|off[\s-]?plan|personaliz|different\s*price|price\s*(?:negotia|reduc|discuss)|discount\b)|(?:სპეციალ(?:ური|ი)\s*(?:ფასი?|შეთავაზ)|ფასდათმობ|მოლაპარაკ(?:ება)?|ინდივიდ(?:ურ(?:ი|ი))?|ნეგოცი)/i;
+
+/**
+ * Customer is saying "yes" to something the assistant just offered.
+ *
+ * Used for the two-step alternatives flow: when we don't stock the requested item we
+ * say so and ASK whether they'd like to see what's close; the withheld products are
+ * presented only on a turn that matches this.
+ *
+ * The WHOLE message must be an affirmative (plus an optional short courtesy tail like
+ * "please" / "მაჩვენეთ"), so "yes, do you have malas?" is treated as a fresh question
+ * rather than as consent to see the previous list.
+ * Covers English, Georgian script, romanized Georgian, Russian.
+ */
+export const AFFIRMATIVE_RE =
+  /^[\s.,!?]*(?:yes|yeah|yep|yup|sure|ok|okay|alright|fine|absolutely|definitely|of\s+course|go\s+ahead|do\s+it|sounds\s+good|why\s+not|show\s+me|let'?s\s+see|კი|ჰო|დიახ|კარგი|რა\s+თქმა\s+უნდა|მაჩვენ(?:ე|ეთ)|მინახავს|გთხოვ(?:თ)?|ki|ho|diax|diakh|kargi|machven(?:e|et)|manax(?:e|et)|gtxovt|gthovt|да|конечно|хорошо|давай|покажите?)(?:[\s,.!]+(?:please|thanks|thank\s+you|sure|yes|them|it|all|me|show|madloba|gmadlobt|მადლობა|გმადლობთ|გთხოვ(?:თ)?|მაჩვენ(?:ე|ეთ)|კი|ჰო|machven(?:e|et)|manax(?:e|et)|пожалуйста|спасибо))*[\s.,!?]*$/i;
 
 /**
  * Customer confirms they want to be connected with a representative.

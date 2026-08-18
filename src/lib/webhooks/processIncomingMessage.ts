@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { generateReply, generateEscalationHandoff } from '@/lib/ai';
 import { analyzeLeadState } from '@/lib/leads/detector';
-import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE, CRAFT_BROAD_QUERY_RE, REFERENCE_FOLLOWUP_RE, URL_RE } from '@/lib/ai/signals';
+import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_REQUEST_RE, ESCALATION_CONFIRM_RE, AFFIRMATIVE_RE, FRUSTRATION_GATE_RE, PHOTO_RE, BUSINESS_QUERY_RE, CRAFT_BROAD_QUERY_RE, REFERENCE_FOLLOWUP_RE, URL_RE } from '@/lib/ai/signals';
 import { detectLeadAndEscalation } from '@/lib/ai/detect';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
@@ -14,6 +14,7 @@ import { gateConfidentVectorMatches } from '@/lib/ai/vectorGate';
 import { persistAIUsage } from '@/lib/ai/usage';
 import { normalizeQuery, retrieveProducts, normalizeProductName, extractCategoryKeywords } from '@/lib/ai/productRetrieval';
 import { translateProductForEnglish, detectReplyLanguage, compactCompanyInfoForEnglish } from '@/lib/ai/geoTranslation';
+import { splitCustomerAsks, dropBurstFromHistory } from '@/lib/ai/messageParts';
 import { redis } from '@/lib/redis';
 import { createHash } from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -177,8 +178,7 @@ export async function processIncomingMessage(
     .limit(10)
     .then(r => r);
   const preloadedHistory: MessageHistoryEntry[] = ((historySnapshot ?? []) as MessageHistoryEntry[]).reverse();
-  const isFirstMessage = !photosSent && preloadedHistory.filter(m => m.role === 'user').length === 0;
-  console.info(`${label} [history] snapshot: ${preloadedHistory.length} turns, isFirstMessage:${isFirstMessage}`);
+  console.info(`${label} [history] snapshot: ${preloadedHistory.length} turns`);
 
   // 4. Save incoming message — capture ID + created_at for debounce check
   const { data: savedMsg } = await supabase
@@ -238,6 +238,24 @@ export async function processIncomingMessage(
     : msg.messageText;
   console.info(`${label} [debounce] processing ${bufferedTexts.length} buffered message(s) for conversation ${conversationId}`);
 
+  // Every message in the burst was already written to the messages table by its own
+  // webhook handler, so the earlier ones are ALSO sitting in this handler's history
+  // snapshot. Left in, the model receives the customer's first question twice — once as
+  // settled history it has apparently already dealt with, once inside the current turn —
+  // which is a reliable way to make it answer only the newest part. Drop the trailing
+  // user turns that this turn is about to answer.
+  const history: MessageHistoryEntry[] = dropBurstFromHistory(preloadedHistory, bufferedTexts);
+  if (history.length !== preloadedHistory.length) {
+    console.info(`${label} [debounce] removed ${preloadedHistory.length - history.length} burst message(s) from history (already folded into this turn)`);
+  }
+
+  // isFirstMessage is judged AFTER the burst is removed. Judged on the raw snapshot, a
+  // customer who opened with two quick messages looked like a returning customer to the
+  // handler answering them — so their very first reply skipped the greeting and, more
+  // importantly, the one-time disclosure that they are talking to an AI assistant.
+  const isFirstMessage = !photosSent && history.filter(m => m.role === 'user').length === 0;
+  console.info(`${label} [history] ${history.length} turns after burst removal, isFirstMessage:${isFirstMessage}`);
+
   // 6-pre. Voice transcription — runs only when the customer sent a voice note.
   // Transcription happens AFTER debounce so we don't waste a Gemini call on a message
   // that will be skipped by the dedup/lock checks above.
@@ -273,11 +291,20 @@ export async function processIncomingMessage(
   }
 
   // ── Single language authority for this turn ─────────────────────────────────
-  // Derived ONLY from the current customer message (the transcript, when this was a
-  // voice note). Never from conversation history — so a customer can switch language
-  // every message and each reply adapts. Threaded into generateReply and every
-  // deterministic fallback below; nothing re-detects language independently.
-  const replyLanguage = detectReplyLanguage(combinedMessage);
+  // Derived from the current customer message (the transcript, when this was a voice
+  // note) — so a customer can switch language every message and each reply adapts.
+  // Detection covers Georgian script AND Georgian typed in Latin letters ("gamarjoba",
+  // "gaqvt", "minda"), which previously fell through to English and got an English
+  // reply. The customer's OWN earlier messages are consulted only when the current
+  // message carries no language signal at all (a bare "ok" or an emoji); the
+  // assistant's replies are never consulted, since they contain Georgian product names
+  // and would permanently flip foreign-language conversations to Georgian.
+  const priorCustomerText = preloadedHistory
+    .filter(m => m.role === 'user')
+    .slice(-3)
+    .map(m => m.content)
+    .join('\n');
+  const replyLanguage = detectReplyLanguage(combinedMessage, priorCustomerText);
   console.info(`${label} [language] replyLanguage=${replyLanguage}`);
 
   // ── Link / URL handling (all business types) ────────────────────────────────
@@ -290,6 +317,16 @@ export async function processIncomingMessage(
     ? combinedMessage.replace(new RegExp(URL_RE.source, 'gi'), ' ').replace(/\s+/g, ' ').trim()
     : combinedMessage).trim();
   if (linkSent) console.info(`${label} [link] URL detected — retrieval text: "${retrievalText.slice(0, 60)}"`);
+
+  // ── The customer's separate asks ────────────────────────────────────────────
+  // A debounced burst routinely carries more than one question. Splitting it keeps each
+  // question's words out of the others' product search (a store-hours question must not
+  // score products for a product question) and lets the prompt require an answer to all
+  // of them, in the order asked.
+  const customerAsks = splitCustomerAsks(retrievalText);
+  if (customerAsks.length > 1) {
+    console.info(`${label} [asks] ${customerAsks.length} separate asks: ${JSON.stringify(customerAsks.map(a => a.slice(0, 40)))}`);
+  }
 
   // 6. Detect intent — fast regex first; AI classifier fallback for ambiguous short messages
   //    (romanized Georgian like "fotoebs", "suratebi", "vnaxo" can't be caught by keywords alone).
@@ -378,6 +415,7 @@ export async function processIncomingMessage(
       priorityProductNames: similarProductNames,
       imageSearchQuery: imageSearchQuery ?? undefined,
       textQuery: retrievalText || undefined,
+      queryParts: customerAsks,
     }),
   ]);
 
@@ -455,10 +493,10 @@ export async function processIncomingMessage(
 
   const messageIntent = regexIntent ?? (aiIntent?.intent ?? 'search') as import('@/lib/ai/intentDetector').MessageIntent;
 
-  // Use the pre-loaded history snapshot (captured before current message was saved to DB).
+  // `history` was derived at step 5f from the pre-loaded snapshot (captured before the
+  // current message was saved), minus the burst messages folded into this turn.
   // lastShownApt is passed directly to generateReply to seed conversation state —
   // no synthetic SHOW_PHOTOS injection needed.
-  const history: MessageHistoryEntry[] = preloadedHistory;
 
   // 7b. Photo follow-up detection:
   //     If the last AI message asked "which apartment?" in response to a photo request,
@@ -512,6 +550,39 @@ export async function processIncomingMessage(
     console.info(`${label} Short reply to business question — overriding 'chat' to 'search'`);
   }
 
+  // ── Two-step alternatives, part 1: did the customer take up the offer? ───────
+  // When retrieval finds only same-category alternatives for an item the shop doesn't
+  // stock, the prompt withholds them and asks whether the customer would like to see
+  // something close (buildCraftShopSystemPrompt → withholdAlternatives). We remember
+  // which products were held back, because the reply that accepts the offer ("კი",
+  // "yes") names nothing and would retrieve nothing on its own.
+  //
+  // This runs BEFORE the context is chosen: a bare "yes" reads as social chat, and the
+  // chat path swaps in an empty catalog — which would leave nothing to present.
+  const ALT_OFFER_KEY = `cubio:alt_offered:${conversationId}`;
+  let heldBackProductNames: string[] = [];
+  let alternativesAccepted = false;
+  if (isProductBusiness(integration.businessType)) {
+    try {
+      const stored = await redis.get<string[]>(ALT_OFFER_KEY);
+      if (Array.isArray(stored) && stored.length > 0) {
+        // Consumed either way: a "yes" presents them now; anything else has moved the
+        // conversation on, and a later "yes" must not resurrect a stale list.
+        await redis.del(ALT_OFFER_KEY);
+        if (AFFIRMATIVE_RE.test(combinedMessage.trim())) {
+          heldBackProductNames = stored;
+          alternativesAccepted = true;
+          effectiveIntent = 'search';
+          console.info(`${label} [alternatives] customer accepted the offer — restoring ${stored.length} held-back product(s)`);
+        } else {
+          console.info(`${label} [alternatives] offer not taken up — cleared`);
+        }
+      }
+    } catch {
+      // Redis unavailable — the flow degrades to a single-step answer, never to a crash.
+    }
+  }
+
   // For pure chat intent, keep a minimal grounded context instead of a fully empty stub.
   // Must be computed AFTER all intent overrides above.
   const finalBusinessContext: BusinessContext = effectiveIntent === 'chat'
@@ -549,6 +620,25 @@ export async function processIncomingMessage(
       console.info(`${label} [reference] resolved ${resolved.length} product(s) from prior context: ${JSON.stringify(resolved.map(p => p.name))}`);
     } else {
       console.info(`${label} [reference] follow-up detected but no prior product found to resolve`);
+    }
+  }
+
+  // ── Two-step alternatives, part 2: present what we held back ────────────────
+  // The customer said yes, so the products withheld last turn go back into the matched
+  // list. They are looked up in the full catalog by name, so anything since sold out or
+  // deleted simply drops away rather than being offered.
+  if (alternativesAccepted && 'products' in finalBusinessContext) {
+    const pc = finalBusinessContext as ProductContext;
+    const restored = heldBackProductNames
+      .map(n => pc.products.find(p => normalizeProductName(p.name) === normalizeProductName(n)))
+      .filter((p): p is ProductContext['products'][0] => !!p && p.in_stock);
+    if (restored.length > 0) {
+      pc.matchedProducts = restored;
+      pc.categoryFallbackHits = restored.length;
+      console.info(`${label} [alternatives] presenting ${restored.length} held-back product(s): ${JSON.stringify(restored.map(p => p.name))}`);
+    } else {
+      alternativesAccepted = false;
+      console.warn(`${label} [alternatives] none of the held-back products are still available — falling back to a normal turn`);
     }
   }
 
@@ -658,9 +748,31 @@ export async function processIncomingMessage(
     replyLanguage,
     { companyId: integration.companyId, conversationId },
     linkSent,
+    alternativesAccepted,
   );
 
   console.info(`${label} AI reply (${reply.length} chars) for conversation ${conversationId}`);
+
+  // Remember the alternatives the prompt just withheld, so a plain "yes" next turn can
+  // present them. Mirrors buildCraftShopSystemPrompt's withholdAlternatives condition:
+  // same-category hits only, with no direct token or vector match to the asked-for item.
+  if (isProductBusiness(integration.businessType) && 'products' in finalBusinessContext && !alternativesAccepted) {
+    const pc = finalBusinessContext as ProductContext;
+    const withheld =
+      (pc.categoryFallbackHits ?? 0) > 0 &&
+      (pc.tokenRetrievalHits ?? 0) === 0 &&
+      (pc.vectorHits ?? 0) === 0
+        ? (pc.matchedProducts ?? []).map(p => p.name)
+        : [];
+    if (withheld.length > 0) {
+      try {
+        await redis.set(ALT_OFFER_KEY, withheld, { ex: 1800 });
+        console.info(`${label} [alternatives] held back ${withheld.length} product(s) pending the customer's yes: ${JSON.stringify(withheld)}`);
+      } catch {
+        // Redis unavailable — the customer simply gets asked again next turn.
+      }
+    }
+  }
 
   // Parse SHOW_PHOTOS: identifier from AI reply.
   // The prompt rules are strict — AI only emits SHOW_PHOTOS when customer explicitly asks.

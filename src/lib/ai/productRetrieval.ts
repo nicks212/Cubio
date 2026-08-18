@@ -40,18 +40,55 @@ export function withinEditDistance2(a: string, b: string): boolean {
   }
   return row[n] <= 2;
 }
-// English function words that carry no retrieval signal and must be stripped
-// before token matching.  Without this, "Do you have emerald stones?" scores
-// "do" and "have" hits against product names/descriptions, producing nonsense
-// matches like "I am not a Doll" (doll.startsWith("do") = true).
+// Function words that carry no retrieval signal and must be stripped before token
+// matching. Without this, "Do you have emerald stones?" scores "do" and "have" hits
+// against product names/descriptions, producing nonsense matches like "I am not a
+// Doll" (doll.startsWith("do") = true).
+//
+// The list covers BOTH languages the shops receive, because normalizeQuery()
+// transliterates Georgian to Latin before tokenising — so Georgian grammar arrives
+// here as Latin text and is just as capable of matching a product description.
+// Entries are stored in POST-STEM form (stemGeoToken runs before the filter).
+//
+// This was a live production failure: "და" (Georgian for "and") transliterates to
+// "da", which matched the word "და" inside every Georgian product description, so a
+// question about one thing retrieved the entire catalog.
 const EN_STOPWORDS = new Set([
+  // ── English ──────────────────────────────────────────────────────────────
   'do', 'does', 'did', 'have', 'has', 'had',
   'you', 'your', 'we', 'our', 'they', 'their', 'it', 'its',
   'is', 'are', 'was', 'were', 'be', 'been',
   'the', 'an', 'can', 'could', 'would', 'should', 'will', 'may', 'might',
   'this', 'that', 'these', 'those', 'what', 'which', 'who',
+  'how', 'where', 'when', 'why', 'much', 'many', 'any', 'some',
   'show', 'tell', 'me', 'to', 'in', 'of', 'for', 'on', 'at', 'or', 'and', 'not',
+  'hello', 'hi', 'hey', 'thanks', 'thank', 'please', 'good', 'morning', 'evening',
+  'sell', 'sells', 'sale', 'sales', 'buy', 'available', 'stock', 'price', 'cost',
+  // ── Georgian, as transliterated by normalizeQuery() ──────────────────────
+  // conjunctions / particles / question words
+  'da', 'tu', 'an', 'khom', 'rom', 'ro', 'ra', 'ras', 'ram', 'romel', 'rogor',
+  'ratom', 'rodis', 'ramden', 'sad', 'vin', 'vis', 'ki', 'ara', 'kide', 'kidev',
+  'jer', 'mere', 'magram', 'anu', 'ukve', 'ase', 'ise', 'es', 'eg', 'aseve',
+  // pronouns
+  'me', 'shen', 'chven', 'tkven', 'tqven', 'chemi', 'sheni', 'chveni', 'yvela',
+  // copulas / possession / modality — the verbs every request is phrased with
+  'ari', 'aris', 'arian', 'iyo', 'ikneba', 'iqneba', 'khar', 'khart', 'var', 'vart',
+  'gakvt', 'gaqvt', 'gakvs', 'gaqvs', 'gvakvs', 'gvaqvs', 'makvs', 'maqvs',
+  'minda', 'ginda', 'gindat', 'unda', 'mchirdeba', 'sheidzleba', 'shemidzlia',
+  // greetings / politeness
+  'gamarjoba', 'gamarjobat', 'salami', 'madloba', 'gmadlobt', 'gmadlob',
+  'bodishi', 'bodi', 'gtkhovt', 'batono', 'kalbatono', 'kargi', 'dzalian',
+  // commerce grammar (not product identity)
+  'maghazia', 'magazia', 'gaqidva', 'gakidva', 'fasi', 'fasad', 'ghirs', 'girs',
+  'raodenoba', 'dghe', 'dghes',
 ]);
+
+/**
+ * The score at or above which a token match counts as "the customer's requested
+ * product", not a coincidental overlap. Shared with loadBusinessContext so the
+ * scoring engine and the relevance gate can never drift apart.
+ */
+export const STRONG_RETRIEVAL_SCORE = 5.0;
 
 // Georgian morphological endings (longest-first for greedy stripping).
 const GEO_SUFFIXES = ['ebi', 'ebis', 'ebs', 'shi', 'its', 'ad', 'ze', 'is', 'it', 'eb', 's', 'i'];

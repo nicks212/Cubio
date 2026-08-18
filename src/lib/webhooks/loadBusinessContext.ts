@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import type { BusinessContext, ServiceContext } from '@/lib/ai';
-import { retrieveProducts, extractCategoryKeywords, retrieveProductsByCategory, normalizeProductName } from '@/lib/ai/productRetrieval';
+import { retrieveProducts, extractCategoryKeywords, retrieveProductsByCategory, normalizeProductName, STRONG_RETRIEVAL_SCORE } from '@/lib/ai/productRetrieval';
 import type { BusinessType } from '@/types/database';
 import { generateAvailableSlots } from '@/lib/services/availability';
 import { parseRequestedDate } from '@/lib/services/dateParse';
@@ -19,6 +19,13 @@ export interface LoadContextOptions {
    * Only used for product shops (craft_shop + shop); ignored for real_estate.
    */
   textQuery?: string;
+  /**
+   * `textQuery` broken into the customer's separate asks (see splitCustomerAsks).
+   * Retrieval runs per ask so words from one question cannot score products for
+   * another — the fix for bursts like "do you have a store?" + "do you sell X?".
+   * Omit to search the whole `textQuery` as one string.
+   */
+  queryParts?: string[];
 }
 
 /**
@@ -144,12 +151,11 @@ export async function loadBusinessContext(
   // with arbitrary catalog rows, so insertion-order items (e.g. the deity statues
   // created first) cannot leak into a response when retrieval finds few/no matches.
   //
-  // STRONG_RETRIEVAL_SCORE tracks the scoring engine: a single category/description
-  // token scores 2.5; two tokens or a full category/name match score >= 5; exact or
-  // "name contains query" score 8–10. So < 5 means only a weak coincidental hit —
-  // which must NOT be treated as a confident match, and must NOT suppress the
-  // category fallback below.
-  const STRONG_RETRIEVAL_SCORE = 5.0;
+  // STRONG_RETRIEVAL_SCORE (imported from the scoring engine so the two can never
+  // drift) tracks the scoring engine: a single category/description token scores 2.5;
+  // two tokens or a full category/name match score >= 5; exact or "name contains
+  // query" score 8–10. So < 5 means only a weak coincidental hit — which must NOT be
+  // treated as a confident match, and must NOT suppress the category fallback below.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const byName = (name: string): any => allProducts.find((p: any) => p.name.toLowerCase() === name.toLowerCase());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -176,6 +182,15 @@ export async function loadBusinessContext(
   const retrievalQuery = (options.textQuery?.trim() || options.imageSearchQuery?.trim()) || undefined;
   const retrievalSource = options.textQuery?.trim() ? 'text' : (options.imageSearchQuery?.trim() ? 'image' : 'none');
 
+  // Each ask is searched on its own. A debounced burst can hold several questions
+  // ("do you have a physical store?" + "do you sell rudraksha?"), and searching the
+  // merged text let words from one question score products for another — which is how
+  // a store-hours question ended up recommending a necklace. Falls back to the whole
+  // query when the caller passed no split (image descriptions, older call sites).
+  const retrievalParts = (options.queryParts?.length ? options.queryParts : (retrievalQuery ? [retrievalQuery] : []))
+    .map(p => p.trim())
+    .filter(Boolean);
+
   // 1. Vector priority (image similarity) — strongest signal.
   if (options.priorityProductNames?.length) {
     for (const n of options.priorityProductNames) pushUnique(byName(n));
@@ -185,19 +200,21 @@ export async function loadBusinessContext(
   //    (strong score) are surfaced. A weak top score is intentionally dropped (no
   //    best-effort fallback) so it becomes NO_RELEVANT_MATCH rather than an unrelated
   //    recommendation. Same-category alternatives can still fire below (step 3).
-  if (!options.priorityProductNames?.length && retrievalQuery) {
-    const retrievalHits = retrieveProducts(allProducts, retrievalQuery);
-    const topScore = retrievalHits[0]?.score ?? 0;
-    if (retrievalHits.length > 0) {
-      const t = retrievalHits[0];
-      console.info(`[loadBusinessContext] retrieval[${retrievalSource}]: ${retrievalHits.length} hit(s) for "${retrievalQuery.slice(0, 40)}" — top "${t.name}" score=${topScore.toFixed(1)} conf=${t.confidence.toFixed(2)} reason=${t.reason}`);
-    } else {
-      console.info(`[loadBusinessContext] retrieval[${retrievalSource}]: no matches above threshold for "${retrievalQuery.slice(0, 40)}"`);
-    }
-    // STRICT RELEVANCE GATE: only a confident token match counts as the requested product.
-    if (topScore >= STRONG_RETRIEVAL_SCORE) {
-      for (const h of retrievalHits) pushUnique(byName(h.name));
-      tokenRetrievalHitCount = retrievalHits.length;
+  if (!options.priorityProductNames?.length && retrievalParts.length > 0) {
+    for (const part of retrievalParts) {
+      const retrievalHits = retrieveProducts(allProducts, part);
+      const topScore = retrievalHits[0]?.score ?? 0;
+      if (retrievalHits.length > 0) {
+        const t = retrievalHits[0];
+        console.info(`[loadBusinessContext] retrieval[${retrievalSource}]: ${retrievalHits.length} hit(s) for "${part.slice(0, 40)}" — top "${t.name}" score=${topScore.toFixed(1)} conf=${t.confidence.toFixed(2)} reason=${t.reason}`);
+      } else {
+        console.info(`[loadBusinessContext] retrieval[${retrievalSource}]: no matches above threshold for "${part.slice(0, 40)}"`);
+      }
+      // STRICT RELEVANCE GATE: only a confident token match counts as the requested product.
+      if (topScore >= STRONG_RETRIEVAL_SCORE) {
+        for (const h of retrievalHits) pushUnique(byName(h.name));
+        tokenRetrievalHitCount += retrievalHits.length;
+      }
     }
   }
 
@@ -210,14 +227,15 @@ export async function loadBusinessContext(
   //    weak coincidental hit can no longer block "we don't have X, but here are
   //    other <category>" behaviour. Runs on the caption or, for image-only messages,
   //    on the vision description — so a photo of a bracelet still yields bracelets.
-  if (matched.length === 0 && retrievalQuery) {
-    const catPatterns = extractCategoryKeywords(retrievalQuery);
-    if (catPatterns) {
+  if (matched.length === 0 && retrievalParts.length > 0) {
+    for (const part of retrievalParts) {
+      const catPatterns = extractCategoryKeywords(part);
+      if (!catPatterns) continue;
       const catHits = retrieveProductsByCategory(allProducts, catPatterns);
       if (catHits.length > 0) {
-        categoryFallbackHitCount = catHits.length;
+        categoryFallbackHitCount += catHits.length;
         for (const h of catHits) pushUnique(byName(h.name));
-        console.info(`[loadBusinessContext] category-fallback[${retrievalSource}]: ${catHits.length} same-category alternative(s) for "${retrievalQuery.slice(0, 40)}" patterns=[${catPatterns.slice(0, 3).join(', ')}]`);
+        console.info(`[loadBusinessContext] category-fallback[${retrievalSource}]: ${catHits.length} same-category alternative(s) for "${part.slice(0, 40)}" patterns=[${catPatterns.slice(0, 3).join(', ')}]`);
       } else {
         console.info(`[loadBusinessContext] category-fallback[${retrievalSource}]: no products matched patterns [${catPatterns.slice(0, 3).join(', ')}]`);
       }
