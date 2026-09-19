@@ -89,6 +89,8 @@ interface IntegrationRow {
   account_name: string;
   provider_account_id?: string;
   is_active: boolean;
+  /** Set when a reply could not be delivered because the access token is dead. */
+  needs_reconnect?: boolean;
 }
 
 interface Props {
@@ -136,7 +138,12 @@ export default function IntegrationsClient({ integrations }: Props) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {visibleProviders.map(provider => {
           const row = byProvider.get(provider.id);
-          const connected = !!row && row.is_active;
+          // Three states, not two: an integration whose token has died is still "set up",
+          // so showing it as Not Connected would read as "never configured". It gets its
+          // own amber state — the previous green-forever badge is why a five-week outage
+          // went unnoticed.
+          const needsReconnect = !!row && row.is_active && !!row.needs_reconnect;
+          const connected = !!row && row.is_active && !needsReconnect;
           const Icon = provider.icon;
 
           return (
@@ -147,7 +154,7 @@ export default function IntegrationsClient({ integrations }: Props) {
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground leading-tight">{provider.name}</p>
-                  {connected && row?.account_name && (
+                  {(connected || needsReconnect) && row?.account_name && (
                     <p className="text-xs text-slate-500 truncate">{row.account_name}</p>
                   )}
                 </div>
@@ -158,6 +165,11 @@ export default function IntegrationsClient({ integrations }: Props) {
                   <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
                     {t('integrations.connected')}
+                  </span>
+                ) : needsReconnect ? (
+                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                    {t('integrations.needs_reconnect')}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">

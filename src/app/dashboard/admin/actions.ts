@@ -61,6 +61,10 @@ export async function createIntegration(_prev: unknown, formData: FormData) {
     access_token: formData.get('access_token') as string,
     refresh_token: formData.get('refresh_token') as string || null,
     is_active: formData.get('is_active') === 'true',
+    // A freshly-entered token is assumed good until a delivery proves otherwise.
+    needs_reconnect: false,
+    last_error: null,
+    last_error_at: null,
   });
   if (error) return { error: error.message };
 
@@ -93,6 +97,10 @@ export async function updateIntegration(_prev: unknown, formData: FormData) {
     access_token: formData.get('access_token') as string,
     refresh_token: formData.get('refresh_token') as string || null,
     is_active: formData.get('is_active') === 'true',
+    // Reconnecting clears the broken flag; the next failed send would set it again.
+    needs_reconnect: false,
+    last_error: null,
+    last_error_at: null,
   }).eq('id', id);
   if (error) return { error: error.message };
 

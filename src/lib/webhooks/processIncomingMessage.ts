@@ -5,20 +5,20 @@ import { CANCEL_RE, BROWSE_AGAIN_RE, PHONE_EXTRACT_RE, HUMAN_REQUEST_RE, CUSTOM_
 import { detectLeadAndEscalation } from '@/lib/ai/detect';
 import { identifyCompany } from './identifyCompany';
 import { loadBusinessContext } from './loadBusinessContext';
-import { sendProviderResponse, sendImageUrls } from './sendProviderResponse';
+import { sendProviderResponse, sendImageUrls, type SendResult } from './sendProviderResponse';
 import { bufferAndClaim, isStampHolder, acquireLock, drainBuffer, releaseLock, DEBOUNCE_MS } from './messageBuffer';
 import { detectIntent, detectPhotoType, classifyIntentAI } from '@/lib/ai/intentDetector';
 import { shouldRunLeadAnalysis } from '@/lib/ai/leadGate';
 import { describeImageForSearch, searchSimilarApartments, searchSimilarProducts, searchSimilarProductsScored, STRONG_PRODUCT_VECTOR_SIMILARITY, type ScoredProductMatch } from '@/lib/ai/embeddings';
 import { gateConfidentVectorMatches } from '@/lib/ai/vectorGate';
 import { persistAIUsage } from '@/lib/ai/usage';
-import { normalizeQuery, retrieveProducts, normalizeProductName, extractCategoryKeywords } from '@/lib/ai/productRetrieval';
+import { normalizeQuery, retrieveProducts, normalizeProductName, extractCategoryKeywords, hasProductSignal } from '@/lib/ai/productRetrieval';
 import { translateProductForEnglish, detectReplyLanguage, compactCompanyInfoForEnglish } from '@/lib/ai/geoTranslation';
 import { splitCustomerAsks, dropBurstFromHistory } from '@/lib/ai/messageParts';
 import { redis } from '@/lib/redis';
 import { createHash } from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import type { NormalizedMessage, ProcessResult, MessageHistoryEntry } from './types';
+import type { NormalizedMessage, ProcessResult, MessageHistoryEntry, ResolvedIntegration } from './types';
 import type { ApartmentContext, ProductContext, ServiceContext, BusinessContext } from '@/lib/ai/types';
 import { isProductBusiness, type BusinessType } from '@/types/database';
 import type { PhotoType } from '@/lib/ai/intentDetector';
@@ -284,7 +284,7 @@ export async function processIncomingMessage(
         ? '\u10ee\u10db\u10dd\u10d5\u10d0ნი შეტყობინება მივიღე — გთხოვთ დაწეროთ თქვენი კითხვა ტექსტის სახით.'
         : 'Voice message received — please type your question.';
       await supabase.from('messages').update({ content: '[voice message]' }).eq('id', savedMessageId ?? '');
-      await sendProviderResponse(msg.provider, msg.senderId, fallback, integration.accessToken, integration.providerAccountId);
+      await deliverReply(supabase, integration, msg, fallback, label);
       await releaseLock(conversationId);
       return { conversationId, reply: fallback };
     }
@@ -394,9 +394,23 @@ export async function processIncomingMessage(
   //     History was pre-loaded at step 3c (before message save) — no DB fetch here.
   // Retrieve scored candidates (≥ STRONG bar) so the relevance gate below can tell a
   // focused cross-language match from a diffuse cluster of vaguely-related neighbours.
+  //
+  // Searched per ask, matching the token retrieval, so one question's wording cannot pull
+  // products for another. Asks left with nothing after grammar and greetings are stripped
+  // are skipped entirely: embedding "გამარჯობა" or "დღეს მუშაობთ?" against a small,
+  // thematically-uniform catalog returns the whole shelf at a uniform ~0.65, which then
+  // rides into the prompt as matched products. Skipping also saves the embedding call.
+  const vectorAsks = customerAsks.filter(hasProductSignal);
+  if (vectorAsks.length !== customerAsks.length) {
+    console.info(`${label} [vector] skipping ${customerAsks.length - vectorAsks.length} ask(s) with no product signal`);
+  }
   const textVectorSearchPromise: Promise<ScoredProductMatch[]> =
-    isProductBusiness(integration.businessType) && retrievalText && similarProductNames.length === 0
-      ? searchSimilarProductsScored(integration.companyId, retrievalText, 5, STRONG_PRODUCT_VECTOR_SIMILARITY)
+    isProductBusiness(integration.businessType) && vectorAsks.length > 0 && similarProductNames.length === 0
+      ? Promise.all(
+          vectorAsks.map(ask =>
+            searchSimilarProductsScored(integration.companyId, ask, 5, STRONG_PRODUCT_VECTOR_SIMILARITY),
+          ),
+        ).then(perAsk => mergeScoredMatches(perAsk))
       : Promise.resolve([]);
 
   const [aiIntent, textVectorScored, businessContext] = await Promise.all([
@@ -684,7 +698,7 @@ export async function processIncomingMessage(
       content: contactMsg,
     });
     await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
-    await sendProviderResponse(msg.provider, msg.senderId, contactMsg, integration.accessToken, integration.providerAccountId);
+    await deliverReply(supabase, integration, msg, contactMsg, label);
     void persistEscalation(supabase, integration.companyId, conversationId, resolvedName, resolvedNickname, combinedMessage, msg.provider);
     await releaseLock(conversationId);
     console.info(`${label} [escalation] Soft escalation confirmed — contact sent + AI pausing for conversation ${conversationId}`);
@@ -985,13 +999,7 @@ export async function processIncomingMessage(
   }
 
   // 10b. Send text reply after images
-  await sendProviderResponse(
-    msg.provider,
-    msg.senderId,
-    cleanReply,
-    integration.accessToken,
-    integration.providerAccountId,
-  );
+  await deliverReply(supabase, integration, msg, cleanReply, label);
 
   // Release the Redis lock — next burst from this user can now be processed
   await releaseLock(conversationId);
@@ -1133,6 +1141,79 @@ function stripInternalReplyArtifacts(text: string): string {
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+/**
+ * Records that delivery through this integration is permanently broken.
+ *
+ * Only called for auth-class failures (expired or revoked token), never for rate limits or
+ * 5xx — those resolve on their own and must not send anyone chasing a reconnect. The flag
+ * drives the amber "Reconnect needed" badge on the integrations page and is cleared the
+ * moment a new token is saved.
+ *
+ * `is_active` is deliberately left alone: identifyCompany() filters on it, so clearing it
+ * would stop inbound customer messages from being recorded at all.
+ */
+async function markIntegrationBroken(
+  supabase: ReturnType<typeof createAdminClient>,
+  integrationId: string,
+  error: string,
+  label: string,
+): Promise<void> {
+  try {
+    await supabase
+      .from('integrations')
+      .update({ needs_reconnect: true, last_error: error.slice(0, 500), last_error_at: new Date().toISOString() })
+      .eq('id', integrationId);
+    console.error(`${label} [integration] marked needs_reconnect — delivery is failing: ${error.slice(0, 200)}`);
+  } catch (err) {
+    console.error(`${label} [integration] could not flag broken integration (non-fatal):`, err);
+  }
+}
+
+/**
+ * Sends a reply and flags the integration when the failure is a dead token.
+ * Wraps every delivery in the pipeline so no send site can silently drop a message again.
+ */
+async function deliverReply(
+  supabase: ReturnType<typeof createAdminClient>,
+  integration: ResolvedIntegration,
+  msg: NormalizedMessage,
+  text: string,
+  label: string,
+): Promise<SendResult> {
+  const result = await sendProviderResponse(
+    msg.provider,
+    msg.senderId,
+    text,
+    integration.accessToken,
+    integration.providerAccountId,
+  );
+  if (!result.ok) {
+    console.error(`${label} [delivery] FAILED (${result.permanent ? 'permanent' : 'transient'}): ${result.error}`);
+    if (result.permanent) {
+      await markIntegrationBroken(supabase, integration.integrationId, result.error, label);
+    }
+  }
+  return result;
+}
+
+/**
+ * Folds per-ask vector results into one best-first list.
+ *
+ * A product matched by two different asks keeps its strongest similarity rather than
+ * appearing twice, and near-identical catalog rows collapse on their normalized name.
+ * Capped at the same limit a single search would have returned, so a multi-question burst
+ * cannot quietly widen how many products reach the prompt.
+ */
+function mergeScoredMatches(perAsk: ScoredProductMatch[][], limit = 5): ScoredProductMatch[] {
+  const best = new Map<string, ScoredProductMatch>();
+  for (const hit of perAsk.flat()) {
+    const key = normalizeProductName(hit.name);
+    const existing = best.get(key);
+    if (!existing || hit.similarity > existing.similarity) best.set(key, hit);
+  }
+  return [...best.values()].sort((a, b) => b.similarity - a.similarity).slice(0, limit);
 }
 
 /**
@@ -1340,7 +1421,10 @@ function replyContainsInventedProductName(reply: string, products: ProductContex
   const candidates = reply.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})+\b/g) ?? [];
   if (candidates.length === 0) return false;
 
-  const catalogNormalized = products.map(p => normalizeQuery(p.name));
+  // Names made only of decorative Unicode or emoji normalize to an empty string, and
+  // `norm.includes('')` is true for every candidate — one such product in the catalog
+  // silently switched this whole guard off. Drop them before comparing.
+  const catalogNormalized = products.map(p => normalizeQuery(p.name)).filter(n => n.length > 0);
   const catalogWords = new Set(
     catalogNormalized.flatMap(n => n.split(/\s+/).filter(w => w.length >= 4)),
   );

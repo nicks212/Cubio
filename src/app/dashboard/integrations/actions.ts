@@ -84,6 +84,10 @@ export async function saveIntegration(_prev: unknown, formData: FormData) {
         account_name: accountName,
         access_token: accessToken,
         is_active: true,
+        // Reconnecting clears the broken flag; the next failed send would set it again.
+        needs_reconnect: false,
+        last_error: null,
+        last_error_at: null,
       },
       { onConflict: 'provider,provider_account_id' },
     );

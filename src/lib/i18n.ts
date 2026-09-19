@@ -173,6 +173,7 @@ export const DEFAULT_TRANSLATIONS: T = {
   'integrations.subtitle': 'AI ასისტენტთან დაკავშირებული შეტყობინებების არხები',
   'integrations.connected': 'დაკავშირებულია',
   'integrations.not_connected': 'არ არის დაკავშირებული',
+  'integrations.needs_reconnect': 'საჭიროა ხელახლა დაკავშირება',
   'integrations.inactive': 'არააქტიური',
   'integrations.contact_notice': 'ინტეგრაციის დასაკონფიგურირებლად და AI აგენტის გამოყენების დასაწყებად, გთხოვთ მოგვმართოთ: cubio.ge@gmail.com',
 
@@ -666,6 +667,7 @@ export const DEFAULT_TRANSLATIONS_EN: T = {
   'integrations.subtitle': 'Messaging channels connected to your AI assistant',
   'integrations.connected': 'Connected',
   'integrations.not_connected': 'Not Connected',
+  'integrations.needs_reconnect': 'Reconnect needed',
   'integrations.inactive': 'Inactive',
   'integrations.contact_notice': 'To configure the integration and start using AI agent, please contact us: cubio.ge@gmail.com',
 

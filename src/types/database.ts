@@ -123,6 +123,11 @@ export interface Integration {
   access_token: string;
   refresh_token: string | null;
   is_active: boolean;
+  /** Delivery failed with a permanent auth error — the token must be re-issued. */
+  needs_reconnect?: boolean;
+  /** Provider error message from the most recent permanent delivery failure. */
+  last_error?: string | null;
+  last_error_at?: string | null;
   created_at: string;
   company?: Company;
 }

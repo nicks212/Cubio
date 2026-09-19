@@ -9,7 +9,7 @@ export default async function IntegrationsPage() {
   const { data: profile } = await supabase.from('profiles').select('company_id').eq('id', user.id).single();
   const { data: integrations } = await supabase
     .from('integrations')
-    .select('provider, account_name, provider_account_id, is_active')
+    .select('provider, account_name, provider_account_id, is_active, needs_reconnect')
     .eq('company_id', profile?.company_id ?? '');
 
   return <IntegrationsClient integrations={integrations ?? []} />;

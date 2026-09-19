@@ -76,11 +76,18 @@ const EN_STOPWORDS = new Set([
   'gakvt', 'gaqvt', 'gakvs', 'gaqvs', 'gvakvs', 'gvaqvs', 'makvs', 'maqvs',
   'minda', 'ginda', 'gindat', 'unda', 'mchirdeba', 'sheidzleba', 'shemidzlia',
   // greetings / politeness
-  'gamarjoba', 'gamarjobat', 'salami', 'madloba', 'gmadlobt', 'gmadlob',
+  // "salam" is listed in its stemmed form on purpose: as "salami" it would sit one
+  // character from "salamur" (სალამური, a pan flute) and swallow it.
+  'gamarjoba', 'gamarjobat', 'salam', 'madloba', 'gmadlobt', 'gmadlob',
   'bodishi', 'bodi', 'gtkhovt', 'batono', 'kalbatono', 'kargi', 'dzalian',
-  // commerce grammar (not product identity)
-  'maghazia', 'magazia', 'gaqidva', 'gakidva', 'fasi', 'fasad', 'ghirs', 'girs',
+  // commerce grammar (not product identity).
+  // "fasi" stems to "fas", which already catches "ფასად" ("for a price"); spelling out
+  // "fasad" as well would collide exactly with "ფასადი" (facade).
+  'maghazia', 'magazia', 'gaqidva', 'gakidva', 'fasi', 'ghirs', 'girs',
   'raodenoba', 'dghe', 'dghes',
+  // "to work / to be open" — an opening-hours question, not a product. Untreated, these
+  // matched the word "მუშაობს" inside five unrelated product descriptions.
+  'mushaob', 'mushaobs', 'mushaobt', 'gakhsnil', 'gaxsnil', 'daketil',
 ]);
 
 /**
@@ -124,15 +131,80 @@ export function stemGeoToken(token: string): string {
   }
   return token;
 }
+
+// Stopwords are compared against STEMMED query tokens, so every entry is folded through
+// the same stemmer at load. Without this, an entry written in its natural form silently
+// never matches — "ghirs" ("costs") stems to "ghir", so a price question kept its verb as
+// a content word. Doing it here means future entries can be written naturally.
+for (const word of [...EN_STOPWORDS]) {
+  const stem = stemGeoToken(word);
+  if (stem.length >= 2) EN_STOPWORDS.add(stem);
+}
+
+/**
+ * Stopwords long enough that a typo in them is still recognisable. Shorter entries are
+ * excluded because at 4 characters an edit distance of 2 is most of the word.
+ */
+const FUZZY_STOPWORDS = [...EN_STOPWORDS].filter(w => w.length >= 5);
+
+/** Memoized — the scoring loop re-tokenizes the query once per product in the catalog. */
+const stopwordCache = new Map<string, boolean>();
+
+/**
+ * True when a query token carries no product signal.
+ *
+ * Exact lookup first, then edit-distance-2 against the longer stopwords, because customers
+ * mistype: "გამწრჯობა" for "გამარჯობა" transliterates to "gamtsrjoba" and "დღწს" for "დღეს"
+ * to "dghtss", neither of which any exact-match list will ever contain.
+ *
+ * Fuzzy matching needs tokens of 6+ characters AND a length difference of at most ONE.
+ * Both guards matter. A typo substitutes or drops a single character, so it barely changes
+ * length; allowing a difference of two instead would let a genuine product word be read as
+ * a stopword by deleting its ending — "salamur" (a Georgian pan flute) is exactly two
+ * deletions from the greeting stem "salam", and dropping it would make the product
+ * unsearchable with no trace in the logs.
+ */
+function isStopword(token: string): boolean {
+  const cached = stopwordCache.get(token);
+  if (cached !== undefined) return cached;
+
+  let result = EN_STOPWORDS.has(token);
+  if (!result && token.length >= 6) {
+    result = FUZZY_STOPWORDS.some(
+      sw => Math.abs(sw.length - token.length) <= 1 && withinEditDistance2(token, sw),
+    );
+  }
+  stopwordCache.set(token, result);
+  return result;
+}
+
+/** Content tokens of ALREADY-normalized text: stemmed, with grammar words removed. */
+function contentTokensFromNormalized(normalized: string): string[] {
+  return (normalized.match(/[a-z0-9]{2,}/g) ?? [])
+    .map(stemGeoToken)
+    .filter(t => !isStopword(t));
+}
+
+/**
+ * True when a message could plausibly be about a product at all — i.e. something survives
+ * once grammar, greetings and commerce boilerplate are stripped.
+ *
+ * Callers use this to skip the embedding/vector path entirely for turns like "გამარჯობა" or
+ * "დღეს მუშაობთ?". Those carry no product signal, yet embedding them against a small
+ * thematically-uniform catalog still returns the whole shelf at a uniform ~0.65 similarity,
+ * which then rides into the prompt as "matched products".
+ */
+export function hasProductSignal(text: string): boolean {
+  return contentTokensFromNormalized(normalizeQuery(text)).length > 0;
+}
+
 // Score a single product for a query.
 // Returns score, confidence, reason, and matchedFields (["field:token"] pairs) for diagnostics.
 export function scoreProductRetrieval(
   product: ProductLike,
   normalizedQuery: string,
 ): { score: number; confidence: number; reason: string; matchedFields: string[] } {
-  const tokens = (normalizedQuery.match(/[a-z0-9]{2,}/g) ?? [])
-    .map(stemGeoToken)
-    .filter(t => !EN_STOPWORDS.has(t));
+  const tokens = contentTokensFromNormalized(normalizedQuery);
   if (!tokens.length) return { score: 0, confidence: 0, reason: 'empty', matchedFields: [] };
 
   const nq = (s: string) => normalizeQuery(s);
@@ -175,7 +247,13 @@ export function scoreProductRetrieval(
   const nameHits = nameMatched.length;
   const nameJoined = nameTokens.join(' ');
   const queryJoined = tokens.join(' ');
-  if (nameJoined === queryJoined) {
+  // A name made only of decorative Unicode or emoji (e.g. "ᗷᑌᗪᗪᕼᗩ", "🌙") normalizes to an
+  // empty string — and the empty string is a substring of EVERY query, so the containment
+  // test below would score such a product as a name match on every message the shop ever
+  // receives. Only compare when there is real name text to compare against.
+  if (nameJoined.length === 0) {
+    // No name signal at all: the product can still place on category/description evidence.
+  } else if (nameJoined === queryJoined) {
     score += 10; reason = 'exact name';
   } else if (nameJoined.includes(queryJoined) || queryJoined.includes(nameJoined)) {
     score += 8; reason = 'name contains query';
