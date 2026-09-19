@@ -20,9 +20,37 @@ type Tab = 'users' | 'localizations' | 'integrations' | 'terms' | 'usage' | 'con
 const PROVIDERS = ['facebook', 'instagram', 'telegram', 'whatsapp', 'viber'] as const;
 const providerIcons: Record<string, string> = { facebook: '📘', instagram: '📸', telegram: '✈️', whatsapp: '💬', viber: '📱' };
 
+/**
+ * Which Meta token flow a stored credential belongs to, read off its prefix.
+ *
+ * sendProviderResponse routes on exactly this prefix (IGAA tokens must go to
+ * graph.instagram.com, page tokens to graph.facebook.com), and the two flows have very
+ * different lifetimes — which is the whole reason an integration can silently die. Showing
+ * it next to the field means whoever pastes a replacement can tell at a glance whether they
+ * are swapping like for like, and when to expect the next expiry.
+ */
+function describeMetaToken(provider: string, token: string | undefined): string | null {
+  if (provider !== 'instagram' && provider !== 'facebook' && provider !== 'whatsapp') return null;
+  if (!token) return null;
+  if (token.startsWith('IGAA')) return 'Instagram Login token — expires 60 days after it was generated';
+  if (token.startsWith('EAA')) return 'Facebook Page token — does not expire on a timer';
+  return 'Unrecognized prefix — expected IGAA… (Instagram Login) or EAA… (Facebook Page)';
+}
+
+/** Compact "3 days ago" for the last delivery failure. */
+function timeAgo(iso: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  const units: Array<[number, string]> = [[86400, 'day'], [3600, 'hour'], [60, 'minute']];
+  for (const [size, name] of units) {
+    const n = Math.floor(seconds / size);
+    if (n >= 1) return `${n} ${name}${n === 1 ? '' : 's'} ago`;
+  }
+  return 'just now';
+}
+
 interface Props {
   users: Array<{ id: string; full_name: string | null; email: string | null; is_admin: boolean; created_at: string; company?: { company_name: string; business_type: string } | null }>;
-  integrations: Array<{ id: string; company_id: string; provider: string; provider_account_id: string; account_name: string; access_token: string; refresh_token?: string | null; is_active: boolean; created_at: string; company?: { company_name: string } | null }>;
+  integrations: Array<{ id: string; company_id: string; provider: string; provider_account_id: string; account_name: string; access_token: string; refresh_token?: string | null; is_active: boolean; needs_reconnect?: boolean; last_error?: string | null; last_error_at?: string | null; created_at: string; company?: { company_name: string } | null }>;
   localizations: Array<{ id: string | null; keyword: string; localization_text: string; localization_text_en: string }>;
   companies: Array<{ id: string; company_name: string; business_type?: string | null }>;
   termsContent: Array<{ language: string; content: string; updated_at: string }>;
@@ -325,6 +353,22 @@ export default function AdminClient({ users, integrations, localizations, compan
                           {int.is_active ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
                           {int.is_active ? (t['admin.active'] ?? 'Active') : (t['admin.off'] ?? 'Off')}
                         </button>
+                        {/* The toggle only says whether we WOULD send. This says whether we can:
+                            a dead token leaves the toggle green while every reply is dropped. */}
+                        {int.needs_reconnect && (
+                          <div
+                            className="mt-1 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 cursor-help"
+                            title={int.last_error ?? 'Delivery failed with a permanent auth error'}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                            {t['admin.needs_reconnect'] ?? 'Reconnect needed'}
+                            {/* Relative to "now", so the server and client strings can differ
+                                across a minute boundary — the value is cosmetic either way. */}
+                            {int.last_error_at && (
+                              <span className="text-amber-700/70" suppressHydrationWarning>· {timeAgo(int.last_error_at)}</span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex gap-1 justify-end">
@@ -554,6 +598,14 @@ export default function AdminClient({ users, integrations, localizations, compan
               <div>
                 <label className="block text-sm font-medium mb-2">Access Token *</label>
                 <input name="access_token" required defaultValue={editingInt?.access_token ?? ''} className="w-full px-4 py-2.5 bg-[var(--input-background)] border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                {editingInt && describeMetaToken(editingInt.provider, editingInt.access_token) && (
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Currently stored: {describeMetaToken(editingInt.provider, editingInt.access_token)}
+                  </p>
+                )}
+                {editingInt?.needs_reconnect && editingInt.last_error && (
+                  <p className="mt-1 text-xs text-amber-700 break-words">Last failure: {editingInt.last_error}</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Refresh Token</label>
